@@ -1,0 +1,100 @@
+# 架构决策记录
+
+## ADR-001：只支持 macOS
+
+**状态：已接受**
+
+选择 macOS-only，以 AppKit/WebKit 获得稳定系统集成，避免引入跨平台窗口抽象。未来若支持其他平台，应新增平台 Host，而不是削弱 macOS Host 能力。
+
+## ADR-002：Bun 承载前端与后端
+
+**状态：已接受**
+
+应用 UI 资源、HTTP/WebSocket 服务和业务逻辑由同一个 Bun standalone executable 承载。减少资源分发和多后端协议复杂度。
+
+## ADR-003：WebView 加载 localhost 服务
+
+**状态：已接受**
+
+相比自定义 URL scheme，localhost 更自然地支持 HTTP、WebSocket、HMR、streaming 和现有 Web 开发工具。代价是必须实现 token、Origin/Host 校验和导航限制。
+
+## ADR-004：Swift 是通用宿主，不嵌入 Bun
+
+**状态：已接受**
+
+Swift 通过子进程启动 Bun，而不是通过 FFI 嵌入运行时。这样隔离崩溃和内存，避免依赖不稳定的 Bun embedding/FFI 接口。
+
+## ADR-005：默认使用预编译 Host
+
+**状态：已接受**
+
+普通项目不编译 Swift、不生成 Xcode 工程。CLI 内嵌版本化 Host。需要原生扩展时才启用 SwiftPM。
+
+## ADR-006：stdin 是父进程生命信号
+
+**状态：已接受**
+
+Host 独占 Bun stdin pipe 写端。父进程消失会产生 EOF，Bun 进入 shutdown。正常退出仍使用 shutdown、SIGTERM、SIGKILL 分级回收。
+
+## ADR-007：UI 业务通信绕过 Swift
+
+**状态：已接受**
+
+UI 通过 HTTP/WebSocket 直接连接 Bun。Swift bridge 只处理必须原生实现的能力，避免 Swift 成为高频应用数据的中转瓶颈。
+
+## ADR-008：首期 Developer ID 站外分发
+
+**状态：已接受**
+
+首期优先完成 Developer ID、hardened runtime 和公证链路，以验证站外分发闭环。
+Mac App Store 的沙箱、entitlement 和审核兼容性作为独立发布目标评估。
+
+## ADR-009：不将置顶与跨桌面绑定
+
+**状态：已接受**
+
+`alwaysOnTop`、`visibleOnAllSpaces`、`visibleOverFullScreen` 是独立行为，分别映射 AppKit window level 和 collection behavior。
+
+## ADR-010：首期 Apple Silicon
+
+**状态：已接受**
+
+先完成 arm64 垂直闭环。x64 和 Universal Binary 在签名、公证和 Bun embedded assets 验证完成后加入。
+
+## ADR-011：启动秘密通过生命周期管道传递
+
+**状态：已接受**
+
+Host 启动 runtime 后，通过 stdin 生命周期管道发送单行 initialize NDJSON，其中包含
+bootstrap/control token、父 PID 和数据目录。秘密不放入环境变量或命令行。后续 shutdown
+消息复用同一管道；Host 意外退出时的 EOF 继续作为不可伪造的父进程死亡信号。
+
+## ADR-012：框架核心保持业务无关
+
+**状态：已接受**
+
+FIA 只负责桌面 UI、Host/Runtime 生命周期、安全通信、原生能力接入和构建发布。
+特定业务领域的编排、第三方服务和数据协议由应用自行实现，不进入 Host、Runtime 控制
+协议、native bridge 或 FIA 公共 API。场景代码可以存在于独立应用或示例中，但不能成为
+框架核心依赖。
+
+## 待决策事项
+
+- 框架和 CLI 的最终命名
+- UI 默认模板选 React、Solid 还是无框架
+- HTTP RPC 与 WebSocket RPC 的职责分界
+- native plugin 的 ABI/API 稳定策略
+- updater 选型与信任模型
+- 是否默认启用严格 native watchdog
+- 最低 macOS 版本是否长期保持 14
+
+## 参考资料
+
+- [Bun standalone executable](https://bun.sh/docs/bundler/executables)
+- [Bun full-stack dev server](https://bun.sh/docs/bundler/fullstack)
+- [Bun HTTP server](https://bun.sh/docs/runtime/http/server)
+- [Swift Package Manager build](https://www.swift.org/documentation/server/guides/building.html)
+- [NSApplication activation policy](https://developer.apple.com/documentation/appkit/nsapplication/activationpolicy-swift.enum)
+- [NSStatusItem](https://developer.apple.com/documentation/appkit/nsstatusitem)
+- [NSWindow collection behavior](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct)
+- [Apple notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)

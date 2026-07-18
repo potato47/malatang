@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>FIA Prototype</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">FIA Framework · Phase 0</p>
+      <h1>Host and runtime are connected.</h1>
+      <p class="intro">
+        This page is bundled into the Bun executable and rendered by the system WKWebView.
+      </p>
+
+      <section aria-labelledby="http-title">
+        <div>
+          <h2 id="http-title">HTTP session</h2>
+          <p id="http-status" class="status" role="status">Checking…</p>
+        </div>
+        <code id="http-result">Waiting for /api/hello</code>
+      </section>
+
+      <section aria-labelledby="ws-title">
+        <div>
+          <h2 id="ws-title">WebSocket echo</h2>
+          <p id="ws-status" class="status" role="status">Connecting…</p>
+        </div>
+        <form id="echo-form">
+          <label for="echo-input">Message</label>
+          <div class="controls">
+            <input id="echo-input" value="Hello over fia.v1" maxlength="256" />
+            <button type="submit" disabled>Send</button>
+          </div>
+        </form>
+        <code id="ws-result">Waiting for a response</code>
+      </section>
+    </main>
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>
+
