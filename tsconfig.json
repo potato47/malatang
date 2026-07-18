@@ -15,5 +15,5 @@
     "target": "ES2023",
     "types": ["bun"]
   },
-  "include": ["prototype/**/*.ts", "tools/**/*.ts", "types/**/*.d.ts"]
+  "include": ["packages/**/*.ts", "prototype/**/*.ts", "tools/**/*.ts", "types/**/*.d.ts"]
 }

@@ -78,9 +78,15 @@ FIA 只负责桌面 UI、Host/Runtime 生命周期、安全通信、原生能力
 协议、native bridge 或 FIA 公共 API。场景代码可以存在于独立应用或示例中，但不能成为
 框架核心依赖。
 
+## ADR-013：阶段 1 正式使用 FIA 名称
+
+**状态：已接受**
+
+框架正式名称为 FIA Framework，公共命令为 `fia`，CLI 发布包为 `@fia/cli`。根仓库包继续
+保持私有，只承载工作区开发、风险原型和统一验证脚本；用户 CLI 使用独立包发布和版本化。
+
 ## 待决策事项
 
-- 框架和 CLI 的最终命名
 - UI 默认模板选 React、Solid 还是无框架
 - HTTP RPC 与 WebSocket RPC 的职责分界
 - native plugin 的 ABI/API 稳定策略

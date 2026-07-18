@@ -3,22 +3,27 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "engines": {
     "bun": "1.3.14"
   },
   "scripts": {
+    "fia": "bun run packages/cli/src/index.ts",
+    "cli:build": "bun build packages/cli/src/index.ts --target=bun --outfile=packages/cli/dist/index.js",
     "ui:build": "bun run tools/build-ui.ts",
     "typecheck": "bun run ui:build && tsc --noEmit",
+    "test:cli": "bun run cli:build && bun test packages/cli/tests",
     "test:runtime": "bun test prototype/runtime/tests",
     "test:host": "swift test --package-path host",
     "prototype:build": "bun run tools/build-prototype.ts",
     "prototype:verify": "bun run tools/verify-prototype.ts",
     "prototype:lifecycle": "bun run tools/test-lifecycle.ts",
-    "check": "bun run typecheck && bun run test:runtime && bun run test:host"
+    "check": "bun run typecheck && bun run test:cli && bun run test:runtime && bun run test:host"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",
     "typescript": "7.0.2"
   }
 }
-

@@ -1,7 +1,7 @@
 # FIA Framework 设计文档
 
 > 状态：Draft  
-> 工作名称：FIA Framework  
+> 正式名称：FIA Framework
 > CLI 命令：`fia`  
 > 首期平台：macOS 14+，Apple Silicon
 
@@ -48,6 +48,7 @@ Swift/AppKit Host
 8. [实施路线图](./08-roadmap.md)
 9. [架构决策记录](./09-architecture-decisions.md)
 10. [阶段 0 运行时协议](./10-phase0-runtime-protocol.md)
+11. [阶段 0 验证基线](./11-phase0-validation.md)
 
 ## 第一阶段结论
 
@@ -60,10 +61,10 @@ Swift/AppKit Host
 
 ## 当前实施边界
 
-当前代码里程碑是阶段 0 风险原型，只验证 AppKit Host、Bun standalone runtime、
-localhost/WebSocket 安全边界、`.app` 组装和进程回收。阶段 0 使用内部
-`prototype:*` 脚本，不提供稳定的 `fia create/dev/run/build` CLI，也不包含状态栏、
-HMR 或 native bridge。
+阶段 0 风险原型已经完成。当前阶段 1 实现了独立的 `@fia/cli` 包、稳定的 `fia` 命令入口
+和 `fia doctor` 环境诊断；AppKit Host、Bun standalone runtime、localhost/WebSocket
+安全边界、`.app` 组装和进程回收继续作为回归基线。公共项目配置、
+`fia create/dev/run/build`、预编译 Host、HMR、状态栏和 native bridge 尚未实现。
 
 FIA 只提供通用桌面 UI 基础设施，不内置特定业务领域的编排、服务端 SDK 或开发工具。
 应用可以在自己的 Bun 代码中选择所需依赖，但这些依赖不属于 FIA 公共 API。
