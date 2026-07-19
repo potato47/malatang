@@ -101,7 +101,7 @@
 
 ### 6. 阶段 1 验收
 
-- [ ] 在全新目录执行 `fia create hello`，无需手工复制框架文件（生成与本地包烟测已通过，待发布 `@fia/cli` 后验证默认安装）。
+- [ ] 在全新目录执行 `fia create hello`，无需手工复制框架文件（生成与本地包烟测已通过，待发布 `@semicoder/fia` 后验证默认安装）。
 - [x] 执行 `fia dev` 后窗口成功加载，修改 UI 能触发 HMR。
 - [x] 执行 `fia run` 后使用与正式构建一致的生产启动协议。
 - [x] 执行 `fia build` 后得到可双击启动、签名与架构验证通过的 `.app`。
@@ -112,15 +112,15 @@
 ## 建议的近期执行顺序
 
 1. 已形成阶段 0 版本控制基线，并记录验证环境、限制和验收证据。
-2. 已建立 `@fia/cli`、最小命令路由和 `fia doctor`。
+2. 已建立 `@semicoder/fia`、最小命令路由和 `fia doctor`。
 3. 已定稿 `fia.config.ts` 和 React 默认模板，并实现 `fia create`。
 4. 已完成 `fia build`、预编译 Host、`fia run`、`fia dev`、HMR 与日志聚合。
-5. 发布 `@fia/cli` 后在完全独立目录验证默认 `bun install` 流程。
+5. 发布 `@semicoder/fia` 后在完全独立目录验证默认 `bun install` 流程。
 6. 保持阶段 1 回归绿灯，进入阶段 2。
 
 ## 进入阶段 1 前需要定案
 
-- [x] **框架名称**：正式使用 FIA Framework、`fia` 命令和 `@fia/cli` 包名。
+- [x] **框架名称**：正式使用 FIA Framework、`fia` 命令和 `@semicoder/fia` 包名。
 - [x] **默认 UI 模板**：首版使用 React；阶段 0 的 vanilla 页面不构成承诺。
 - [ ] **HTTP/WS 职责边界**：明确普通业务请求、流式事件和命令调用分别使用哪条通道。
 - [x] **Host 分发方式**：CLI 内嵌版本化 arm64 Host，并使用 manifest 与 SHA-256 校验。

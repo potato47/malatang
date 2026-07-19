@@ -61,7 +61,7 @@ Swift/AppKit Host
 
 ## 当前实施边界
 
-阶段 0 风险原型已经完成。阶段 1 CLI MVP 已实现独立的 `@fia/cli` 包、`fia doctor`、严格的
+阶段 0 风险原型已经完成。阶段 1 CLI MVP 已实现独立的 `@semicoder/fia` 包、`fia doctor`、严格的
 公共配置、React `fia create` 模板，以及 `fia dev/run/build`。CLI 内嵌版本化 arm64 Host，
 应用入口通过 `defineApp` 交给 FIA 托管 Runtime；开发 HMR、生产 standalone runtime、
 localhost/WebSocket 安全边界、`.app` 组装、签名验证和进程回收均纳入回归基线。状态栏和

@@ -1,4 +1,4 @@
-import { defineConfig } from "@fia/cli/config";
+import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
   configVersion: 1,

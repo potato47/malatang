@@ -82,7 +82,7 @@ FIA 只负责桌面 UI、Host/Runtime 生命周期、安全通信、原生能力
 
 **状态：已接受**
 
-框架正式名称为 FIA Framework，公共命令为 `fia`，CLI 发布包为 `@fia/cli`。根仓库包继续
+框架正式名称为 FIA Framework，公共命令为 `fia`，CLI 发布包为 `@semicoder/fia`。根仓库包继续
 保持私有，只承载工作区开发、风险原型和统一验证脚本；用户 CLI 使用独立包发布和版本化。
 
 ## ADR-014：默认项目模板使用 React

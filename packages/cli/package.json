@@ -1,5 +1,5 @@
 {
-  "name": "@fia/cli",
+  "name": "@semicoder/fia",
   "version": "0.1.0",
   "description": "Command-line tools for building FIA macOS applications",
   "type": "module",

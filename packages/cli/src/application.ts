@@ -141,7 +141,7 @@ async function resolveManagedRuntime(explicit?: string): Promise<string> {
   for (const candidate of candidates) {
     if (await existingFile(candidate)) return candidate;
   }
-  throw new Error("the FIA managed runtime asset is missing; reinstall @fia/cli");
+  throw new Error("the FIA managed runtime asset is missing; reinstall @semicoder/fia");
 }
 
 function defaultHostAssetDirectory(): string {
@@ -217,7 +217,7 @@ async function validateApplication(context: BuildContext): Promise<void> {
     if (applicationModule.default?.[marker] !== true) {
       process.stderr.write(
         "src/server.ts must default-export defineApp({ routes, websocket }). " +
-        "Direct Bun.serve() entries are not supported; import defineApp from @fia/cli/runtime.\\n"
+        "Direct Bun.serve() entries are not supported; import defineApp from @semicoder/fia/runtime.\\n"
       );
       process.exit(65);
     }

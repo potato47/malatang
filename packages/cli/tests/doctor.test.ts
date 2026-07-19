@@ -21,7 +21,7 @@ describe("fia doctor", () => {
 
     expect(report).toMatchObject({
       schemaVersion: 1,
-      cli: { name: "@fia/cli", version: "0.1.0" },
+      cli: { name: "@semicoder/fia", version: "0.1.0" },
       ok: true,
     });
     expect(report.checks.map((check) => check.id)).toEqual(expectedIDs);

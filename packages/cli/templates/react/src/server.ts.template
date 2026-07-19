@@ -1,4 +1,4 @@
-import { defineApp } from "@fia/cli/runtime";
+import { defineApp } from "@semicoder/fia/runtime";
 
 interface EchoRequest {
   id: string;

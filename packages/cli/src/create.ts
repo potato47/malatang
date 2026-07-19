@@ -90,7 +90,7 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
       "react-dom": "^19.2.7",
     },
     devDependencies: {
-      "@fia/cli": cliPackageSpec,
+      "@semicoder/fia": cliPackageSpec,
       "@types/bun": "1.3.14",
       "@types/react": "^19.2.17",
       "@types/react-dom": "^19.2.3",

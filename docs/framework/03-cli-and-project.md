@@ -25,10 +25,10 @@ hello/
 
 ## 2. 公共配置模型
 
-项目从 `@fia/cli/config` 导入类型安全入口：
+项目从 `@semicoder/fia/config` 导入类型安全入口：
 
 ```ts
-import { defineConfig } from "@fia/cli/config";
+import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
   configVersion: 1,
@@ -80,7 +80,7 @@ fia create hello --git
 
 生成过程在目标旁的临时目录完成。默认先写入模板并运行 `bun install`；`--git` 额外执行
 `git init`。所有步骤成功后才原子移动到目标位置，失败会清理临时目录。`--no-install`
-用于离线、测试或当前仓库内尚未发布 `@fia/cli` 的开发场景。
+用于离线、测试或当前仓库内尚未发布 `@semicoder/fia` 的开发场景。
 
 ## 4. React 模板与托管 Runtime
 

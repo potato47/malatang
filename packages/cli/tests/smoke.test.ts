@@ -35,7 +35,7 @@ async function run(arguments_: readonly string[], cwd = packageRoot): Promise<{
 
 describe("published CLI shape", () => {
   test("keeps package metadata and runtime version aligned", () => {
-    expect(packageMetadata.name).toBe("@fia/cli");
+    expect(packageMetadata.name).toBe("@semicoder/fia");
     expect(packageMetadata.version).toBe(CLI_VERSION);
     expect(packageMetadata.bin).toEqual({ fia: "bin/fia" });
     expect(packageMetadata.exports).toEqual({
@@ -66,7 +66,7 @@ describe("published CLI shape", () => {
     expect(doctor.stderr).toBe("");
     expect(JSON.parse(doctor.stdout)).toMatchObject({
       schemaVersion: 1,
-      cli: { name: "@fia/cli", version: "0.1.0" },
+      cli: { name: "@semicoder/fia", version: "0.1.0" },
       ok: true,
     });
   });

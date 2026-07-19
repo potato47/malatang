@@ -57,7 +57,7 @@ describe("FIA project creation", () => {
     };
     expect(metadata).toMatchObject({ name: "hello-world" });
     expect(metadata.dependencies).toEqual({ react: "^19.2.7", "react-dom": "^19.2.7" });
-    expect(metadata.devDependencies["@fia/cli"]).toBe("file:../cli");
+    expect(metadata.devDependencies["@semicoder/fia"]).toBe("file:../cli");
     expect(metadata.scripts).toMatchObject({ dev: "fia dev", build: "fia build", run: "fia run" });
 
     const config = await readFile(resolve(project, "fia.config.ts"), "utf8");

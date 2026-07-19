@@ -1,4 +1,4 @@
-export const CLI_PACKAGE_NAME = "@fia/cli";
+export const CLI_PACKAGE_NAME = "@semicoder/fia";
 export const CLI_COMMAND_NAME = "fia";
 export const CLI_VERSION = "0.1.0";
 export const REQUIRED_BUN_VERSION = "1.3.14";

@@ -61,6 +61,19 @@ bun build --compile \
 swift build -c release
 ```
 
+## npm 发布
+
+npm 发布流程只从仓库根目录进入，避免误发布私有的 workspace 根包：
+
+```bash
+bun run release:npm --dry-run
+bun run release:npm
+```
+
+预演和正式发布都会校验 CLI、包版本、arm64 Host manifest 与 SHA-256，并执行完整的
+`bun run check`。正式发布还要求干净的 Git 工作树、有效的 npm 登录以及未使用过的版本，
+最终通过 npm workspace 将 `@semicoder/fia` 公开发布到官方 registry。
+
 内嵌 Host 附带 manifest，记录 CLI/Host 版本、arm64、macOS 14、内部配置 schema 和 Runtime
 protocol，并在复制前校验 SHA-256 与 Mach-O 架构。`bun run host:package` 用当前 Host 源码
 重新生成该资产。

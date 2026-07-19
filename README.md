@@ -2,7 +2,7 @@
 
 FIA is a macOS desktop UI framework for applications built with TypeScript and Web technologies.
 The repository contains the completed **phase 0 risk prototype** and the **phase 1 CLI MVP**: a
-reusable Swift/AppKit host launches a FIA-managed Bun runtime, while `@fia/cli` provides project
+reusable Swift/AppKit host launches a FIA-managed Bun runtime, while `@semicoder/fia` provides project
 creation, development HMR, production runs, signed local builds, and environment diagnostics.
 
 ## Requirements
@@ -11,7 +11,7 @@ creation, development HMR, production runs, signed local builds, and environment
 - Bun 1.3.14
 - Xcode/Swift toolchain capable of Swift tools 6.0 (framework development only)
 
-Ordinary FIA projects consume the versioned arm64 Host embedded in `@fia/cli`, so Xcode and Swift
+Ordinary FIA projects consume the versioned arm64 Host embedded in `@semicoder/fia`, so Xcode and Swift
 are not required for `fia create/dev/run/build`.
 
 ## CLI development
@@ -31,7 +31,7 @@ check fails. Missing native development and release tools are reported as option
 The public package adds a typed configuration entry:
 
 ```ts
-import { defineConfig } from "@fia/cli/config";
+import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
   configVersion: 1,
@@ -43,7 +43,7 @@ export default defineConfig({
 The server entry exports declarative application routes:
 
 ```ts
-import { defineApp } from "@fia/cli/runtime";
+import { defineApp } from "@semicoder/fia/runtime";
 
 export default defineApp({
   routes: { "/api/hello": () => Response.json({ message: "Hello" }) },
@@ -79,3 +79,26 @@ enabled by default. See the [framework documentation](./docs/framework/README.md
 [experimental runtime protocol](./docs/framework/10-phase0-runtime-protocol.md).
 
 Implementation progress and upcoming work are tracked in [TODO.md](./TODO.md).
+
+## Publish the npm package
+
+Run the entire npm release workflow from the repository root. The dry run validates version and
+Host metadata, runs every test, and asks npm to show the exact public package payload without
+publishing it:
+
+```bash
+bun run release:npm --dry-run
+```
+
+After committing the release changes and logging in to the `https://registry.npmjs.org/` registry,
+publish from the same directory:
+
+```bash
+npm login --registry https://registry.npmjs.org/
+bun run release:npm
+```
+
+The real release refuses a dirty Git working tree, verifies that the exact version is not already
+published, and publishes the `@semicoder/fia` workspace with public access. When changing the CLI
+version, update the package and CLI metadata, then run `bun run host:package` so the embedded Host
+manifest has the same version before running the release command.

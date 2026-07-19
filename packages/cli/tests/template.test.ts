@@ -27,9 +27,9 @@ async function generatedProject(): Promise<string> {
   });
 
   const modules = resolve(project, "node_modules");
-  await mkdir(resolve(modules, "@fia"), { recursive: true });
+  await mkdir(resolve(modules, "@semicoder"), { recursive: true });
   await mkdir(resolve(modules, "@types"), { recursive: true });
-  await symlink(packageRoot, resolve(modules, "@fia/cli"), "dir");
+  await symlink(packageRoot, resolve(modules, "@semicoder/fia"), "dir");
   for (const dependency of ["react", "react-dom"] as const) {
     await symlink(resolve(packageRoot, "node_modules", dependency), resolve(modules, dependency), "dir");
   }

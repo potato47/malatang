@@ -25,9 +25,9 @@ async function project(name = "build-app"): Promise<string> {
     dependencies: { cliPackageSpec: `file:${packageRoot}` },
   });
   const modules = resolve(root, "node_modules");
-  await mkdir(resolve(modules, "@fia"), { recursive: true });
+  await mkdir(resolve(modules, "@semicoder"), { recursive: true });
   await mkdir(resolve(modules, "@types"), { recursive: true });
-  await symlink(packageRoot, resolve(modules, "@fia/cli"), "dir");
+  await symlink(packageRoot, resolve(modules, "@semicoder/fia"), "dir");
   await symlink(resolve(repositoryRoot, "node_modules/typescript"), resolve(modules, "typescript"), "dir");
   await symlink(resolve(repositoryRoot, "node_modules/@types/bun"), resolve(modules, "@types/bun"), "dir");
   for (const dependency of ["react", "react-dom"] as const) {

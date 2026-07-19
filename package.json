@@ -21,7 +21,8 @@
     "prototype:build": "bun run tools/build-prototype.ts",
     "prototype:verify": "bun run tools/verify-prototype.ts",
     "prototype:lifecycle": "bun run tools/test-lifecycle.ts",
-    "check": "bun run typecheck && bun run test:cli && bun run test:runtime && bun run test:host"
+    "check": "bun run typecheck && bun run test:cli && bun run test:runtime && bun run test:host",
+    "release:npm": "bun run tools/publish-npm.ts"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",

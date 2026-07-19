@@ -1,4 +1,4 @@
-# `@fia/cli`
+# `@semicoder/fia`
 
 The command-line interface for FIA, a macOS desktop UI framework built around Bun, AppKit, and
 `WKWebView`.
@@ -20,7 +20,7 @@ fia doctor --json
 Projects import `defineConfig` from the package subpath:
 
 ```ts
-import { defineConfig } from "@fia/cli/config";
+import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
   configVersion: 1,
@@ -32,7 +32,7 @@ export default defineConfig({
 Projects import `defineApp` from the runtime subpath instead of calling `Bun.serve` directly:
 
 ```ts
-import { defineApp } from "@fia/cli/runtime";
+import { defineApp } from "@semicoder/fia/runtime";
 
 export default defineApp({
   routes: { "/api/hello": () => Response.json({ message: "Hello" }) },
