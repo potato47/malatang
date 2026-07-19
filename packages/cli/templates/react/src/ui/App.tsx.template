@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { native, type FIANativeState } from "@semicoder/fia/native";
 
 type Status = "idle" | "working" | "success" | "error";
 
@@ -12,6 +13,9 @@ export function App() {
   const [httpMessage, setHTTPMessage] = useState("Ready to call the Bun backend.");
   const [socketStatus, setSocketStatus] = useState<Status>("idle");
   const [socketMessage, setSocketMessage] = useState("Ready to open an application WebSocket.");
+  const [nativeStatus, setNativeStatus] = useState<Status>("idle");
+  const [nativeMessage, setNativeMessage] = useState("Checking the FIA native bridge …");
+  const [desktopState, setDesktopState] = useState<FIANativeState | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
   const callHello = useCallback(async () => {
@@ -51,6 +55,45 @@ export function App() {
     });
   }, []);
 
+  const runNative = useCallback(async (action: () => Promise<FIANativeState>) => {
+    setNativeStatus("working");
+    try {
+      const state = await action();
+      setDesktopState(state);
+      setNativeStatus("success");
+      setNativeMessage(`${state.mode} mode · ${state.window.alwaysOnTop ? "floating" : "normal"} window`);
+    } catch (error) {
+      setNativeStatus("error");
+      setNativeMessage(error instanceof Error ? error.message : "Native command failed");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!native.isAvailable()) {
+      setNativeMessage("Native bridge unavailable outside the FIA Host.");
+      return;
+    }
+    let active = true;
+    const update = (state: FIANativeState) => {
+      if (!active) return;
+      setDesktopState(state);
+      setNativeStatus("success");
+      setNativeMessage(`${state.mode} mode · secure native bridge ready`);
+    };
+    const unsubscribe = native.onEvent((event) => {
+      if (event.type === "stateChanged") update(event.state);
+    });
+    void native.getState().then(update).catch((error: unknown) => {
+      if (!active) return;
+      setNativeStatus("error");
+      setNativeMessage(error instanceof Error ? error.message : "Native bridge failed");
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
   useEffect(() => () => socketRef.current?.close(), []);
 
   return (
@@ -78,6 +121,29 @@ export function App() {
           <button type="button" onClick={sendEcho} disabled={socketStatus === "working"}>
             Send echo
           </button>
+        </article>
+
+
+        <article className={`card ${nativeStatus}`}>
+          <span className="badge">Native</span>
+          <h2>Desktop shell</h2>
+          <p>{nativeMessage}</p>
+          <div className="actions">
+            <button
+              type="button"
+              disabled={nativeStatus === "working" || desktopState === null}
+              onClick={() => void runNative(() => native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop))}
+            >
+              Toggle floating
+            </button>
+            <button
+              type="button"
+              disabled={nativeStatus === "working" || desktopState === null}
+              onClick={() => void runNative(() => native.statusBar.setVisible(!desktopState!.statusBarVisible))}
+            >
+              Toggle status item
+            </button>
+          </div>
         </article>
       </section>
 

@@ -49,6 +49,7 @@ Swift/AppKit Host
 10. [阶段 0 运行时协议](./10-phase0-runtime-protocol.md)
 11. [阶段 0 验证基线](./11-phase0-validation.md)
 12. [阶段 1 CLI MVP 验收基线](./12-phase1-cli-mvp-validation.md)
+13. [阶段 2 桌面外壳验收基线](./13-phase2-desktop-shell-validation.md)
 
 ## 第一阶段结论
 
@@ -64,9 +65,10 @@ Swift/AppKit Host
 阶段 0 风险原型已经完成。阶段 1 CLI MVP 已实现独立的 `@semicoder/fia` 包、`fia doctor`、严格的
 公共配置、React `fia create` 模板，以及 `fia dev/run/build`。CLI 内嵌版本化 arm64 Host，
 应用入口通过 `defineApp` 交给 FIA 托管 Runtime；开发 HMR、生产 standalone runtime、
-localhost/WebSocket 安全边界、`.app` 组装、签名验证和进程回收均纳入回归基线。状态栏和
-native bridge 仍属于阶段 2。本地包的 macOS 主流程已经验收；阶段 1 只剩 npm 首次公开
-发布后的仓库外安装验收，以及不阻塞首发的构建失败诊断增强。
+localhost/WebSocket 安全边界、`.app` 组装、签名验证和进程回收均纳入回归基线。阶段 2
+首个切片已增加 Dock/状态栏/混合模式、窗口桌面行为、状态恢复，以及只授权当前应用主 frame
+的 `@semicoder/fia/native` bridge。文件面板、通知、外部打开和 Keychain 仍属于后续切片。
+阶段 1 的 npm 首次公开安装验收与发布元数据继续作为独立门禁。
 
 FIA 只提供通用桌面 UI 基础设施，不内置特定业务领域的编排、服务端 SDK 或开发工具。
 应用可以在自己的 Bun 代码中选择所需依赖，但这些依赖不属于 FIA 公共 API。

@@ -48,10 +48,16 @@ bootstrap token 和独立 control token 通过 Host 独占的 stdin 生命周期
 
 - 命令使用 allowlist，不允许动态 selector。
 - 每个命令验证参数 schema。
-- 校验调用 frame 和 origin。
+- 只接受当前 `127.0.0.1:<runtime-port>` 精确 origin 的主 frame；同源子 frame 也被拒绝。
+- bridge protocol 1 请求固定为 `{version, command, params}`，单条 JSON 消息不超过 64 KiB。
+- WebView 或 Runtime 重建时注销旧 handler，避免旧页面继续持有原生入口。
+- 错误只返回稳定错误码与脱敏消息，不返回 Swift 类型、堆栈或任意 selector。
 - 文件面板返回 security-scoped 或明确授权路径。
 - Keychain API 只接受框架生成的 service namespace。
 - 高风险命令需要用户可见确认。
+
+当前切片只开放应用退出、Dock/状态栏显示、窗口显示/聚焦和三个独立窗口标志。文件面板、
+通知、外部打开和 Keychain 尚未开放，因此对应权限策略在实现这些命令时再单独验收。
 
 ## 5. Bun 应用边界
 

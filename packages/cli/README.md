@@ -4,7 +4,7 @@ The command-line interface for FIA, a macOS desktop UI framework built around Bu
 `WKWebView`.
 
 The public surface provides project creation, native development, production execution, signed
-local builds, typed configuration, and environment diagnostics:
+local builds, typed desktop configuration, a secure native bridge, and environment diagnostics:
 
 ```bash
 fia --version
@@ -23,10 +23,21 @@ Projects import `defineConfig` from the package subpath:
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 1,
-  app: { name: "Hello", identifier: "com.example.hello" },
+  configVersion: 2,
+  app: { name: "Hello", identifier: "com.example.hello", mode: "hybrid" },
   ui: "src/ui/index.html",
+  window: { closeBehavior: "hide", restoreState: true },
+  statusBar: { symbol: "circle.grid.2x2.fill" },
 });
+```
+
+Web UI code imports the typed Host bridge from the native subpath:
+
+```ts
+import { native } from "@semicoder/fia/native";
+
+const state = await native.getState();
+await native.statusBar.setVisible(!state.statusBarVisible);
 ```
 
 Projects import `defineApp` from the runtime subpath instead of calling `Bun.serve` directly:

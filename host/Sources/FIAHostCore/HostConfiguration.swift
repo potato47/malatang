@@ -2,28 +2,69 @@ import Foundation
 
 public struct HostConfiguration: Codable, Equatable, Sendable {
     public struct App: Codable, Equatable, Sendable {
+        public enum Mode: String, Codable, Equatable, Sendable {
+            case dock
+            case statusBar
+            case hybrid
+        }
+
         public let name: String
         public let identifier: String
-        public let quitOnLastWindowClosed: Bool
+        public let mode: Mode
 
-        public init(name: String, identifier: String, quitOnLastWindowClosed: Bool) {
+        public init(name: String, identifier: String, mode: Mode) {
             self.name = name
             self.identifier = identifier
-            self.quitOnLastWindowClosed = quitOnLastWindowClosed
+            self.mode = mode
         }
     }
 
     public struct Window: Codable, Equatable, Sendable {
+        public enum CloseBehavior: String, Codable, Equatable, Sendable {
+            case quit
+            case hide
+        }
+
         public let width: Double
         public let height: Double
         public let minWidth: Double
         public let minHeight: Double
+        public let closeBehavior: CloseBehavior
+        public let restoreState: Bool
+        public let alwaysOnTop: Bool
+        public let visibleOnAllSpaces: Bool
+        public let visibleOverFullScreen: Bool
 
-        public init(width: Double, height: Double, minWidth: Double, minHeight: Double) {
+        public init(
+            width: Double,
+            height: Double,
+            minWidth: Double,
+            minHeight: Double,
+            closeBehavior: CloseBehavior,
+            restoreState: Bool,
+            alwaysOnTop: Bool,
+            visibleOnAllSpaces: Bool,
+            visibleOverFullScreen: Bool
+        ) {
             self.width = width
             self.height = height
             self.minWidth = minWidth
             self.minHeight = minHeight
+            self.closeBehavior = closeBehavior
+            self.restoreState = restoreState
+            self.alwaysOnTop = alwaysOnTop
+            self.visibleOnAllSpaces = visibleOnAllSpaces
+            self.visibleOverFullScreen = visibleOverFullScreen
+        }
+    }
+
+    public struct StatusBar: Codable, Equatable, Sendable {
+        public let symbol: String
+        public let tooltip: String
+
+        public init(symbol: String, tooltip: String) {
+            self.symbol = symbol
+            self.tooltip = tooltip
         }
     }
 
@@ -47,17 +88,32 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         public var isDevelopment: Bool { mode == .development }
     }
 
+    private struct LegacyApp: Codable {
+        let name: String
+        let identifier: String
+        let quitOnLastWindowClosed: Bool
+    }
+
+    private struct LegacyWindow: Codable {
+        let width: Double
+        let height: Double
+        let minWidth: Double
+        let minHeight: Double
+    }
+
     private struct LegacyConfiguration: Codable {
         let schemaVersion: Int
         let protocolVersion: Int
-        let app: App
-        let window: Window
+        let app: LegacyApp
+        let window: LegacyWindow
+        let runtime: Runtime?
     }
 
     public let schemaVersion: Int
     public let protocolVersion: Int
     public let app: App
     public let window: Window
+    public let statusBar: StatusBar
     public let runtime: Runtime
 
     public init(
@@ -65,12 +121,14 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         protocolVersion: Int,
         app: App,
         window: Window,
+        statusBar: StatusBar,
         runtime: Runtime = .production
     ) {
         self.schemaVersion = schemaVersion
         self.protocolVersion = protocolVersion
         self.app = app
         self.window = window
+        self.statusBar = statusBar
         self.runtime = runtime
     }
 
@@ -94,47 +152,14 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         guard let root = object as? [String: Any], let schemaVersion = root["schemaVersion"] as? Int else {
             throw HostConfigurationError.invalidShape
         }
-        guard let appObject = root["app"] as? [String: Any], let windowObject = root["window"] as? [String: Any] else {
-            throw HostConfigurationError.invalidShape
-        }
-        try requireExactKeys(appObject, expected: ["name", "identifier", "quitOnLastWindowClosed"], at: "app")
-        try requireExactKeys(windowObject, expected: ["width", "height", "minWidth", "minHeight"], at: "window")
 
         let configuration: HostConfiguration
         do {
             switch schemaVersion {
-            case 1:
-                try requireExactKeys(
-                    root,
-                    expected: ["schemaVersion", "protocolVersion", "app", "window"],
-                    at: "root"
-                )
-                let legacy = try JSONDecoder().decode(LegacyConfiguration.self, from: data)
-                configuration = HostConfiguration(
-                    schemaVersion: legacy.schemaVersion,
-                    protocolVersion: legacy.protocolVersion,
-                    app: legacy.app,
-                    window: legacy.window,
-                    runtime: .production
-                )
-            case 2:
-                try requireExactKeys(
-                    root,
-                    expected: ["schemaVersion", "protocolVersion", "app", "window", "runtime"],
-                    at: "root"
-                )
-                guard let runtimeObject = root["runtime"] as? [String: Any],
-                      let mode = runtimeObject["mode"] as? String
-                else { throw HostConfigurationError.invalidShape }
-                switch mode {
-                case Runtime.Mode.production.rawValue:
-                    try requireExactKeys(runtimeObject, expected: ["mode"], at: "runtime")
-                case Runtime.Mode.development.rawValue:
-                    try requireExactKeys(runtimeObject, expected: ["mode", "executable", "arguments"], at: "runtime")
-                default:
-                    throw HostConfigurationError.invalidRuntime
-                }
-                configuration = try JSONDecoder().decode(HostConfiguration.self, from: data)
+            case 1, 2:
+                configuration = try decodeLegacy(data, root: root, schemaVersion: schemaVersion)
+            case 3:
+                configuration = try decodeCurrent(data, root: root)
             default:
                 throw HostConfigurationError.unsupportedSchema(schemaVersion)
             }
@@ -147,8 +172,85 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         return configuration
     }
 
+    private static func decodeLegacy(
+        _ data: Data,
+        root: [String: Any],
+        schemaVersion: Int
+    ) throws -> HostConfiguration {
+        let expectedRoot = schemaVersion == 1
+            ? Set(["schemaVersion", "protocolVersion", "app", "window"])
+            : Set(["schemaVersion", "protocolVersion", "app", "window", "runtime"])
+        try requireExactKeys(root, expected: expectedRoot, at: "root")
+        guard let appObject = root["app"] as? [String: Any],
+              let windowObject = root["window"] as? [String: Any]
+        else { throw HostConfigurationError.invalidShape }
+        try requireExactKeys(appObject, expected: ["name", "identifier", "quitOnLastWindowClosed"], at: "app")
+        try requireExactKeys(windowObject, expected: ["width", "height", "minWidth", "minHeight"], at: "window")
+        if schemaVersion == 2 {
+            try validateRuntimeShape(root["runtime"])
+        }
+        let legacy = try JSONDecoder().decode(LegacyConfiguration.self, from: data)
+        let closeBehavior: Window.CloseBehavior = legacy.app.quitOnLastWindowClosed ? .quit : .hide
+        return HostConfiguration(
+            schemaVersion: schemaVersion,
+            protocolVersion: legacy.protocolVersion,
+            app: App(name: legacy.app.name, identifier: legacy.app.identifier, mode: .dock),
+            window: Window(
+                width: legacy.window.width,
+                height: legacy.window.height,
+                minWidth: legacy.window.minWidth,
+                minHeight: legacy.window.minHeight,
+                closeBehavior: closeBehavior,
+                restoreState: false,
+                alwaysOnTop: false,
+                visibleOnAllSpaces: false,
+                visibleOverFullScreen: false
+            ),
+            statusBar: StatusBar(symbol: "circle.grid.2x2.fill", tooltip: legacy.app.name),
+            runtime: legacy.runtime ?? .production
+        )
+    }
+
+    private static func decodeCurrent(_ data: Data, root: [String: Any]) throws -> HostConfiguration {
+        try requireExactKeys(
+            root,
+            expected: ["schemaVersion", "protocolVersion", "app", "window", "statusBar", "runtime"],
+            at: "root"
+        )
+        guard let appObject = root["app"] as? [String: Any],
+              let windowObject = root["window"] as? [String: Any],
+              let statusBarObject = root["statusBar"] as? [String: Any]
+        else { throw HostConfigurationError.invalidShape }
+        try requireExactKeys(appObject, expected: ["name", "identifier", "mode"], at: "app")
+        try requireExactKeys(
+            windowObject,
+            expected: [
+                "width", "height", "minWidth", "minHeight", "closeBehavior", "restoreState",
+                "alwaysOnTop", "visibleOnAllSpaces", "visibleOverFullScreen",
+            ],
+            at: "window"
+        )
+        try requireExactKeys(statusBarObject, expected: ["symbol", "tooltip"], at: "statusBar")
+        try validateRuntimeShape(root["runtime"])
+        return try JSONDecoder().decode(HostConfiguration.self, from: data)
+    }
+
+    private static func validateRuntimeShape(_ value: Any?) throws {
+        guard let runtimeObject = value as? [String: Any], let mode = runtimeObject["mode"] as? String else {
+            throw HostConfigurationError.invalidShape
+        }
+        switch mode {
+        case Runtime.Mode.production.rawValue:
+            try requireExactKeys(runtimeObject, expected: ["mode"], at: "runtime")
+        case Runtime.Mode.development.rawValue:
+            try requireExactKeys(runtimeObject, expected: ["mode", "executable", "arguments"], at: "runtime")
+        default:
+            throw HostConfigurationError.invalidRuntime
+        }
+    }
+
     private func validate() throws {
-        guard schemaVersion == 1 || schemaVersion == 2 else {
+        guard (1...3).contains(schemaVersion) else {
             throw HostConfigurationError.unsupportedSchema(schemaVersion)
         }
         guard protocolVersion == 1 else { throw HostConfigurationError.unsupportedProtocol(protocolVersion) }
@@ -160,19 +262,26 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
             throw HostConfigurationError.invalidBundleIdentifier
         }
         let dimensions = [window.width, window.height, window.minWidth, window.minHeight]
-        guard dimensions.allSatisfy({ $0.isFinite && $0 > 0 }) else {
-            throw HostConfigurationError.invalidWindowDimensions
-        }
-        guard window.width >= window.minWidth, window.height >= window.minHeight else {
-            throw HostConfigurationError.invalidWindowDimensions
-        }
+        guard dimensions.allSatisfy({ $0.isFinite && $0 > 0 }),
+              window.width >= window.minWidth,
+              window.height >= window.minHeight
+        else { throw HostConfigurationError.invalidWindowDimensions }
+        guard !statusBar.symbol.isEmpty,
+              statusBar.symbol == statusBar.symbol.trimmingCharacters(in: .whitespacesAndNewlines),
+              statusBar.symbol.count <= 128,
+              !statusBar.symbol.contains("\0"),
+              !statusBar.tooltip.isEmpty,
+              statusBar.tooltip == statusBar.tooltip.trimmingCharacters(in: .whitespacesAndNewlines),
+              statusBar.tooltip.count <= 512,
+              !statusBar.tooltip.contains("\0")
+        else { throw HostConfigurationError.invalidStatusBar }
         switch runtime.mode {
         case .production:
             guard runtime.executable == nil, runtime.arguments == nil else {
                 throw HostConfigurationError.invalidRuntime
             }
         case .development:
-            guard schemaVersion == 2,
+            guard schemaVersion >= 2,
                   let executable = runtime.executable,
                   NSString(string: executable).isAbsolutePath,
                   !executable.contains("\0"),
@@ -189,8 +298,7 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         expected: Set<String>,
         at path: String
     ) throws {
-        let actual = Set(object.keys)
-        guard actual == expected else {
+        guard Set(object.keys) == expected else {
             throw HostConfigurationError.unknownOrMissingFields(path: path)
         }
     }
@@ -206,6 +314,7 @@ public enum HostConfigurationError: Error, Equatable, LocalizedError, Sendable {
     case invalidApplicationName
     case invalidBundleIdentifier
     case invalidWindowDimensions
+    case invalidStatusBar
     case invalidRuntime
 
     public var errorDescription: String? {
@@ -219,6 +328,7 @@ public enum HostConfigurationError: Error, Equatable, LocalizedError, Sendable {
         case .invalidApplicationName: "Application name must not be empty"
         case .invalidBundleIdentifier: "Application identifier is invalid"
         case .invalidWindowDimensions: "Window dimensions are invalid"
+        case .invalidStatusBar: "Status bar configuration is invalid"
         case .invalidRuntime: "Runtime launch configuration is invalid"
         }
     }

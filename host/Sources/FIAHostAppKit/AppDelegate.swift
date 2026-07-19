@@ -7,6 +7,7 @@ import Foundation
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configuration: HostConfiguration?
     private var windowController: HostWindowController?
+    private var desktopController: DesktopController?
     private var runtime: RuntimeSupervisor?
     private var terminationPending = false
     private var autoQuitScheduled = false
@@ -23,14 +24,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let configuration = try HostConfiguration.load(from: configurationURL)
             self.configuration = configuration
             installMainMenu(applicationName: configuration.app.name)
-            let windowController = HostWindowController(configuration: configuration)
+
+            let settingsStore = try? DesktopSettingsStore(
+                identifier: configuration.app.identifier,
+                diagnostic: { [weak self] message in self?.diagnostic(message) }
+            )
+            let settings = settingsStore?.load()
+            var initialState = DesktopState(configuration: configuration)
+            if let settings {
+                do {
+                    initialState = try settings.applying(to: initialState)
+                } catch {
+                    diagnostic("ignoring unsafe desktop settings: \(error.localizedDescription)")
+                }
+            }
+
+            let windowController = HostWindowController(
+                configuration: configuration,
+                restoredFrame: settings?.windowFrame
+            )
             self.windowController = windowController
             windowController.onWebFailure = { [weak self] detail in
                 self?.showRuntimeFailure(title: "Web content failed to load", detail: detail)
             }
-            windowController.showWindow(nil)
-            windowController.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            windowController.show()
+            windowController.focus()
+
+            let desktopController = DesktopController(
+                configuration: configuration,
+                initialState: initialState,
+                windowController: windowController,
+                settingsStore: settingsStore
+            )
+            self.desktopController = desktopController
+            desktopController.onStateChanged = { [weak windowController] state in
+                guard let payload = try? NativeBridgeHandler.stateChangedEvent(state) else { return }
+                windowController?.emitNativeEvent(payload)
+            }
+            desktopController.onStatusBarClicked = { [weak windowController] in
+                windowController?.emitNativeEvent(NativeBridgeHandler.statusBarClickedEvent)
+            }
+            desktopController.start()
 
             let runtime = RuntimeSupervisor(configuration: configuration) { [weak self] event in
                 self?.handleRuntimeEvent(event)
@@ -47,13 +81,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onRetry: nil,
                 onQuit: { NSApp.terminate(nil) }
             )
-            windowController.showWindow(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            windowController.focus()
         }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        configuration?.app.quitOnLastWindowClosed ?? true
+        configuration?.window.closeBehavior == .quit
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        desktopController?.showAndFocusWindow()
+        return true
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -61,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let runtime, runtime.isRunning else { return .terminateNow }
         guard !terminationPending else { return .terminateLater }
         terminationPending = true
+        desktopController?.flushSettings()
         runtime.stop {
             self.diagnostic("runtime stop completed; replying to AppKit termination")
             NSApp.reply(toApplicationShouldTerminate: true)
@@ -71,13 +110,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         terminationSignalSources.forEach { $0.cancel() }
         terminationSignalSources.removeAll()
+        desktopController?.flushSettings()
         runtime?.forceStop()
     }
 
     private func handleRuntimeEvent(_ event: RuntimeSupervisor.Event) {
         switch event {
         case let .ready(bootstrapURL):
-            windowController?.showWebView(bootstrapURL: bootstrapURL)
+            windowController?.showWebView(bootstrapURL: bootstrapURL) { [weak desktopController] command in
+                guard let desktopController else {
+                    throw NativeCommandExecutionError(
+                        code: .bridgeUnavailable,
+                        message: "The desktop controller is unavailable"
+                    )
+                }
+                return try desktopController.execute(command)
+            }
             scheduleInternalAutoQuitIfRequested()
         case let .failed(title, detail):
             showRuntimeFailure(title: title, detail: detail)
@@ -94,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onQuit: { NSApp.terminate(nil) }
         )
+        desktopController?.showAndFocusWindow()
     }
 
     private func scheduleInternalAutoQuitIfRequested() {

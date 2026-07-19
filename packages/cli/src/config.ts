@@ -1,10 +1,13 @@
-export const FIA_CONFIG_VERSION = 1 as const;
+export const FIA_CONFIG_VERSION = 2 as const;
+
+export type FIAApplicationMode = "dock" | "statusBar" | "hybrid";
+export type FIAWindowCloseBehavior = "quit" | "hide";
 
 export interface FIAAppConfig {
   name: string;
   identifier: string;
   version?: string;
-  quitOnLastWindowClosed?: boolean;
+  mode?: FIAApplicationMode;
 }
 
 export interface FIAWindowConfig {
@@ -12,6 +15,16 @@ export interface FIAWindowConfig {
   height?: number;
   minWidth?: number;
   minHeight?: number;
+  closeBehavior?: FIAWindowCloseBehavior;
+  restoreState?: boolean;
+  alwaysOnTop?: boolean;
+  visibleOnAllSpaces?: boolean;
+  visibleOverFullScreen?: boolean;
+}
+
+export interface FIAStatusBarConfig {
+  symbol?: string;
+  tooltip?: string;
 }
 
 export interface FIAConfig {
@@ -20,6 +33,7 @@ export interface FIAConfig {
   entry?: string;
   ui?: string;
   window?: FIAWindowConfig;
+  statusBar?: FIAStatusBarConfig;
 }
 
 export function defineConfig<const Configuration extends FIAConfig>(

@@ -31,6 +31,7 @@ export class CreateProjectError extends Error {
 }
 
 const TEMPLATE_FILES = [
+  ["AGENTS.md.template", "AGENTS.md"],
   ["fia.config.ts.template", "fia.config.ts"],
   ["README.md.template", "README.md"],
   ["tsconfig.json", "tsconfig.json"],

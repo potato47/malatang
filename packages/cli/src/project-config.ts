@@ -2,7 +2,12 @@ import { constants } from "node:fs";
 import { access, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { FIA_CONFIG_VERSION, type FIAConfig } from "./config.ts";
+import {
+  FIA_CONFIG_VERSION,
+  type FIAApplicationMode,
+  type FIAConfig,
+  type FIAWindowCloseBehavior,
+} from "./config.ts";
 
 const CONFIG_FILE_NAME = "fia.config.ts";
 const DEFAULT_ENTRY = "src/server.ts";
@@ -14,6 +19,7 @@ const DEFAULT_WINDOW = {
   minWidth: 720,
   minHeight: 480,
 } as const;
+const DEFAULT_STATUS_BAR_SYMBOL = "circle.grid.2x2.fill";
 
 export type ProjectConfigErrorCode =
   | "CONFIG_NOT_FOUND"
@@ -43,7 +49,7 @@ export interface ResolvedFIAConfig {
     readonly name: string;
     readonly identifier: string;
     readonly version: string;
-    readonly quitOnLastWindowClosed: boolean;
+    readonly mode: FIAApplicationMode;
   };
   readonly entry: string;
   readonly ui: string;
@@ -52,6 +58,15 @@ export interface ResolvedFIAConfig {
     readonly height: number;
     readonly minWidth: number;
     readonly minHeight: number;
+    readonly closeBehavior: FIAWindowCloseBehavior;
+    readonly restoreState: boolean;
+    readonly alwaysOnTop: boolean;
+    readonly visibleOnAllSpaces: boolean;
+    readonly visibleOverFullScreen: boolean;
+  };
+  readonly statusBar: {
+    readonly symbol: string;
+    readonly tooltip: string;
   };
 }
 
@@ -103,6 +118,37 @@ function optionalBoolean(
   const value = object[key];
   if (value === undefined) return fallback;
   if (typeof value !== "boolean") invalid(`${path}.${key}`, "expected a boolean");
+  return value;
+}
+
+function optionalEnum<const Value extends string>(
+  object: Record<string, unknown>,
+  key: string,
+  path: string,
+  allowed: readonly Value[],
+  fallback: Value,
+): Value {
+  const value = object[key];
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || !allowed.includes(value as Value)) {
+    invalid(`${path}.${key}`, `expected one of ${allowed.map((item) => JSON.stringify(item)).join(", ")}`);
+  }
+  return value as Value;
+}
+
+function optionalBoundedString(
+  object: Record<string, unknown>,
+  key: string,
+  path: string,
+  fallback: string,
+  maximumLength: number,
+): string {
+  if (object[key] === undefined) return fallback;
+  const value = requiredString(object, key, path);
+  if (value !== value.trim()) invalid(`${path}.${key}`, "must not contain surrounding whitespace");
+  if (value.includes("\0") || value.length > maximumLength) {
+    invalid(`${path}.${key}`, `must be at most ${maximumLength} characters and contain no NUL`);
+  }
   return value;
 }
 
@@ -184,7 +230,7 @@ export async function resolveProjectConfig(
 ): Promise<ResolvedFIAConfig> {
   const projectRoot = resolve(projectDirectory);
   const root = objectAt(value, "config");
-  exactKeys(root, ["configVersion", "app", "entry", "ui", "window"], "config");
+  exactKeys(root, ["configVersion", "app", "entry", "ui", "window", "statusBar"], "config");
 
   if (root.configVersion === undefined) invalid("configVersion", "is required");
   if (root.configVersion !== FIA_CONFIG_VERSION) {
@@ -199,7 +245,7 @@ export async function resolveProjectConfig(
   }
 
   const app = objectAt(root.app, "app");
-  exactKeys(app, ["name", "identifier", "version", "quitOnLastWindowClosed"], "app");
+  exactKeys(app, ["name", "identifier", "version", "mode"], "app");
   const name = requiredString(app, "name", "app");
   if (name !== name.trim() || name === "." || name === ".." || /[\0/:]/.test(name)) {
     invalid("app.name", "must be a safe macOS application name without surrounding whitespace, '/', ':', or NUL");
@@ -209,7 +255,7 @@ export async function resolveProjectConfig(
   if (!identifierPattern.test(identifier)) invalid("app.identifier", "expected a reverse-DNS bundle identifier");
   const version = optionalString(app, "version", "app", DEFAULT_APP_VERSION);
   if (!/^\d+\.\d+\.\d+$/.test(version)) invalid("app.version", "expected a numeric X.Y.Z version");
-  const quitOnLastWindowClosed = optionalBoolean(app, "quitOnLastWindowClosed", "app", true);
+  const mode = optionalEnum(app, "mode", "app", ["dock", "statusBar", "hybrid"], "dock");
 
   const entryValue = root.entry === undefined ? DEFAULT_ENTRY : root.entry;
   const uiValue = root.ui === undefined ? DEFAULT_UI : root.ui;
@@ -220,22 +266,59 @@ export async function resolveProjectConfig(
   }
 
   const window = root.window === undefined ? {} : objectAt(root.window, "window");
-  exactKeys(window, ["width", "height", "minWidth", "minHeight"], "window");
+  exactKeys(window, [
+    "width",
+    "height",
+    "minWidth",
+    "minHeight",
+    "closeBehavior",
+    "restoreState",
+    "alwaysOnTop",
+    "visibleOnAllSpaces",
+    "visibleOverFullScreen",
+  ], "window");
   const width = optionalDimension(window, "width", "window", DEFAULT_WINDOW.width);
   const height = optionalDimension(window, "height", "window", DEFAULT_WINDOW.height);
   const minWidth = optionalDimension(window, "minWidth", "window", DEFAULT_WINDOW.minWidth);
   const minHeight = optionalDimension(window, "minHeight", "window", DEFAULT_WINDOW.minHeight);
   if (width < minWidth) invalid("window.width", "must be greater than or equal to window.minWidth");
   if (height < minHeight) invalid("window.height", "must be greater than or equal to window.minHeight");
+  const closeBehavior = optionalEnum(
+    window,
+    "closeBehavior",
+    "window",
+    ["quit", "hide"],
+    mode === "dock" ? "quit" : "hide",
+  );
+  const restoreState = optionalBoolean(window, "restoreState", "window", true);
+  const alwaysOnTop = optionalBoolean(window, "alwaysOnTop", "window", false);
+  const visibleOnAllSpaces = optionalBoolean(window, "visibleOnAllSpaces", "window", false);
+  const visibleOverFullScreen = optionalBoolean(window, "visibleOverFullScreen", "window", false);
+
+  const statusBar = root.statusBar === undefined ? {} : objectAt(root.statusBar, "statusBar");
+  exactKeys(statusBar, ["symbol", "tooltip"], "statusBar");
+  const symbol = optionalBoundedString(statusBar, "symbol", "statusBar", DEFAULT_STATUS_BAR_SYMBOL, 128);
+  const tooltip = optionalBoundedString(statusBar, "tooltip", "statusBar", name, 512);
 
   return {
     configVersion: FIA_CONFIG_VERSION,
     projectRoot,
     configPath,
-    app: { name, identifier, version, quitOnLastWindowClosed },
+    app: { name, identifier, version, mode },
     entry,
     ui,
-    window: { width, height, minWidth, minHeight },
+    window: {
+      width,
+      height,
+      minWidth,
+      minHeight,
+      closeBehavior,
+      restoreState,
+      alwaysOnTop,
+      visibleOnAllSpaces,
+      visibleOverFullScreen,
+    },
+    statusBar: { symbol, tooltip },
   };
 }
 

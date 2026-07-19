@@ -44,7 +44,7 @@ async function expectConfigError(
 
 function minimal(): Record<string, unknown> {
   return {
-    configVersion: 1,
+    configVersion: 2,
     app: { name: "Hello", identifier: "com.example.hello" },
   };
 }
@@ -56,24 +56,35 @@ describe("public FIA configuration", () => {
       app: { name: "Hello", identifier: "com.example.hello" },
     });
     expect(config.app.name).toBe("Hello");
-    expect(FIA_CONFIG_VERSION).toBe(1);
+    expect(FIA_CONFIG_VERSION).toBe(2);
   });
 
   test("applies phase 1 defaults", async () => {
     const root = await project();
     const config = await resolveProjectConfig(minimal(), root);
     expect(config).toMatchObject({
-      configVersion: 1,
+      configVersion: 2,
       projectRoot: root,
       app: {
         name: "Hello",
         identifier: "com.example.hello",
         version: "0.1.0",
-        quitOnLastWindowClosed: true,
+        mode: "dock",
       },
       entry: resolve(root, "src/server.ts"),
       ui: resolve(root, "src/ui/index.html"),
-      window: { width: 1024, height: 700, minWidth: 720, minHeight: 480 },
+      window: {
+        width: 1024,
+        height: 700,
+        minWidth: 720,
+        minHeight: 480,
+        closeBehavior: "quit",
+        restoreState: true,
+        alwaysOnTop: false,
+        visibleOnAllSpaces: false,
+        visibleOverFullScreen: false,
+      },
+      statusBar: { symbol: "circle.grid.2x2.fill", tooltip: "Hello" },
     });
   });
 
@@ -81,15 +92,23 @@ describe("public FIA configuration", () => {
     const root = await project();
     await writeFile(resolve(root, "fia.config.ts"), `
       export default {
-        configVersion: 1,
+        configVersion: 2,
         app: {
           name: "Loaded App",
           identifier: "com.example.loaded",
           version: "2.3.4",
-          quitOnLastWindowClosed: false,
+          mode: "hybrid",
         },
         entry: "src/server.ts",
-        window: { width: 900, height: 600, minWidth: 500, minHeight: 400 },
+        window: {
+          width: 900,
+          height: 600,
+          minWidth: 500,
+          minHeight: 400,
+          alwaysOnTop: true,
+          visibleOnAllSpaces: true,
+        },
+        statusBar: { symbol: "bolt.fill", tooltip: "Loaded status" },
       };
     `);
     const config = await loadProjectConfig(root);
@@ -97,9 +116,12 @@ describe("public FIA configuration", () => {
       name: "Loaded App",
       identifier: "com.example.loaded",
       version: "2.3.4",
-      quitOnLastWindowClosed: false,
+      mode: "hybrid",
     });
     expect(config.window.width).toBe(900);
+    expect(config.window.closeBehavior).toBe("hide");
+    expect(config.window.alwaysOnTop).toBe(true);
+    expect(config.statusBar).toEqual({ symbol: "bolt.fill", tooltip: "Loaded status" });
   });
 
   test("rejects missing, unknown, and incorrectly typed fields", async () => {
@@ -125,7 +147,7 @@ describe("public FIA configuration", () => {
   test("rejects unsupported versions, identifiers, app versions, and dimensions", async () => {
     const root = await project();
     await expectConfigError(
-      resolveProjectConfig({ ...minimal(), configVersion: 2 }, root),
+      resolveProjectConfig({ ...minimal(), configVersion: 1 }, root),
       "CONFIG_UNSUPPORTED_VERSION",
       "configVersion",
     );
@@ -148,6 +170,35 @@ describe("public FIA configuration", () => {
       resolveProjectConfig({ ...minimal(), window: { width: 500, minWidth: 700 } }, root),
       "CONFIG_INVALID",
       "window.width",
+    );
+  });
+
+  test("validates phase 2 desktop modes, flags, and status bar values", async () => {
+    const root = await project();
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), app: { name: "Hello", identifier: "com.example.hello", mode: "tray" } }, root),
+      "CONFIG_INVALID",
+      "app.mode",
+    );
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), app: { name: "Hello", identifier: "com.example.hello", quitOnLastWindowClosed: true } }, root),
+      "CONFIG_INVALID",
+      "app.quitOnLastWindowClosed",
+    );
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), window: { closeBehavior: "close" } }, root),
+      "CONFIG_INVALID",
+      "window.closeBehavior",
+    );
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), window: { alwaysOnTop: "yes" } }, root),
+      "CONFIG_INVALID",
+      "window.alwaysOnTop",
+    );
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), statusBar: { symbol: " invalid " } }, root),
+      "CONFIG_INVALID",
+      "statusBar.symbol",
     );
   });
 

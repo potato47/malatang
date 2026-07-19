@@ -2,8 +2,8 @@
 
 ## 1. 组件划分
 
-本节描述目标组件职责。阶段 1 已实现单窗口 Host、托管 Runtime、开发/构建编排和 ad-hoc
-签名；多窗口、状态栏、native bridge、公证和分发产物仍按路线图在后续阶段实现。
+本节描述目标组件职责。阶段 2 首个切片已在单窗口 Host 上实现状态栏、桌面状态持久化和
+native bridge；多窗口、其余系统服务、公证和分发产物仍按路线图在后续阶段实现。
 
 ### `fia` CLI
 
@@ -107,7 +107,7 @@ WebSocket RPC，应独立版本化并覆盖：
 
 ### UI 与 Swift
 
-使用 `WKScriptMessageHandler` 提供少量原生命令：
+使用带 Promise reply 的 `WKScriptMessageHandlerWithReply` 提供少量原生命令：
 
 - `window.*`
 - `app.*`
@@ -116,7 +116,9 @@ WebSocket RPC，应独立版本化并覆盖：
 - `notification.*`
 - `keychain.*`
 
-不得提供任意 Objective-C selector、任意 Swift 类型调用或通用进程执行 bridge。
+公共入口为 `@semicoder/fia/native`。handler 注册在 page world，但仍显式拒绝非主 frame 和
+非当前 Runtime 精确 origin。不得提供任意 Objective-C selector、任意 Swift 类型调用或
+通用进程执行 bridge。
 
 ### Swift 与 Bun
 
@@ -154,4 +156,5 @@ Bun 主动请求复杂原生能力，可扩展一个独立 framed IPC 通道，�
 - native bridge API
 - project config schema
 
-Host 和 runtime 主版本不匹配时，应显示兼容性错误页面，而不是继续运行未知协议。
+当前版本为 Runtime protocol 1、native bridge protocol 1、公共 config schema 2、Host 内部
+config schema 3。Host 和 runtime 主版本不匹配时，应显示兼容性错误页面，而不是继续运行未知协议。

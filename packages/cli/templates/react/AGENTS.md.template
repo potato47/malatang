@@ -1,0 +1,52 @@
+# Agent guide for __FIA_DISPLAY_NAME__
+
+This is a FIA Framework desktop application. It uses a Bun application runtime, a React UI in the
+system `WKWebView`, and a Swift/AppKit Host supplied by `@semicoder/fia`.
+
+## Project map
+
+- `fia.config.ts` defines the desktop application, window, Dock, and status bar configuration. Keep
+  `configVersion: 2` unless the installed FIA version documents a migration.
+- `src/server.ts` is the Bun entry point. Export the application with `defineApp` from
+  `@semicoder/fia/runtime`; add HTTP routes and application WebSocket behavior here.
+- `src/ui/` contains the React application and browser assets.
+- `dist/` and `.fia/` are generated. Do not edit or commit them.
+
+## Development workflow
+
+Use Bun and the checked-in package scripts:
+
+```bash
+bun install
+bun run dev
+bun run typecheck
+bun run build
+```
+
+- Run `bun run typecheck` after TypeScript or React changes.
+- Run `bun run build` after changing configuration, packaging behavior, or production UI loading.
+- Use `bun run dev` for UI and native desktop behavior checks. Quit the app normally when finished so
+  the managed Runtime can shut down cleanly.
+
+## FIA boundaries
+
+- Use relative `fetch` calls for request/response application work and the application WebSocket for
+  bidirectional streams. Keep business APIs in `src/server.ts` rather than the native bridge.
+- Import desktop capabilities from `@semicoder/fia/native`. Never access or introduce a public
+  `window.fia` global.
+- Always guard native behavior with `native.isAvailable()` and keep the React UI usable in a normal
+  browser where the bridge is unavailable.
+- Subscribe with `native.onEvent(...)` only inside a lifecycle-aware scope and call the returned
+  unsubscribe function during cleanup.
+- Treat `FIANativeError.code` as the stable failure contract. Do not infer behavior from native error
+  message text.
+- Do not weaken FIA's localhost origin, session, CSP, main-frame, or bridge command boundaries.
+
+## Change discipline
+
+- Inspect the relevant configuration, Runtime, and UI files before editing and preserve unrelated user
+  changes.
+- Keep desktop defaults declarative in `fia.config.ts`; use the native API only for runtime changes.
+- Validate untrusted HTTP, WebSocket, and persisted data at its boundary and avoid exposing secrets in
+  browser-visible responses or logs.
+- Prefer focused changes. If you add a reusable command or workflow, update this guide and `README.md`.

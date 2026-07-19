@@ -2,12 +2,13 @@
   "schemaVersion": 1,
   "cliVersion": "0.1.0",
   "hostVersion": "0.1.0",
-  "sha256": "e2bcc9c49f1a9ba5d2ccba6e9df41da835a657a582e140e84fe178cdaeae6694",
+  "sha256": "672cc9f6145961ed844e04b500f3b59fa9537fe8ec721369ecaf1a675e781c89",
   "architecture": "arm64",
   "minimumSystemVersion": "14.0",
   "configurationSchemas": [
     1,
-    2
+    2,
+    3
   ],
   "runtimeProtocol": 1
 }

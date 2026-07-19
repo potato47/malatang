@@ -49,6 +49,11 @@ describe("published CLI shape", () => {
         import: "./dist/runtime.js",
         default: "./dist/runtime.js",
       },
+      "./native": {
+        types: "./dist/native.d.ts",
+        import: "./dist/native.js",
+        default: "./dist/native.js",
+      },
     });
     expect(packageMetadata.files).toContain("templates");
     expect(packageMetadata.files).toContain("assets");
@@ -76,6 +81,8 @@ describe("published CLI shape", () => {
     expect(await Bun.file(resolve(packageRoot, "dist/config.d.ts")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "dist/runtime.js")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "dist/runtime.d.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "dist/native.js")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "dist/native.d.ts")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "dist/managed-runtime.js")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "assets/host/darwin-arm64/FIAHost")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "assets/host/darwin-arm64/manifest.json")).exists()).toBe(true);
@@ -87,7 +94,7 @@ describe("published CLI shape", () => {
     )) as { sha256: string; configurationSchemas: number[]; runtimeProtocol: number };
     const hasher = new Bun.CryptoHasher("sha256");
     hasher.update(await Bun.file(host).arrayBuffer());
-    expect(manifest).toMatchObject({ configurationSchemas: [1, 2], runtimeProtocol: 1 });
+    expect(manifest).toMatchObject({ configurationSchemas: [1, 2, 3], runtimeProtocol: 1 });
     expect(hasher.digest("hex")).toBe(manifest.sha256);
     expect(await Bun.file(resolve(packageRoot, "templates/react/src/server.ts.template")).exists()).toBe(true);
 
@@ -95,8 +102,8 @@ describe("published CLI shape", () => {
       FIA_CONFIG_VERSION: number;
       defineConfig<T>(value: T): T;
     };
-    expect(configModule.FIA_CONFIG_VERSION).toBe(1);
-    expect(configModule.defineConfig({ configVersion: 1 })).toEqual({ configVersion: 1 });
+    expect(configModule.FIA_CONFIG_VERSION).toBe(2);
+    expect(configModule.defineConfig({ configVersion: 2 })).toEqual({ configVersion: 2 });
 
     const cwd = await mkdtemp(resolve(tmpdir(), "fia-built-cli-"));
     temporaryDirectories.push(cwd);

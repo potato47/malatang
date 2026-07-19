@@ -48,7 +48,7 @@ interface HostManifest {
   sha256: string;
   architecture: "arm64";
   minimumSystemVersion: "14.0";
-  configurationSchemas: readonly [1, 2];
+  configurationSchemas: readonly [1, 2, 3];
   runtimeProtocol: 1;
 }
 
@@ -66,6 +66,52 @@ const BUN_VERSION = "1.3.14";
 const HOST_EXECUTABLE = "FIAHost";
 const RUNTIME_EXECUTABLE = "fia-runtime";
 const CSP_NONCE = "__FIA_CSP_NONCE__";
+
+function tagEnd(html: string, start: number): number | undefined {
+  let quote: '"' | "'" | undefined;
+  for (let index = start; index < html.length; index += 1) {
+    const character = html[index]!;
+    if (quote !== undefined) {
+      if (character === quote) quote = undefined;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === ">") {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+export function injectCSPNonce(html: string, nonce = CSP_NONCE): string {
+  const opening = /<(script|style)\b/gi;
+  let cursor = 0;
+  let result = "";
+  while (cursor < html.length) {
+    opening.lastIndex = cursor;
+    const match = opening.exec(html);
+    if (match === null) break;
+    const end = tagEnd(html, match.index);
+    if (end === undefined) break;
+    result += html.slice(cursor, match.index);
+    const originalTag = html.slice(match.index, end + 1);
+    const cleanTag = originalTag.replace(/\snonce\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+    const suffixLength = cleanTag.endsWith("/>") ? 2 : 1;
+    result += `${cleanTag.slice(0, -suffixLength)} nonce="${nonce}"${cleanTag.slice(-suffixLength)}`;
+
+    const name = match[1]!.toLowerCase();
+    const closing = new RegExp(`</${name}\\s*>`, "gi");
+    closing.lastIndex = end + 1;
+    const closingMatch = closing.exec(html);
+    if (closingMatch === null) {
+      cursor = end + 1;
+      continue;
+    }
+    result += html.slice(end + 1, closingMatch.index + closingMatch[0].length);
+    cursor = closingMatch.index + closingMatch[0].length;
+  }
+  result += html.slice(cursor);
+  return result;
+}
 
 function commandText(command: readonly string[]): string {
   return command.map((part) => JSON.stringify(part)).join(" ");
@@ -170,7 +216,7 @@ async function verifyHostAsset(directory: string, debug: boolean, io: Applicatio
     || manifest.architecture !== "arm64"
     || manifest.minimumSystemVersion !== "14.0"
     || manifest.runtimeProtocol !== 1
-    || manifest.configurationSchemas.join(",") !== "1,2"
+    || manifest.configurationSchemas.join(",") !== "1,2,3"
   ) {
     throw new Error("precompiled Host manifest is incompatible with this CLI");
   }
@@ -268,9 +314,7 @@ async function buildProductionUI(context: BuildContext): Promise<string> {
   );
   const output = resolve(outputDirectory, basename(context.config.ui));
   let html = await readFile(output, "utf8");
-  html = html
-    .replaceAll(/<script\b/g, `<script nonce="${CSP_NONCE}"`)
-    .replaceAll(/<style\b/g, `<style nonce="${CSP_NONCE}"`);
+  html = injectCSPNonce(html);
   if (!html.includes(CSP_NONCE)) throw new Error("UI build contains no script or style tags to protect with CSP");
   const template = resolve(context.stagingRoot, "ui-template.txt");
   await Bun.write(template, html);
@@ -316,14 +360,15 @@ function hostConfiguration(
   runtime: { mode: "production" } | { mode: "development"; executable: string; arguments: string[] },
 ): Record<string, unknown> {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     protocolVersion: 1,
     app: {
       name: config.app.name,
       identifier: config.app.identifier,
-      quitOnLastWindowClosed: config.app.quitOnLastWindowClosed,
+      mode: config.app.mode,
     },
     window: config.window,
+    statusBar: config.statusBar,
     runtime,
   };
 }

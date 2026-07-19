@@ -2,7 +2,7 @@
 
 - 最后更新：2026-07-19
 - 当前基线：阶段 0 风险原型与阶段 1 CLI MVP 本地主流程均已验收
-- 当前重点：`@semicoder/fia` 首次公开发布、独立安装验收与阶段 2 API 设计
+- 当前重点：阶段 2 系统服务切片，以及独立推进的 npm 首次公开发布验收
 
 本文档用于跟踪执行进度。范围和阶段定义以[路线图](docs/framework/08-roadmap.md)为准，已经形成的约束以[架构决策记录](docs/framework/09-architecture-decisions.md)为准。
 
@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | 阶段 0：风险原型 | 已完成 | AppKit Host、Bun standalone Runtime、安全启动协议和 `.app` 生命周期闭环 |
 | 阶段 1：CLI MVP | 本地主流程已验收（待 npm 首发安装验收） | `fia create/dev/run/build/doctor`，用户无需打开 Xcode |
-| 阶段 2：原生桌面能力 | 已规划 | Dock/状态栏模式、窗口能力和最小原生桥接 |
+| 阶段 2：原生桌面能力 | 首个垂直切片已完成 | Dock/状态栏模式、窗口能力和最小原生桥接 |
 | 阶段 3：发布工程 | 已规划 | Developer ID、hardened runtime、公证、DMG 和 CI |
 | 阶段 4：平台化 | 远期 | 原生插件、通用架构、watchdog、更新器和平台服务 |
 
@@ -115,7 +115,7 @@
 - [ ] **P0** 选择并添加开源许可证，补齐 npm `repository`、`homepage`、`bugs` 等发布元数据。
 - [ ] **P0** 确认 npm `@semicoder` scope 发布权限并启用发布 2FA。
 - [ ] 正式公开发布 `@semicoder/fia`，并验证 npm 页面、dist-tag 和全新目录安装。
-- [x] 当前自动化基线通过：CLI 41 项、Runtime 11 项、Swift Host 12 项。
+- [x] 当前自动化基线通过：CLI 48 项、Runtime 11 项、Swift Host 27 项。
 - [x] README 和框架文档更新为真实 CLI 用法。
 
 ## 建议的近期执行顺序
@@ -128,7 +128,7 @@
 6. 提交发布版本并从根目录正式发布 `@semicoder/fia`。
 7. 在完全独立目录验证 npm 安装、默认 `fia create`、`dev/run/build` 与进程回收。
 8. 为构建失败补充分阶段错误与可选诊断目录，保持阶段 1 回归绿灯。
-9. 冻结阶段 1 公共 API，进入阶段 2 native bridge 与桌面能力设计。
+9. 已进入阶段 2，并完成桌面外壳与 native bridge 首个垂直切片。
 
 ## 阶段 1 收尾决策
 
@@ -144,10 +144,13 @@
 
 ### 阶段 2：原生桌面能力
 
-- [ ] 支持 Dock、状态栏和混合模式。
-- [ ] 完成关闭隐藏、置顶、Spaces、全屏和窗口状态恢复。
-- [ ] 提供文件选择、通知、外部打开、Keychain 和最小原生桥接。
-- [ ] 建立菜单/托盘事件与前端状态同步测试。
+- [x] 支持 Dock、状态栏和混合模式，以及运行时安全切换。
+- [x] 完成关闭隐藏、置顶、Spaces、全屏辅助和窗口 frame 恢复。
+- [x] 提供严格 schema、origin/main-frame 校验和类型化 `@semicoder/fia/native`。
+- [x] 建立状态栏交互与前端状态同步测试。
+- [ ] 提供文件/目录/保存面板。
+- [ ] 提供通知和外部打开。
+- [ ] 提供 Keychain namespace 与脱敏错误边界。
 
 ### 阶段 3：发布工程
 

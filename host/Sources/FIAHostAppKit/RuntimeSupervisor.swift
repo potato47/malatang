@@ -4,6 +4,7 @@ import Foundation
 import OSLog
 
 @MainActor
+// Owns the managed Bun process for the lifetime of the AppKit host.
 final class RuntimeSupervisor: NSObject {
     enum Event {
         case ready(bootstrapURL: URL)

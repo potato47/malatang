@@ -13,6 +13,10 @@ If the project was created with `--no-install`, run `bun install` first.
 `bun run dev` launches the native FIA window with React hot reload. The other commands create a
 signed local application or launch the current source through the production runtime protocol.
 
+The React page also imports `@semicoder/fia/native` to inspect desktop state, toggle the status item,
+and change the main window's floating level. The module reports itself unavailable when the page is
+opened outside the FIA Host.
+
 ## Runtime boundary
 
 The server entry exports `defineApp({ routes, websocket })`. FIA owns the loopback listener,

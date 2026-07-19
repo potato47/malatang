@@ -8,21 +8,23 @@ let package = Package(
     products: [
         .executable(name: "FIAHost", targets: ["FIAHost"]),
         .library(name: "FIAHostCore", targets: ["FIAHostCore"]),
+        .library(name: "FIAHostAppKit", targets: ["FIAHostAppKit"]),
     ],
     targets: [
         .target(
             name: "FIAHostCore",
             linkerSettings: [.linkedFramework("Security")]
         ),
-        .executableTarget(
-            name: "FIAHost",
+        .target(
+            name: "FIAHostAppKit",
             dependencies: ["FIAHostCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("WebKit"),
             ]
         ),
+        .executableTarget(name: "FIAHost", dependencies: ["FIAHostAppKit"]),
         .testTarget(name: "FIAHostCoreTests", dependencies: ["FIAHostCore"]),
+        .testTarget(name: "FIAHostAppKitTests", dependencies: ["FIAHostAppKit", "FIAHostCore"]),
     ]
 )
-

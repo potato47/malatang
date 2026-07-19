@@ -1,12 +1,12 @@
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 1,
+  configVersion: 2,
   app: {
     name: __FIA_APP_NAME_JSON__,
     identifier: __FIA_APP_IDENTIFIER_JSON__,
     version: "0.1.0",
-    quitOnLastWindowClosed: true,
+    mode: "dock",
   },
   entry: "src/server.ts",
   ui: "src/ui/index.html",
@@ -15,5 +15,14 @@ export default defineConfig({
     height: 700,
     minWidth: 720,
     minHeight: 480,
+    closeBehavior: "quit",
+    restoreState: true,
+    alwaysOnTop: false,
+    visibleOnAllSpaces: false,
+    visibleOverFullScreen: false,
+  },
+  statusBar: {
+    symbol: "circle.grid.2x2.fill",
+    tooltip: __FIA_APP_NAME_JSON__,
   },
 });

@@ -23,7 +23,7 @@ hello/
 后续 `fia dev/run/build` 产生的文件统一放在 `.fia/`，正式应用产物放在 `dist/`；两者默认
 加入 `.gitignore`。图标、状态栏资源和 `native/` 属于后续增量，不在首版模板中公开。
 
-## 2. 公共配置模型
+## 2. 公共配置模型（schema 2）
 
 项目从 `@semicoder/fia/config` 导入类型安全入口：
 
@@ -31,12 +31,12 @@ hello/
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 1,
+  configVersion: 2,
   app: {
     name: "My App",
     identifier: "com.example.my-app",
     version: "0.1.0",
-    quitOnLastWindowClosed: true,
+    mode: "hybrid",
   },
   entry: "src/server.ts",
   ui: "src/ui/index.html",
@@ -45,26 +45,39 @@ export default defineConfig({
     height: 700,
     minWidth: 720,
     minHeight: 480,
+    closeBehavior: "hide",
+    restoreState: true,
+    alwaysOnTop: false,
+    visibleOnAllSpaces: false,
+    visibleOverFullScreen: false,
+  },
+  statusBar: {
+    symbol: "circle.grid.2x2.fill",
+    tooltip: "My App",
   },
 });
 ```
 
-只有 `configVersion`、`app.name` 和 `app.identifier` 必填。其余阶段 1 默认值为：
+只有 `configVersion`、`app.name` 和 `app.identifier` 必填。schema 2 默认值为：
 
 - `app.version`: `0.1.0`
-- `app.quitOnLastWindowClosed`: `true`
+- `app.mode`: `dock`
 - `entry`: `src/server.ts`
 - `ui`: `src/ui/index.html`
 - 窗口：`1024 × 700`，最小 `720 × 480`
+- `window.closeBehavior`: Dock 模式为 `quit`，状态栏/混合模式为 `hide`
+- `window.restoreState`: `true`
+- `alwaysOnTop`、`visibleOnAllSpaces`、`visibleOverFullScreen`: `false`
+- 状态栏 symbol：`circle.grid.2x2.fill`；tooltip：应用名
 
 CLI 只读取当前目录的 `fia.config.ts`。配置必须默认导出普通对象，未知字段在每一层都报错；
 bundle identifier 使用 reverse-DNS 格式，版本使用数字 `X.Y.Z`。应用名必须可安全用作 `.app`
 目录名。服务入口与 UI HTML 必须是配置目录内的相对路径并指向可读文件。配置版本不兼容时
 MVP 直接失败，不自动迁移。
 
-公共 `configVersion` 与应用包内的阶段 0 `fia-config.json.schemaVersion` 是不同边界。后者
-仍是 Host 的内部输入，不出现在公共配置类型中。状态栏、置顶、vibrancy 等阶段 2 字段
-目前会按未知字段拒绝，避免接受但不生效的配置。
+公共 `configVersion` 与应用包内 `fia-config.json.schemaVersion` 是不同边界。阶段 2 CLI
+只接受公共 schema 2，旧项目需要显式迁移；Host 内部 schema 3 承载桌面字段，同时继续读取
+历史内部 schema 1/2。三种置顶/Spaces 行为相互独立，不做隐式绑定。
 
 ## 3. `fia create`
 
@@ -97,6 +110,9 @@ fia create hello --git
 `src/server.ts` 默认导出 `defineApp({ routes, fetch, websocket })`。FIA 独占 `Bun.serve`、
 监听地址、随机端口、`/__fia/*`、bootstrap/session/control token 和 stdin/stdout 生命周期；
 旧式直接 `Bun.serve` 入口会得到迁移错误。普通 HTTP 和应用 WebSocket 仍由项目代码定义。
+
+模板 UI 还从 `@semicoder/fia/native` 导入类型化桌面 API，展示当前 Dock/状态栏模式并切换
+状态栏与窗口浮动级别。该模块在普通浏览器中返回 `isAvailable() === false`，不会伪造原生能力。
 
 ## 5. CLI 构建闭环
 

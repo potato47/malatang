@@ -1,9 +1,10 @@
 # FIA Framework
 
 FIA is a macOS desktop UI framework for applications built with TypeScript and Web technologies.
-The repository contains the completed **phase 0 risk prototype** and the **phase 1 CLI MVP**: a
-reusable Swift/AppKit host launches a FIA-managed Bun runtime, while `@semicoder/fia` provides project
-creation, development HMR, production runs, signed local builds, and environment diagnostics.
+The repository contains the completed **phase 0 risk prototype**, the **phase 1 CLI MVP**, and the
+first **phase 2 desktop shell** slice. A reusable Swift/AppKit host launches a FIA-managed Bun runtime,
+while `@semicoder/fia` provides project creation, HMR, production runs, signed local builds, desktop
+application modes, window controls, and a typed native bridge.
 
 ## Requirements
 
@@ -34,10 +35,21 @@ The public package adds a typed configuration entry:
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 1,
-  app: { name: "Hello", identifier: "com.example.hello" },
+  configVersion: 2,
+  app: { name: "Hello", identifier: "com.example.hello", mode: "hybrid" },
   ui: "src/ui/index.html",
+  window: { closeBehavior: "hide", alwaysOnTop: false },
+  statusBar: { symbol: "circle.grid.2x2.fill" },
 });
+```
+
+Web UI code imports the native desktop API from its own browser entry:
+
+```ts
+import { native } from "@semicoder/fia/native";
+
+const state = await native.getState();
+await native.window.setAlwaysOnTop(!state.window.alwaysOnTop);
 ```
 
 The server entry exports declarative application routes:

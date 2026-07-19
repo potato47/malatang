@@ -37,6 +37,7 @@ describe("FIA project creation", () => {
     expect(project).toBe(resolve(cwd, "hello-world"));
     const files = [
       ".gitignore",
+      "AGENTS.md",
       "README.md",
       "fia.config.ts",
       "package.json",
@@ -64,6 +65,11 @@ describe("FIA project creation", () => {
     expect(config).toContain('name: "Hello World"');
     expect(config).toContain('identifier: "com.example.hello-world"');
     expect(config).toContain('ui: "src/ui/index.html"');
+    const agentGuide = await readFile(resolve(project, "AGENTS.md"), "utf8");
+    expect(agentGuide).toContain("Agent guide for Hello World");
+    expect(agentGuide).toContain("@semicoder/fia/native");
+    expect(agentGuide).toContain("native.isAvailable()");
+    expect(agentGuide).not.toContain("__FIA_DISPLAY_NAME__");
     expect(await readFile(resolve(project, "src/server.ts"), "utf8")).toContain("defineApp");
     expect(messages.values.join("")).toContain("bun install");
     expect(messages.values.join("")).toContain("bun run dev");

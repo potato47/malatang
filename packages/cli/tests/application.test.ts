@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { executeApplicationCommand } from "../src/application.ts";
+import { executeApplicationCommand, injectCSPNonce } from "../src/application.ts";
 import { createProject } from "../src/create.ts";
 
 const packageRoot = resolve(import.meta.dir, "..");
@@ -52,6 +52,14 @@ function output(): { stdout: string[]; stderr: string[]; io: { stdout(value: str
 }
 
 describe("FIA application commands", () => {
+  test("injects CSP nonces only into HTML tags, not JavaScript strings", () => {
+    const html = '<style>.example { color: red; }</style><script>const warning = "<script async>";</script>';
+    expect(injectCSPNonce(html, "test-nonce")).toBe(
+      '<style nonce="test-nonce">.example { color: red; }</style>'
+        + '<script nonce="test-nonce">const warning = "<script async>";</script>',
+    );
+  });
+
   test("builds, verifies, and atomically replaces a production app", async () => {
     const root = await project("unicode-app");
     const configPath = resolve(root, "fia.config.ts");
@@ -64,7 +72,10 @@ describe("FIA application commands", () => {
     expect(await Bun.file(resolve(app, "Contents/MacOS/FIAHost")).exists()).toBe(true);
     expect(await Bun.file(resolve(app, "Contents/MacOS/fia-runtime")).exists()).toBe(true);
     expect(JSON.parse(await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"))).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
+      app: { mode: "dock" },
+      window: { closeBehavior: "quit", restoreState: true },
+      statusBar: { symbol: "circle.grid.2x2.fill" },
       runtime: { mode: "production" },
     });
 
@@ -87,4 +98,29 @@ describe("FIA application commands", () => {
     })).rejects.toThrow("Direct Bun.serve() entries are not supported");
     expect(await Bun.file(resolve(root, "dist/Legacy App.app/Contents/Info.plist")).exists()).toBe(false);
   });
+
+  test("builds status bar and hybrid desktop modes with schema three", async () => {
+    for (const mode of ["statusBar", "hybrid"] as const) {
+      const root = await project(`${mode.toLowerCase()}-app`);
+      const configPath = resolve(root, "fia.config.ts");
+      const source = await readFile(configPath, "utf8");
+      await writeFile(
+        configPath,
+        source
+          .replace('mode: "dock"', `mode: "${mode}"`)
+          .replace('closeBehavior: "quit"', 'closeBehavior: "hide"'),
+      );
+      await executeApplicationCommand({ command: "build", cwd: root, debug: false, io: output().io });
+      const appName = mode === "statusBar" ? "Statusbar App" : "Hybrid App";
+      const configuration = JSON.parse(await readFile(
+        resolve(root, `dist/${appName}.app/Contents/Resources/fia-config.json`),
+        "utf8",
+      )) as Record<string, unknown>;
+      expect(configuration).toMatchObject({
+        schemaVersion: 3,
+        app: { mode },
+        window: { closeBehavior: "hide" },
+      });
+    }
+  }, 30_000);
 });

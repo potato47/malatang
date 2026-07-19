@@ -37,16 +37,18 @@
 
 ## 阶段 2：原生桌面能力
 
-- Dock / status bar / hybrid
-- 状态栏菜单与图标状态
-- 关闭即隐藏
-- always-on-top
-- Spaces/full-screen 行为
+- [x] Dock / status bar / hybrid
+- [x] Host 管理的状态栏菜单与 SF Symbol 状态
+- [x] 关闭即隐藏
+- [x] always-on-top
+- [x] Spaces/full-screen 辅助行为
+- [x] 窗口 frame 恢复与桌面设置持久化
+- [x] 安全 native bridge schema、origin/main-frame 校验和前端状态事件
 - 文件和目录选择器
 - 通知、外部链接和 Keychain
-- native bridge schema 与 origin 校验
 
-退出标准：支持普通窗口、状态栏常驻和系统服务调用的完整桌面交互。
+当前首个垂直切片已经支持普通窗口、状态栏常驻和运行时桌面切换；完成文件面板、通知、
+外部打开和 Keychain 后达到阶段 2 完整退出标准。
 
 ## 阶段 3：发布链路
 
