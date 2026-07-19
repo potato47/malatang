@@ -57,6 +57,32 @@ struct HostWindowControllerTests {
         #expect(controller.window != nil)
     }
 
+    @Test func quitCloseBehaviorRequestsTerminationWithoutClosingTheWindow() {
+        _ = NSApplication.shared
+        var terminationRequests = 0
+        let controller = HostWindowController(
+            configuration: configuration(closeBehavior: .quit),
+            terminateApplication: { terminationRequests += 1 }
+        )
+        let shouldClose = controller.windowShouldClose(controller.window!)
+        #expect(!shouldClose)
+        #expect(terminationRequests == 1)
+        #expect(controller.window != nil)
+    }
+
+    @Test func hidingAQuitOnCloseWindowDoesNotRequestTermination() {
+        _ = NSApplication.shared
+        var terminationRequests = 0
+        let controller = HostWindowController(
+            configuration: configuration(closeBehavior: .quit),
+            terminateApplication: { terminationRequests += 1 }
+        )
+        controller.show()
+        controller.hide()
+        #expect(terminationRequests == 0)
+        #expect(controller.window?.isVisible == false)
+    }
+
     @Test func stateEventPayloadIncludesEffectiveMode() throws {
         let state = try DesktopState(
             dockVisible: true,

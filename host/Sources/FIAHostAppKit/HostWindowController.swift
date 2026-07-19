@@ -11,6 +11,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     private var quitAction: (() -> Void)?
     private var bridgeHandler: NativeBridgeHandler?
     private weak var webView: WKWebView?
+    private let terminateApplication: @MainActor () -> Void
 
     var onWebFailure: ((String) -> Void)?
     var onWindowStateChanged: (() -> Void)?
@@ -28,9 +29,14 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         )
     }
 
-    init(configuration: HostConfiguration?, restoredFrame: DesktopWindowFrame? = nil) {
+    init(
+        configuration: HostConfiguration?,
+        restoredFrame: DesktopWindowFrame? = nil,
+        terminateApplication: @escaping @MainActor () -> Void = { NSApp.terminate(nil) }
+    ) {
         developmentMode = configuration?.runtime.isDevelopment ?? false
         closeBehavior = configuration?.window.closeBehavior ?? .quit
+        self.terminateApplication = terminateApplication
         let width = configuration?.window.width ?? 900
         let height = configuration?.window.height ?? 620
         let minimumWidth = configuration?.window.minWidth ?? 640
@@ -205,9 +211,13 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard closeBehavior == .hide else { return true }
-        sender.orderOut(nil)
-        onWindowStateChanged?()
+        switch closeBehavior {
+        case .hide:
+            sender.orderOut(nil)
+            onWindowStateChanged?()
+        case .quit:
+            terminateApplication()
+        }
         return false
     }
 

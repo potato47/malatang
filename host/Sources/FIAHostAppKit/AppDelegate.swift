@@ -5,7 +5,6 @@ import Foundation
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var configuration: HostConfiguration?
     private var windowController: HostWindowController?
     private var desktopController: DesktopController?
     private var runtime: RuntimeSupervisor?
@@ -21,7 +20,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 throw HostStartupError.missingConfiguration
             }
             let configuration = try HostConfiguration.load(from: configurationURL)
-            self.configuration = configuration
             installMainMenu(applicationName: configuration.app.name)
 
             let settingsStore = try? DesktopSettingsStore(
@@ -86,10 +84,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             windowController.focus()
         }
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        configuration?.window.closeBehavior == .quit
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

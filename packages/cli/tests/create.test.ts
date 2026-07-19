@@ -65,6 +65,7 @@ describe("FIA project creation", () => {
     expect(config).toContain('name: "Hello World"');
     expect(config).toContain('identifier: "com.example.hello-world"');
     expect(config).toContain('ui: "src/ui/index.html"');
+    expect(config).not.toContain("closeBehavior");
     const agentGuide = await readFile(resolve(project, "AGENTS.md"), "utf8");
     expect(agentGuide).toContain("Agent guide for Hello World");
     expect(agentGuide).toContain("@semicoder/fia/native");

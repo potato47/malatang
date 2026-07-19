@@ -106,9 +106,7 @@ describe("FIA application commands", () => {
       const source = await readFile(configPath, "utf8");
       await writeFile(
         configPath,
-        source
-          .replace('mode: "dock"', `mode: "${mode}"`)
-          .replace('closeBehavior: "quit"', 'closeBehavior: "hide"'),
+        source.replace('mode: "dock"', `mode: "${mode}"`),
       );
       await executeApplicationCommand({ command: "build", cwd: root, debug: false, io: output().io });
       const appName = mode === "statusBar" ? "Statusbar App" : "Hybrid App";

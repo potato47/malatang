@@ -15,7 +15,6 @@ export default defineConfig({
     height: 700,
     minWidth: 720,
     minHeight: 480,
-    closeBehavior: "quit",
     restoreState: true,
     alwaysOnTop: false,
     visibleOnAllSpaces: false,
