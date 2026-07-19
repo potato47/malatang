@@ -44,7 +44,8 @@
 - 只验证 ad-hoc 本地签名；Developer ID、hardened runtime、公证和 DMG 属于阶段 3。
 - 阶段 0 页面是 vanilla UI，不代表阶段 1 默认模板选择。
 - Host 仍从源码构建；普通项目使用的预编译、版本化 Host 尚未接入。
-- 当前不包含 `fia create/dev/run/build`、HMR、状态栏、native bridge 或自动恢复策略。
+- 阶段 0 基线本身不包含公共 CLI；阶段 1 已增加 `doctor`、配置和 `create`，`dev/run/build`、
+  Host 内 HMR、状态栏、native bridge 和自动恢复策略仍未实现。
 
 ## 受限执行环境说明
 

@@ -11,7 +11,7 @@
   },
   "scripts": {
     "fia": "bun run packages/cli/src/index.ts",
-    "cli:build": "bun build packages/cli/src/index.ts --target=bun --outfile=packages/cli/dist/index.js",
+    "cli:build": "bun run --cwd packages/cli build",
     "ui:build": "bun run tools/build-ui.ts",
     "typecheck": "bun run ui:build && tsc --noEmit",
     "test:cli": "bun run cli:build && bun test packages/cli/tests",

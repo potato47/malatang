@@ -6,9 +6,17 @@
   "bin": {
     "fia": "bin/fia"
   },
+  "exports": {
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
+    }
+  },
   "files": [
     "bin",
     "dist",
+    "templates",
     "README.md"
   ],
   "engines": {
@@ -17,8 +25,14 @@
   "publishConfig": {
     "access": "public"
   },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
   "scripts": {
-    "build": "bun build src/index.ts --target=bun --outfile=dist/index.js",
+    "build": "bun build src/index.ts --target=bun --outfile=dist/index.js && bun build src/config.ts --target=bun --outfile=dist/config.js && bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
     "test": "bun run build && bun test tests",
     "prepack": "bun run build"
   }

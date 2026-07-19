@@ -1,0 +1,57 @@
+import page from "./ui/index.html";
+
+interface EchoRequest {
+  id: string;
+  message: string;
+}
+
+function runtimePort(): number {
+  const value = process.env.PORT;
+  if (value === undefined) return 3000;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw new Error("PORT must be an integer between 0 and 65535");
+  }
+  return port;
+}
+
+const server = Bun.serve({
+  hostname: "127.0.0.1",
+  port: runtimePort(),
+  development: {
+    hmr: true,
+    console: true,
+  },
+  routes: {
+    "/": page,
+    "/api/hello": () => Response.json({
+      message: "Hello from __FIA_PACKAGE_NAME__",
+      timestamp: new Date().toISOString(),
+    }),
+    "/ws": (request, bunServer) => {
+      if (bunServer.upgrade(request)) return;
+      return new Response("WebSocket upgrade required", { status: 426 });
+    },
+  },
+  websocket: {
+    maxPayloadLength: 64 * 1024,
+    message(socket, message) {
+      if (typeof message !== "string") {
+        socket.close(1003, "text messages only");
+        return;
+      }
+      try {
+        const request = JSON.parse(message) as Partial<EchoRequest>;
+        if (typeof request.id !== "string" || typeof request.message !== "string") {
+          socket.close(1007, "invalid echo request");
+          return;
+        }
+        socket.send(JSON.stringify({ id: request.id, echo: request.message }));
+      } catch {
+        socket.close(1007, "invalid JSON");
+      }
+    },
+  },
+});
+
+console.log(`Listening on ${server.url}`);

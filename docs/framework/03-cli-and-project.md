@@ -1,155 +1,106 @@
 # 项目结构、配置与 CLI
 
-## 1. 项目结构
+## 1. 阶段 1 项目结构
+
+`fia create hello` 当前生成以下 React/Bun 项目：
 
 ```text
-my-app/
+hello/
 ├── fia.config.ts
 ├── package.json
-├── bun.lock
-├── src/
-│   ├── server.ts
-│   ├── rpc.ts
-│   └── ui/
-│       ├── index.html
-│       ├── app.tsx
-│       └── style.css
-├── assets/
-│   ├── AppIcon.icns
-│   └── StatusIcon.png
-├── native/                 可选 SwiftPM 插件
-└── tests/
+├── tsconfig.json
+├── .gitignore
+├── README.md
+└── src/
+    ├── server.ts
+    └── ui/
+        ├── index.html
+        ├── main.tsx
+        ├── App.tsx
+        └── style.css
 ```
 
-生成目录统一放在 `.fia/`，默认加入 `.gitignore`：
+后续 `fia dev/run/build` 产生的文件统一放在 `.fia/`，正式应用产物放在 `dist/`；两者默认
+加入 `.gitignore`。图标、状态栏资源和 `native/` 属于后续增量，不在首版模板中公开。
 
-```text
-.fia/
-├── cache/
-├── dev/
-├── build/
-└── logs/
-```
+## 2. 公共配置模型
 
-## 2. 配置模型
+项目从 `@fia/cli/config` 导入类型安全入口：
 
 ```ts
+import { defineConfig } from "@fia/cli/config";
+
 export default defineConfig({
+  configVersion: 1,
   app: {
     name: "My App",
     identifier: "com.example.my-app",
     version: "0.1.0",
-    minimumMacOS: "14.0",
-    mode: "hybrid", // dock | statusBar | hybrid
-    quitOnLastWindowClosed: false,
+    quitOnLastWindowClosed: true,
   },
-
   entry: "src/server.ts",
-
   window: {
-    width: 1280,
-    height: 800,
-    minWidth: 800,
-    minHeight: 600,
-    titleBar: "hiddenInset",
-    vibrancy: "sidebar",
-    alwaysOnTop: false,
-    visibleOnAllSpaces: false,
-    visibleOverFullScreen: false,
-    hideInsteadOfClose: true,
-  },
-
-  statusBar: {
-    enabled: true,
-    icon: "assets/StatusIcon.png",
-    templateImage: true,
-    click: "toggleMainWindow",
-  },
-
-  security: {
-    navigationAllowlist: [],
-    allowDevTools: false,
-    contentSecurityPolicy: "default-src 'self'",
-  },
-
-  build: {
-    architecture: "arm64",
-    icon: "assets/AppIcon.icns",
+    width: 1024,
+    height: 700,
+    minWidth: 720,
+    minHeight: 480,
   },
 });
 ```
 
-配置加载后必须通过 schema 校验。未知字段默认报错，避免拼写错误被静默忽略。
+只有 `configVersion`、`app.name` 和 `app.identifier` 必填。其余阶段 1 默认值为：
 
-## 3. CLI 命令
+- `app.version`: `0.1.0`
+- `app.quitOnLastWindowClosed`: `true`
+- `entry`: `src/server.ts`
+- 窗口：`1024 × 700`，最小 `720 × 480`
 
-### `fia create <name>`
+CLI 只读取当前目录的 `fia.config.ts`。配置必须默认导出普通对象，未知字段在每一层都报错；
+bundle identifier 使用 reverse-DNS 格式，版本使用数字 `X.Y.Z`。入口必须是配置目录内的
+相对路径并指向可读文件。配置版本不兼容时 MVP 直接失败，不自动迁移。
 
-- 创建目录和模板
-- 生成 bundle identifier
-- 安装依赖
-- 初始化版本控制（可选）
-- 输出下一步命令
+公共 `configVersion` 与应用包内的阶段 0 `fia-config.json.schemaVersion` 是不同边界。后者
+仍是 Host 的内部输入，不出现在公共配置类型中。状态栏、置顶、vibrancy 等阶段 2 字段
+目前会按未知字段拒绝，避免接受但不生效的配置。
 
-### `fia dev`
+## 3. `fia create`
 
-- 校验环境与配置
-- 组装临时开发 `.app`
-- 由 Swift Host 启动 `bun --hot`
-- 保留 Swift → Bun 生命周期关系
-- 聚合但区分 Host、runtime 和 browser 日志
-- 文件变更触发 HMR
-- native 目录变化时重建并重启 Host
-
-### `fia run`
-
-- 编译生产模式 Bun runtime
-- 使用未公证的本地 `.app` 运行
-- 用于发现开发服务器与生产构建差异
-
-### `fia build`
-
-- 编译 Bun full-stack executable
-- 选择预编译 Host 或构建 native Host
-- 生成 Info.plist 和运行配置
-- 组装 `.app`
-- 执行 ad-hoc 或指定身份签名
-
-### `fia package`
-
-- 生成 ZIP 或 DMG
-- 可选 Developer ID 签名
-- 可选上传公证并 staple
-
-### `fia doctor`
-
-检查：
-
-- macOS 与 CPU 架构
-- Bun 版本
-- CLI/Host 版本
-- Swift 与 macOS SDK（仅 native 模式必需）
-- `codesign`、`notarytool`、`stapler`
-- Developer ID 证书
-- 配置和图标格式
-
-### `fia native init`
-
-生成 SwiftPM 插件目录。普通项目不执行此命令。
-
-## 4. 通用宿主与原生扩展
-
-MVP 默认只内嵌 arm64 宿主并提取到版本化 cache。x64 和 Universal Binary 在第二阶段
-完成 Bun embedded assets 与签名验证后再加入。宿主在最终组装后重新签名。
-
-启用 `native/` 后，CLI 使用 SwiftPM 组合 FIA Host SDK 和用户插件。项目仍不生成 `.xcodeproj`，但本机必须有 Swift compiler 和 macOS SDK。
-
-## 5. 开发进程树
-
-```text
-fia dev
-└── Swift Host
-    └── bun --hot src/server.ts
+```bash
+fia create hello
+fia create hello --no-install
+fia create hello --git
 ```
 
-CLI 退出时关闭 CLI → Host 控制管道；Host 随后关闭 Bun，避免开发过程中遗留后台进程。
+名称必须是单段小写 kebab-case。CLI 在当前目录生成同名项目，将 `hello-world` 转换为显示名
+`Hello World` 和占位 bundle identifier `com.example.hello-world`。已有目标一律拒绝，不提供
+覆盖选项。
+
+生成过程在目标旁的临时目录完成。默认先写入模板并运行 `bun install`；`--git` 额外执行
+`git init`。所有步骤成功后才原子移动到目标位置，失败会清理临时目录。`--no-install`
+用于离线、测试或当前仓库内尚未发布 `@fia/cli` 的开发场景。
+
+## 4. React 模板的当前边界
+
+模板使用 React 19 和 Bun 1.3.14 full-stack HTML route：
+
+- `/` 提供 React 页面与 HMR 资源。
+- `/api/hello` 展示普通 HTTP JSON 请求。
+- `/ws` 展示应用级 WebSocket Echo。
+- `bun run dev` 以 `bun --hot` 启动直接开发服务器。
+- `bun run typecheck` 执行严格 TypeScript 检查。
+
+直接 `Bun.serve` 是有意选择的过渡实现，只用于当前浏览器开发闭环。它不包含阶段 0 Host
+协议的一次性 bootstrap token、会话 cookie、control token、stdin 生命周期或退出回收，
+也不定义长期 Runtime RPC API。实现 `fia dev/run/build` 时必须迁移到 FIA 托管的 Runtime
+入口，不能把当前 `/ws` 消息格式当作稳定协议。
+
+## 5. 后续 CLI 闭环
+
+阶段 1 后续仍需实现：
+
+- `fia dev`：组装临时 `.app`，由 Host 启动带 HMR 的 FIA Runtime 并聚合日志。
+- `fia run`：使用生产启动协议运行未发布的本地 `.app`。
+- `fia build`：编译 runtime、消费预编译 Host、组装并 ad-hoc 签名 `.app`。
+
+目标进程所有权保持不变：生产和 FIA 开发模式均由 Swift Host 拥有 Bun runtime，CLI 退出
+后通过 Host 生命周期链路回收 runtime，不允许残留后台进程。

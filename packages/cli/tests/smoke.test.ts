@@ -1,18 +1,25 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import packageMetadata from "../package.json";
 import { CLI_VERSION } from "../src/metadata.ts";
 
 const packageRoot = resolve(import.meta.dir, "..");
 const executable = resolve(packageRoot, "bin/fia");
+const temporaryDirectories: string[] = [];
 
-async function run(arguments_: readonly string[]): Promise<{
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
+
+async function run(arguments_: readonly string[], cwd = packageRoot): Promise<{
   exitCode: number;
   stdout: string;
   stderr: string;
 }> {
   const child = Bun.spawn([process.execPath, executable, ...arguments_], {
-    cwd: packageRoot,
+    cwd,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -30,6 +37,14 @@ describe("published CLI shape", () => {
     expect(packageMetadata.name).toBe("@fia/cli");
     expect(packageMetadata.version).toBe(CLI_VERSION);
     expect(packageMetadata.bin).toEqual({ fia: "bin/fia" });
+    expect(packageMetadata.exports).toEqual({
+      "./config": {
+        types: "./dist/config.d.ts",
+        import: "./dist/config.js",
+        default: "./dist/config.js",
+      },
+    });
+    expect(packageMetadata.files).toContain("templates");
     expect(packageMetadata.publishConfig).toEqual({ access: "public" });
   });
 
@@ -47,5 +62,25 @@ describe("published CLI shape", () => {
       cli: { name: "@fia/cli", version: "0.1.0" },
       ok: true,
     });
+  });
+
+  test("publishes the config entry and templates used by the built CLI", async () => {
+    expect(await Bun.file(resolve(packageRoot, "dist/config.js")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "dist/config.d.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "templates/react/src/server.ts.template")).exists()).toBe(true);
+
+    const configModule = await import(`../dist/config.js?test=${crypto.randomUUID()}`) as {
+      FIA_CONFIG_VERSION: number;
+      defineConfig<T>(value: T): T;
+    };
+    expect(configModule.FIA_CONFIG_VERSION).toBe(1);
+    expect(configModule.defineConfig({ configVersion: 1 })).toEqual({ configVersion: 1 });
+
+    const cwd = await mkdtemp(resolve(tmpdir(), "fia-built-cli-"));
+    temporaryDirectories.push(cwd);
+    const result = await run(["create", "built-project", "--no-install"], cwd);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(await Bun.file(resolve(cwd, "built-project/src/ui/App.tsx")).exists()).toBe(true);
   });
 });

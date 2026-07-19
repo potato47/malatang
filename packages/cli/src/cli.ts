@@ -1,4 +1,5 @@
 import { renderDoctorText, runDoctor } from "./doctor.ts";
+import { createProject, type CreateProjectDependencies } from "./create.ts";
 import { CLI_VERSION } from "./metadata.ts";
 import { SystemDoctorProbe, type DoctorProbe } from "./system-probe.ts";
 
@@ -10,6 +11,8 @@ export interface CLIIO {
 export interface CLIDependencies {
   io?: CLIIO;
   doctorProbe?: DoctorProbe;
+  create?: CreateProjectDependencies;
+  workingDirectory?: string;
 }
 
 const defaultIO: CLIIO = {
@@ -22,9 +25,11 @@ const rootHelp = `FIA command-line interface
 Usage:
   fia [--help]
   fia [--version]
+  fia [--debug] create <name> [--no-install] [--git]
   fia [--debug] doctor [--json]
 
 Commands:
+  create       Create a React and Bun FIA project
   doctor       Check the local FIA development environment
 
 Global options:
@@ -32,6 +37,18 @@ Global options:
   -V, --version
                Show the CLI version
   --debug      Include diagnostic command details
+`;
+
+const createHelp = `Create a React and Bun FIA project
+
+Usage:
+  fia [--debug] create <name> [--no-install] [--git]
+
+Options:
+  -h, --help   Show help for create
+  --no-install Generate files without running bun install
+  --git        Initialize a Git repository
+  --debug      Include diagnostic error details
 `;
 
 const doctorHelp = `Check the local FIA development environment
@@ -51,7 +68,10 @@ function usageError(io: CLIIO, message: string): number {
 }
 
 function debugError(error: unknown): string {
-  if (error instanceof Error) return error.stack ?? error.message;
+  if (error instanceof Error) {
+    const description = error.stack ?? error.message;
+    return error.cause === undefined ? description : `${description}\nCaused by: ${debugError(error.cause)}`;
+  }
   return String(error);
 }
 
@@ -78,6 +98,40 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
     if (remaining.length !== 1) return usageError(io, "--version does not accept arguments");
     io.stdout(`fia ${CLI_VERSION}\n`);
     return 0;
+  }
+  if (command === "create") {
+    const createArguments = remaining.slice(1);
+    if (createArguments.includes("-h") || createArguments.includes("--help")) {
+      if (createArguments.length !== 1) return usageError(io, "create --help does not accept other arguments");
+      io.stdout(createHelp);
+      return 0;
+    }
+    const name = createArguments[0];
+    if (name === undefined || name.startsWith("-")) return usageError(io, "create requires a project name");
+    const flags = createArguments.slice(1);
+    const unknown = flags.find((flag) => flag !== "--no-install" && flag !== "--git");
+    if (unknown !== undefined) return usageError(io, `unknown create option: ${unknown}`);
+    for (const flag of ["--no-install", "--git"] as const) {
+      if (flags.filter((value) => value === flag).length > 1) {
+        return usageError(io, `create ${flag} may only be specified once`);
+      }
+    }
+
+    try {
+      await createProject({
+        name,
+        cwd: dependencies.workingDirectory ?? process.cwd(),
+        install: !flags.includes("--no-install"),
+        initializeGit: flags.includes("--git"),
+        io,
+        dependencies: dependencies.create,
+      });
+      return 0;
+    } catch (error) {
+      io.stderr(`fia: error: ${error instanceof Error ? error.message : "project creation failed"}\n`);
+      if (debug) io.stderr(`${debugError(error)}\n`);
+      return 1;
+    }
   }
   if (command !== "doctor") return usageError(io, `unknown command: ${command}`);
 

@@ -2,7 +2,7 @@
 
 - 最后更新：2026-07-19
 - 当前基线：阶段 0 风险原型已完成
-- 当前重点：阶段 1 公共配置与项目模型
+- 当前重点：阶段 1 构建闭环与预编译 Host
 
 本文档用于跟踪执行进度。范围和阶段定义以[路线图](docs/framework/08-roadmap.md)为准，已经形成的约束以[架构决策记录](docs/framework/09-architecture-decisions.md)为准。
 
@@ -19,7 +19,7 @@
 | 阶段 | 状态 | 交付目标 |
 | --- | --- | --- |
 | 阶段 0：风险原型 | 已完成 | AppKit Host、Bun standalone Runtime、安全启动协议和 `.app` 生命周期闭环 |
-| 阶段 1：CLI MVP | 进行中（CLI/doctor 已完成） | `fia create/dev/run/build/doctor`，用户无需打开 Xcode |
+| 阶段 1：CLI MVP | 进行中（CLI/doctor/config/create 已完成） | `fia create/dev/run/build/doctor`，用户无需打开 Xcode |
 | 阶段 2：原生桌面能力 | 已规划 | Dock/状态栏模式、窗口能力和最小原生桥接 |
 | 阶段 3：发布工程 | 已规划 | Developer ID、hardened runtime、公证、DMG 和 CI |
 | 阶段 4：平台化 | 远期 | 原生插件、通用架构、watchdog、更新器和平台服务 |
@@ -67,11 +67,11 @@
 
 ### 2. 公共配置与项目模型
 
-- [ ] **P0** 定义首版 `fia.config.ts` 公共 schema 和 `defineConfig` 类型入口。
-- [ ] **P0** 明确必填项、默认值、未知字段策略、路径解析和错误展示。
-- [ ] **P0** 将阶段 0 内部 `fia-config.json` 与公共配置模型隔离。
-- [ ] **P0** 为合法配置、缺失字段、未知字段、错误类型和版本不兼容补充测试。
-- [ ] **P1** 设计配置版本升级入口；MVP 可以只报错，不必自动迁移。
+- [x] **P0** 定义首版 `fia.config.ts` 公共 schema 和 `defineConfig` 类型入口。
+- [x] **P0** 明确必填项、默认值、未知字段策略、路径解析和错误展示。
+- [x] **P0** 将阶段 0 内部 `fia-config.json` 与公共配置模型隔离。
+- [x] **P0** 为合法配置、缺失字段、未知字段、错误类型和版本不兼容补充测试。
+- [x] **P1** 设计配置版本升级入口；MVP 使用 `configVersion` 并对不兼容版本报错。
 
 ### 3. CLI 骨架与诊断
 
@@ -82,8 +82,8 @@
 
 ### 4. 创建与运行闭环
 
-- [ ] **P0** 确定默认 UI 模板后实现 `fia create <name>`。
-- [ ] **P0** 生成最小可运行项目、配置、示例 HTTP 接口和 WebSocket Echo 页面。
+- [x] **P0** 确定 React 默认 UI 模板并实现 `fia create <name>`。
+- [x] **P0** 生成可浏览器运行的项目、配置、示例 HTTP 接口和 WebSocket Echo 页面。
 - [ ] **P0** 实现 `fia run`，按生产模式启动 Host 与 Runtime。
 - [ ] **P0** 实现 `fia dev`，组装临时 `.app` 并启动开发模式。
 - [ ] **P0** 接入 Bun HMR，验证前端修改无需重启 Host。
@@ -101,7 +101,7 @@
 
 ### 6. 阶段 1 验收
 
-- [ ] 在全新目录执行 `fia create hello`，无需手工复制框架文件。
+- [ ] 在全新目录执行 `fia create hello`，无需手工复制框架文件（生成与本地包烟测已通过，待发布 `@fia/cli` 后验证默认安装）。
 - [ ] 执行 `fia dev` 后窗口成功加载，修改 UI 能触发 HMR。
 - [ ] 执行 `fia run` 后使用与正式构建一致的生产启动协议。
 - [ ] 执行 `fia build` 后得到可双击启动、签名与架构验证通过的 `.app`。
@@ -113,7 +113,7 @@
 
 1. 已形成阶段 0 版本控制基线，并记录验证环境、限制和验收证据。
 2. 已建立 `@fia/cli`、最小命令路由和 `fia doctor`。
-3. 定稿 `fia.config.ts` 和默认 UI 模板，随后实现 `fia create`。
+3. 已定稿 `fia.config.ts` 和 React 默认模板，并实现 `fia create`。
 4. 抽取现有应用组装逻辑，实现 `fia build` 和预编译 Host 消费方式。
 5. 在构建闭环稳定后实现 `fia run`、`fia dev`、HMR 与日志聚合。
 6. 用全新目录执行端到端验收，再进入阶段 2。
@@ -121,7 +121,7 @@
 ## 进入阶段 1 前需要定案
 
 - [x] **框架名称**：正式使用 FIA Framework、`fia` 命令和 `@fia/cli` 包名。
-- [ ] **默认 UI 模板**：在 React、Solid 和 vanilla 之间选择；阶段 0 的 vanilla 页面不构成承诺。
+- [x] **默认 UI 模板**：首版使用 React；阶段 0 的 vanilla 页面不构成承诺。
 - [ ] **HTTP/WS 职责边界**：明确普通业务请求、流式事件和命令调用分别使用哪条通道。
 - [ ] **Host 分发方式**：确定预编译 Host 的版本命名、下载/内嵌策略和完整性校验。
 - [ ] **最低系统版本**：阶段 1 继续固定 macOS 14+，长期支持范围在发布前复审。

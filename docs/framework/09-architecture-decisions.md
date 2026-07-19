@@ -85,9 +85,25 @@ FIA 只负责桌面 UI、Host/Runtime 生命周期、安全通信、原生能力
 框架正式名称为 FIA Framework，公共命令为 `fia`，CLI 发布包为 `@fia/cli`。根仓库包继续
 保持私有，只承载工作区开发、风险原型和统一验证脚本；用户 CLI 使用独立包发布和版本化。
 
+## ADR-014：默认项目模板使用 React
+
+**状态：已接受**
+
+`fia create` 的阶段 1 默认模板使用 React。React 是目标 TypeScript 用户中覆盖最广的 UI
+生态，首版不增加模板选择参数；Solid、vanilla 和其他 UI 框架可以在创建闭环稳定后以可选
+模板加入。React 选择只影响脚手架，不使 React 成为 Host 或 Runtime 的框架依赖。
+
+## ADR-015：首版脚手架直接使用 Bun.serve
+
+**状态：已接受（过渡性）**
+
+首版 React 模板直接调用 `Bun.serve`，先提供可在浏览器运行的 HTTP Hello、WebSocket Echo
+和 HMR 示例。这个入口不兼容 Host 的 bootstrap、认证和 stdin 生命周期协议，也不构成稳定
+Runtime API。实现 `fia dev/run/build` 时必须迁移为 FIA 托管 Server；模板 `/ws` 的消息格式
+不承诺兼容。
+
 ## 待决策事项
 
-- UI 默认模板选 React、Solid 还是无框架
 - HTTP RPC 与 WebSocket RPC 的职责分界
 - native plugin 的 ABI/API 稳定策略
 - updater 选型与信任模型

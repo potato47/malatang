@@ -1,0 +1,18 @@
+# __FIA_DISPLAY_NAME__
+
+This project was created with FIA Framework.
+
+```bash
+bun run dev
+```
+
+If the project was created with `--no-install`, run `bun install` first.
+
+Open the printed loopback URL to try the React page, HTTP Hello request, and WebSocket Echo.
+
+## Current runtime boundary
+
+This phase 1 scaffold calls `Bun.serve` directly so it can run in a browser today. It is not yet
+connected to the Swift Host bootstrap protocol, FIA session authentication, or the production
+runtime lifecycle. The server entry will need to migrate to the FIA-managed runtime contract when
+`fia dev`, `fia run`, and `fia build` are implemented.

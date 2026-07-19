@@ -1,0 +1,18 @@
+import { defineConfig } from "@fia/cli/config";
+
+export default defineConfig({
+  configVersion: 1,
+  app: {
+    name: __FIA_APP_NAME_JSON__,
+    identifier: __FIA_APP_IDENTIFIER_JSON__,
+    version: "0.1.0",
+    quitOnLastWindowClosed: true,
+  },
+  entry: "src/server.ts",
+  window: {
+    width: 1024,
+    height: 700,
+    minWidth: 720,
+    minHeight: 480,
+  },
+});

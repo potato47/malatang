@@ -1,0 +1,87 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+type Status = "idle" | "working" | "success" | "error";
+
+interface HelloResponse {
+  message: string;
+  timestamp: string;
+}
+
+export function App() {
+  const [httpStatus, setHTTPStatus] = useState<Status>("idle");
+  const [httpMessage, setHTTPMessage] = useState("Ready to call the Bun backend.");
+  const [socketStatus, setSocketStatus] = useState<Status>("idle");
+  const [socketMessage, setSocketMessage] = useState("Ready to open an application WebSocket.");
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const callHello = useCallback(async () => {
+    setHTTPStatus("working");
+    setHTTPMessage("Requesting /api/hello …");
+    try {
+      const response = await fetch("/api/hello");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json() as HelloResponse;
+      setHTTPStatus("success");
+      setHTTPMessage(`${result.message} · ${new Date(result.timestamp).toLocaleTimeString()}`);
+    } catch (error) {
+      setHTTPStatus("error");
+      setHTTPMessage(error instanceof Error ? error.message : "Request failed");
+    }
+  }, []);
+
+  const sendEcho = useCallback(() => {
+    socketRef.current?.close();
+    setSocketStatus("working");
+    setSocketMessage("Connecting to /ws …");
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${protocol}//${location.host}/ws`);
+    socketRef.current = socket;
+    socket.addEventListener("open", () => {
+      socket.send(JSON.stringify({ id: crypto.randomUUID(), message: "Hello over WebSocket" }));
+    });
+    socket.addEventListener("message", (event) => {
+      const response = JSON.parse(String(event.data)) as { echo: string };
+      setSocketStatus("success");
+      setSocketMessage(response.echo);
+      socket.close();
+    });
+    socket.addEventListener("error", () => {
+      setSocketStatus("error");
+      setSocketMessage("WebSocket connection failed");
+    });
+  }, []);
+
+  useEffect(() => () => socketRef.current?.close(), []);
+
+  return (
+    <main>
+      <header className="hero">
+        <div className="eyebrow">FIA Framework · React</div>
+        <h1>__FIA_DISPLAY_NAME__</h1>
+        <p>A minimal Bun full-stack scaffold, ready for your desktop UI.</p>
+      </header>
+
+      <section className="grid" aria-label="Runtime checks">
+        <article className={`card ${httpStatus}`}>
+          <span className="badge">HTTP</span>
+          <h2>Hello endpoint</h2>
+          <p>{httpMessage}</p>
+          <button type="button" onClick={callHello} disabled={httpStatus === "working"}>
+            Call API
+          </button>
+        </article>
+
+        <article className={`card ${socketStatus}`}>
+          <span className="badge">WebSocket</span>
+          <h2>Echo channel</h2>
+          <p>{socketMessage}</p>
+          <button type="button" onClick={sendEcho} disabled={socketStatus === "working"}>
+            Send echo
+          </button>
+        </article>
+      </section>
+
+      <footer>Direct Bun development runtime · FIA Host integration follows in a later phase</footer>
+    </main>
+  );
+}

@@ -1,6 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { runCLI, type CLIIO } from "../src/cli.ts";
 import { FakeDoctorProbe } from "./support.ts";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
 
 function capture(): { io: CLIIO; stdout: string[]; stderr: string[] } {
   const stdout: string[] = [];
@@ -58,6 +67,35 @@ describe("fia command routing", () => {
       expect(await runCLI(args, { io: output.io, doctorProbe: new FakeDoctorProbe() })).toBe(0);
       const report = JSON.parse(output.stdout.join("")) as { checks: Array<{ details?: string[] }> };
       expect(report.checks.some((check) => check.details !== undefined)).toBe(true);
+    }
+  });
+
+  test("routes create help and a no-install project", async () => {
+    const help = capture();
+    expect(await runCLI(["create", "--help"], { io: help.io })).toBe(0);
+    expect(help.stdout.join("")).toContain("create <name>");
+
+    const cwd = await mkdtemp(resolve(tmpdir(), "fia-cli-create-"));
+    temporaryDirectories.push(cwd);
+    const created = capture();
+    expect(await runCLI(["create", "from-cli", "--no-install"], {
+      io: created.io,
+      workingDirectory: cwd,
+      create: { cliPackageSpec: "file:../cli" },
+    })).toBe(0);
+    expect(await Bun.file(resolve(cwd, "from-cli/package.json")).exists()).toBe(true);
+    expect(created.stderr).toEqual([]);
+  });
+
+  test("rejects duplicate and unknown create options", async () => {
+    for (const args of [
+      ["create", "hello", "--no-install", "--no-install"],
+      ["create", "hello", "--git", "--git"],
+      ["create", "hello", "--force"],
+    ]) {
+      const result = capture();
+      expect(await runCLI(args, { io: result.io })).toBe(2);
+      expect(result.stderr.join("")).toContain("fia: error:");
     }
   });
 
