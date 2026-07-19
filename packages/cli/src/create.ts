@@ -80,7 +80,9 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
     type: "module",
     engines: { bun: "1.3.14" },
     scripts: {
-      dev: "bun --hot src/server.ts",
+      dev: "fia dev",
+      build: "fia build",
+      run: "fia run",
       typecheck: "tsc --noEmit",
     },
     dependencies: {

@@ -9,6 +9,7 @@ export default defineConfig({
     quitOnLastWindowClosed: true,
   },
   entry: "src/server.ts",
+  ui: "src/ui/index.html",
   window: {
     width: 1024,
     height: 700,

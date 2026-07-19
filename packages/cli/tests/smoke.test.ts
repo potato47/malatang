@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import packageMetadata from "../package.json";
@@ -43,8 +44,14 @@ describe("published CLI shape", () => {
         import: "./dist/config.js",
         default: "./dist/config.js",
       },
+      "./runtime": {
+        types: "./dist/runtime.d.ts",
+        import: "./dist/runtime.js",
+        default: "./dist/runtime.js",
+      },
     });
     expect(packageMetadata.files).toContain("templates");
+    expect(packageMetadata.files).toContain("assets");
     expect(packageMetadata.publishConfig).toEqual({ access: "public" });
   });
 
@@ -67,6 +74,21 @@ describe("published CLI shape", () => {
   test("publishes the config entry and templates used by the built CLI", async () => {
     expect(await Bun.file(resolve(packageRoot, "dist/config.js")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "dist/config.d.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "dist/runtime.js")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "dist/runtime.d.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "dist/managed-runtime.js")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "assets/host/darwin-arm64/FIAHost")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "assets/host/darwin-arm64/manifest.json")).exists()).toBe(true);
+    const host = resolve(packageRoot, "assets/host/darwin-arm64/FIAHost");
+    await access(host, constants.X_OK);
+    const manifest = JSON.parse(await readFile(
+      resolve(packageRoot, "assets/host/darwin-arm64/manifest.json"),
+      "utf8",
+    )) as { sha256: string; configurationSchemas: number[]; runtimeProtocol: number };
+    const hasher = new Bun.CryptoHasher("sha256");
+    hasher.update(await Bun.file(host).arrayBuffer());
+    expect(manifest).toMatchObject({ configurationSchemas: [1, 2], runtimeProtocol: 1 });
+    expect(hasher.digest("hex")).toBe(manifest.sha256);
     expect(await Bun.file(resolve(packageRoot, "templates/react/src/server.ts.template")).exists()).toBe(true);
 
     const configModule = await import(`../dist/config.js?test=${crypto.randomUUID()}`) as {

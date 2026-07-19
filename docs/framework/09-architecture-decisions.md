@@ -95,12 +95,20 @@ FIA 只负责桌面 UI、Host/Runtime 生命周期、安全通信、原生能力
 
 ## ADR-015：首版脚手架直接使用 Bun.serve
 
-**状态：已接受（过渡性）**
+**状态：已被 ADR-016 取代**
 
 首版 React 模板直接调用 `Bun.serve`，先提供可在浏览器运行的 HTTP Hello、WebSocket Echo
 和 HMR 示例。这个入口不兼容 Host 的 bootstrap、认证和 stdin 生命周期协议，也不构成稳定
 Runtime API。实现 `fia dev/run/build` 时必须迁移为 FIA 托管 Server；模板 `/ws` 的消息格式
 不承诺兼容。
+
+## ADR-016：应用入口使用声明式 defineApp
+
+**状态：已接受**
+
+阶段 1 的 `src/server.ts` 默认导出 `defineApp({ routes, fetch, websocket })`，UI HTML 由
+`fia.config.ts` 的 `ui` 字段独立指定。FIA 独占 `Bun.serve`、随机端口、认证、内部路由与
+Host 生命周期。旧式直接 `Bun.serve` 入口明确报迁移错误，不自动改写源码。
 
 ## 待决策事项
 

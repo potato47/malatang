@@ -19,8 +19,9 @@ afterEach(async () => {
 async function project(): Promise<string> {
   const root = await mkdtemp(resolve(tmpdir(), "fia-config-test-"));
   temporaryDirectories.push(root);
-  await mkdir(resolve(root, "src"));
+  await mkdir(resolve(root, "src/ui"), { recursive: true });
   await writeFile(resolve(root, "src/server.ts"), "export {};\n");
+  await writeFile(resolve(root, "src/ui/index.html"), "<div>test</div>\n");
   return root;
 }
 
@@ -71,6 +72,7 @@ describe("public FIA configuration", () => {
         quitOnLastWindowClosed: true,
       },
       entry: resolve(root, "src/server.ts"),
+      ui: resolve(root, "src/ui/index.html"),
       window: { width: 1024, height: 700, minWidth: 720, minHeight: 480 },
     });
   });
@@ -172,6 +174,34 @@ describe("public FIA configuration", () => {
       resolveProjectConfig({ ...minimal(), entry: "src/linked.ts" }, root),
       "CONFIG_ENTRY_INVALID",
       "entry",
+    );
+  });
+
+  test("requires a safe application name and UI file inside the project", async () => {
+    const root = await project();
+    const outsideRoot = await project();
+    await symlink(resolve(outsideRoot, "src/ui/index.html"), resolve(root, "src/ui/linked.html"));
+    for (const name of [" unsafe", "unsafe/child", "unsafe:name", ".", ".."]) {
+      await expectConfigError(
+        resolveProjectConfig({ ...minimal(), app: { name, identifier: "com.example.hello" } }, root),
+        "CONFIG_INVALID",
+        "app.name",
+      );
+    }
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), ui: "src/ui/missing.html" }, root),
+      "CONFIG_UI_INVALID",
+      "ui",
+    );
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), ui: "src/ui/linked.html" }, root),
+      "CONFIG_UI_INVALID",
+      "ui",
+    );
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), ui: "src/server.ts" }, root),
+      "CONFIG_UI_INVALID",
+      "ui",
     );
   });
 

@@ -39,6 +39,7 @@ export default defineConfig({
     quitOnLastWindowClosed: true,
   },
   entry: "src/server.ts",
+  ui: "src/ui/index.html",
   window: {
     width: 1024,
     height: 700,
@@ -53,11 +54,13 @@ export default defineConfig({
 - `app.version`: `0.1.0`
 - `app.quitOnLastWindowClosed`: `true`
 - `entry`: `src/server.ts`
+- `ui`: `src/ui/index.html`
 - 窗口：`1024 × 700`，最小 `720 × 480`
 
 CLI 只读取当前目录的 `fia.config.ts`。配置必须默认导出普通对象，未知字段在每一层都报错；
-bundle identifier 使用 reverse-DNS 格式，版本使用数字 `X.Y.Z`。入口必须是配置目录内的
-相对路径并指向可读文件。配置版本不兼容时 MVP 直接失败，不自动迁移。
+bundle identifier 使用 reverse-DNS 格式，版本使用数字 `X.Y.Z`。应用名必须可安全用作 `.app`
+目录名。服务入口与 UI HTML 必须是配置目录内的相对路径并指向可读文件。配置版本不兼容时
+MVP 直接失败，不自动迁移。
 
 公共 `configVersion` 与应用包内的阶段 0 `fia-config.json.schemaVersion` 是不同边界。后者
 仍是 Host 的内部输入，不出现在公共配置类型中。状态栏、置顶、vibrancy 等阶段 2 字段
@@ -79,28 +82,33 @@ fia create hello --git
 `git init`。所有步骤成功后才原子移动到目标位置，失败会清理临时目录。`--no-install`
 用于离线、测试或当前仓库内尚未发布 `@fia/cli` 的开发场景。
 
-## 4. React 模板的当前边界
+## 4. React 模板与托管 Runtime
 
 模板使用 React 19 和 Bun 1.3.14 full-stack HTML route：
 
 - `/` 提供 React 页面与 HMR 资源。
 - `/api/hello` 展示普通 HTTP JSON 请求。
 - `/ws` 展示应用级 WebSocket Echo。
-- `bun run dev` 以 `bun --hot` 启动直接开发服务器。
+- `bun run dev` 组装临时 Host 应用并通过 Bun HMR 更新 UI 和服务路由。
+- `bun run run` 使用生产协议运行当前源码，不修改 `dist/`。
+- `bun run build` 输出 ad-hoc 签名的 arm64 `.app`。
 - `bun run typecheck` 执行严格 TypeScript 检查。
 
-直接 `Bun.serve` 是有意选择的过渡实现，只用于当前浏览器开发闭环。它不包含阶段 0 Host
-协议的一次性 bootstrap token、会话 cookie、control token、stdin 生命周期或退出回收，
-也不定义长期 Runtime RPC API。实现 `fia dev/run/build` 时必须迁移到 FIA 托管的 Runtime
-入口，不能把当前 `/ws` 消息格式当作稳定协议。
+`src/server.ts` 默认导出 `defineApp({ routes, fetch, websocket })`。FIA 独占 `Bun.serve`、
+监听地址、随机端口、`/__fia/*`、bootstrap/session/control token 和 stdin/stdout 生命周期；
+旧式直接 `Bun.serve` 入口会得到迁移错误。普通 HTTP 和应用 WebSocket 仍由项目代码定义。
 
-## 5. 后续 CLI 闭环
+## 5. CLI 构建闭环
 
-阶段 1 后续仍需实现：
+阶段 1 已实现：
 
 - `fia dev`：组装临时 `.app`，由 Host 启动带 HMR 的 FIA Runtime 并聚合日志。
 - `fia run`：使用生产启动协议运行未发布的本地 `.app`。
-- `fia build`：编译 runtime、消费预编译 Host、组装并 ad-hoc 签名 `.app`。
+- `fia build`：编译 runtime、校验内嵌预编译 Host、组装、ad-hoc 签名并严格验证 `.app`。
+
+`fia build` 在 `.fia/build/<build-id>/` staging 中完成全部工作，验证通过后原子替换
+`dist/<app.name>.app`。`fia run` 使用 `.fia/run/` 临时产物，`fia dev` 使用 `.fia/dev/`
+临时 Host 和外部 Bun 入口；两者退出后清理本次 staging。
 
 目标进程所有权保持不变：生产和 FIA 开发模式均由 Swift Host 拥有 Bun runtime，CLI 退出
 后通过 Host 生命周期链路回收 runtime，不允许残留后台进程。

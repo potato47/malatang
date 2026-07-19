@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createProject } from "../src/create.ts";
+import { isFIAApplication, type DefinedFIAApplication } from "../src/runtime.ts";
 
 const packageRoot = resolve(import.meta.dir, "..");
 const repositoryRoot = resolve(packageRoot, "../..");
@@ -57,58 +59,6 @@ async function commandOutput(command: string[], cwd: string): Promise<{ exitCode
   return { exitCode, output: `${stdout}${stderr}` };
 }
 
-async function serverOrigin(stream: ReadableStream<Uint8Array>): Promise<string> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let output = "";
-  let timeoutID: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutID = setTimeout(() => reject(new Error(`Template server did not become ready: ${output}`)), 5_000);
-  });
-  const read = (async () => {
-    while (true) {
-      const result = await reader.read();
-      if (result.done) throw new Error(`Template server exited before becoming ready: ${output}`);
-      output += decoder.decode(result.value, { stream: true });
-      const match = output.match(/Listening on (http:\/\/127\.0\.0\.1:\d+\/)/);
-      if (match?.[1] !== undefined) {
-        reader.releaseLock();
-        return match[1];
-      }
-    }
-  })();
-  try {
-    return await Promise.race([read, timeout]);
-  } finally {
-    if (timeoutID !== undefined) clearTimeout(timeoutID);
-  }
-}
-
-async function websocketEcho(origin: string): Promise<Record<string, unknown>> {
-  const url = new URL("/ws", origin);
-  url.protocol = "ws:";
-  return await new Promise((resolvePromise, reject) => {
-    const socket = new WebSocket(url);
-    const timeout = setTimeout(() => {
-      socket.close();
-      reject(new Error("Template WebSocket timed out"));
-    }, 3_000);
-    socket.addEventListener("open", () => {
-      socket.send(JSON.stringify({ id: "template-1", message: "hello" }));
-    });
-    socket.addEventListener("message", (event) => {
-      clearTimeout(timeout);
-      const response = JSON.parse(String(event.data)) as Record<string, unknown>;
-      socket.close();
-      resolvePromise(response);
-    });
-    socket.addEventListener("error", () => {
-      clearTimeout(timeout);
-      reject(new Error("Template WebSocket failed"));
-    });
-  });
-}
-
 describe("generated React template", () => {
   test("typechecks with the published config entry", async () => {
     const project = await generatedProject();
@@ -123,35 +73,29 @@ describe("generated React template", () => {
     expect(result.exitCode).toBe(0);
   });
 
-  test("serves the React page, HTTP Hello, and WebSocket Echo", async () => {
+  test("exports declarative HTTP and WebSocket handlers", async () => {
     const project = await generatedProject();
-    const child = Bun.spawn([process.execPath, "src/server.ts"], {
-      cwd: project,
-      env: { ...process.env, PORT: "0", NO_COLOR: "1" },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    try {
-      let origin: string;
-      try {
-        origin = await serverOrigin(child.stdout);
-      } catch (error) {
-        const stderr = await new Response(child.stderr).text();
-        throw new Error(`${error instanceof Error ? error.message : String(error)}\n${stderr}`);
-      }
-      const page = await fetch(origin);
-      expect(page.status).toBe(200);
-      expect(await page.text()).toContain('<div id="root"></div>');
+    const module = await import(`${pathToFileURL(resolve(project, "src/server.ts")).href}?test=${crypto.randomUUID()}`) as {
+      default: DefinedFIAApplication;
+    };
+    expect(isFIAApplication(module.default)).toBe(true);
 
-      const hello = await fetch(new URL("/api/hello", origin));
-      expect(hello.status).toBe(200);
-      expect(await hello.json()).toMatchObject({ message: "Hello from template-app" });
-      expect(await websocketEcho(origin)).toEqual({ id: "template-1", echo: "hello" });
-    } finally {
-      child.kill("SIGTERM");
-      await child.exited;
-    }
-    expect(await child.exited).not.toBe(0);
+    const hello = module.default.routes?.["/api/hello"];
+    if (typeof hello !== "function") throw new Error("Template HTTP route is not a handler");
+    const response = await hello(
+      new Request("http://127.0.0.1/api/hello") as Bun.BunRequest<string>,
+      {} as Bun.Server<undefined>,
+    );
+    expect(response).toBeInstanceOf(Response);
+    expect(await (response as Response).json()).toMatchObject({ message: "Hello from template-app" });
+
+    const sent: string[] = [];
+    module.default.websocket?.message({
+      send: (value: string) => {
+        sent.push(value);
+        return value.length;
+      },
+    } as Bun.ServerWebSocket<undefined>, JSON.stringify({ id: "template-1", message: "hello" }));
+    expect(JSON.parse(sent[0]!)).toEqual({ id: "template-1", echo: "hello" });
   });
 });

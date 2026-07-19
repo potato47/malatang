@@ -40,12 +40,14 @@
 
 - 仅支持 macOS 14+ 和 Apple Silicon；没有 x64 或 Universal Binary。
 - Runtime 固定 Bun 1.3.14，升级前必须重新执行协议、安全、签名和生命周期验证。
-- `fia-config.json` schema 1 和 Runtime protocol 1 是阶段 0 内部协议，不是公共项目配置。
+- `fia-config.json` schema 1 和 Runtime protocol 1 是阶段 0 内部协议；阶段 1 Host 同时支持
+  带 runtime 模式的内部 schema 2，二者都不是公共项目配置。
 - 只验证 ad-hoc 本地签名；Developer ID、hardened runtime、公证和 DMG 属于阶段 3。
 - 阶段 0 页面是 vanilla UI，不代表阶段 1 默认模板选择。
-- Host 仍从源码构建；普通项目使用的预编译、版本化 Host 尚未接入。
-- 阶段 0 基线本身不包含公共 CLI；阶段 1 已增加 `doctor`、配置和 `create`，`dev/run/build`、
-  Host 内 HMR、状态栏、native bridge 和自动恢复策略仍未实现。
+- 本文记录的阶段 0 原型仍从源码构建；阶段 1 普通项目已改用 CLI 内嵌、带 manifest 和
+  SHA-256 校验的预编译 Host。
+- 阶段 0 基线本身不包含公共 CLI；阶段 1 已增加 `doctor`、配置、`create/dev/run/build` 和
+  Host 内 HMR。状态栏、native bridge 和自动恢复策略仍未实现。
 
 ## 受限执行环境说明
 

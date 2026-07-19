@@ -11,12 +11,18 @@
       "types": "./dist/config.d.ts",
       "import": "./dist/config.js",
       "default": "./dist/config.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js",
+      "default": "./dist/runtime.js"
     }
   },
   "files": [
     "bin",
     "dist",
     "templates",
+    "assets",
     "README.md"
   ],
   "engines": {
@@ -32,7 +38,7 @@
     "react-dom": "19.2.7"
   },
   "scripts": {
-    "build": "bun build src/index.ts --target=bun --outfile=dist/index.js && bun build src/config.ts --target=bun --outfile=dist/config.js && bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "build": "bun build src/index.ts --target=bun --outfile=dist/index.js && bun build src/config.ts --target=bun --outfile=dist/config.js && bun build src/runtime.ts --target=bun --outfile=dist/runtime.js && bun build src/runtime/managed.ts --target=bun --outfile=dist/managed-runtime.js && bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
     "test": "bun run build && bun test tests",
     "prepack": "bun run build"
   }

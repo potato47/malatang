@@ -18,6 +18,7 @@ export interface FIAConfig {
   configVersion: typeof FIA_CONFIG_VERSION;
   app: FIAAppConfig;
   entry?: string;
+  ui?: string;
   window?: FIAWindowConfig;
 }
 

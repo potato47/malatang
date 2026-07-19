@@ -61,19 +61,21 @@ bun build --compile \
 swift build -c release
 ```
 
-CLI 记录 Host SDK 版本并在协议握手时校验。
+内嵌 Host 附带 manifest，记录 CLI/Host 版本、arm64、macOS 14、内部配置 schema 和 Runtime
+protocol，并在复制前校验 SHA-256 与 Mach-O 架构。`bun run host:package` 用当前 Host 源码
+重新生成该资产。
 
 ## 5. `.app` 组装
 
 必须生成或复制：
 
-- `Contents/MacOS/<app-name>`
+- `Contents/MacOS/FIAHost`
 - `Contents/MacOS/fia-runtime`
 - `Contents/Resources/fia-config.json`
-- `Contents/Resources/AppIcon.icns`
 - `Contents/Info.plist`
 
-`Info.plist` 至少包含 bundle identifier、executable、display name、short version、build version、minimum system version 和 icon。
+`Info.plist` 至少包含 bundle identifier、executable、display name、short version、build version
+和 minimum system version。阶段 1 使用系统默认应用图标，自定义图标随后增加。
 
 ## 6. 架构
 

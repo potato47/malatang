@@ -2,7 +2,7 @@
 
 - 最后更新：2026-07-19
 - 当前基线：阶段 0 风险原型已完成
-- 当前重点：阶段 1 构建闭环与预编译 Host
+- 当前重点：阶段 1 本地包发布验收与阶段 2 设计
 
 本文档用于跟踪执行进度。范围和阶段定义以[路线图](docs/framework/08-roadmap.md)为准，已经形成的约束以[架构决策记录](docs/framework/09-architecture-decisions.md)为准。
 
@@ -19,7 +19,7 @@
 | 阶段 | 状态 | 交付目标 |
 | --- | --- | --- |
 | 阶段 0：风险原型 | 已完成 | AppKit Host、Bun standalone Runtime、安全启动协议和 `.app` 生命周期闭环 |
-| 阶段 1：CLI MVP | 进行中（CLI/doctor/config/create 已完成） | `fia create/dev/run/build/doctor`，用户无需打开 Xcode |
+| 阶段 1：CLI MVP | 功能完成（待公开包发布验收） | `fia create/dev/run/build/doctor`，用户无需打开 Xcode |
 | 阶段 2：原生桌面能力 | 已规划 | Dock/状态栏模式、窗口能力和最小原生桥接 |
 | 阶段 3：发布工程 | 已规划 | Developer ID、hardened runtime、公证、DMG 和 CI |
 | 阶段 4：平台化 | 远期 | 原生插件、通用架构、watchdog、更新器和平台服务 |
@@ -63,7 +63,7 @@
 
 - [x] **P0** 将当前阶段 0 文件纳入版本控制并形成可回退的基线提交。
 - [x] **P0** 记录本机验证环境和已知限制，确保后续 CLI 重构不降低现有验收标准。
-- [ ] **P1** 为协议与构建产物增加显式兼容版本，CLI、Host、Runtime 不匹配时尽早失败。
+- [x] **P1** 为协议与构建产物增加显式兼容版本，CLI、Host、Runtime 不匹配时尽早失败。
 
 ### 2. 公共配置与项目模型
 
@@ -83,47 +83,47 @@
 ### 4. 创建与运行闭环
 
 - [x] **P0** 确定 React 默认 UI 模板并实现 `fia create <name>`。
-- [x] **P0** 生成可浏览器运行的项目、配置、示例 HTTP 接口和 WebSocket Echo 页面。
-- [ ] **P0** 实现 `fia run`，按生产模式启动 Host 与 Runtime。
-- [ ] **P0** 实现 `fia dev`，组装临时 `.app` 并启动开发模式。
-- [ ] **P0** 接入 Bun HMR，验证前端修改无需重启 Host。
-- [ ] **P1** 聚合 CLI、Host、Runtime 和 WebView 的开发日志。
-- [ ] **P1** 正确处理 Command-Q、CLI 中断、Runtime 崩溃和 Host 崩溃，不残留进程。
+- [x] **P0** 生成 FIA 托管的 React 项目、配置、示例 HTTP 接口和 WebSocket Echo 页面。
+- [x] **P0** 实现 `fia run`，按生产模式启动 Host 与 Runtime。
+- [x] **P0** 实现 `fia dev`，组装临时 `.app` 并启动开发模式。
+- [x] **P0** 接入 Bun HMR，验证前端修改无需重启 Host 或 Runtime。
+- [x] **P1** 聚合 CLI、Host、Runtime 和 WebView 的开发日志。
+- [x] **P1** 正确处理 Command-Q、CLI 中断、Runtime 崩溃和 Host 崩溃，不残留进程。
 
 ### 5. 正式构建闭环
 
-- [ ] **P0** 把阶段 0 构建脚本拆成可复用、可测试的内部构建流水线。
-- [ ] **P0** 实现 `fia build`，从用户配置生成独立 `.app`。
-- [ ] **P0** 打包预编译 arm64 Host，并校验 Host、Runtime 和协议版本。
-- [ ] **P0** 保持临时目录构建、签名顺序、严格验证和原子产物替换。
-- [ ] **P1** 为路径包含空格、非 ASCII 应用名、构建失败清理和重复构建补充测试。
+- [x] **P0** 把阶段 0 构建逻辑抽成可复用、可测试的内部构建流水线。
+- [x] **P0** 实现 `fia build`，从用户配置生成独立 `.app`。
+- [x] **P0** 打包预编译 arm64 Host，并校验 Host、Runtime 和协议版本。
+- [x] **P0** 保持临时目录构建、签名顺序、严格验证和原子产物替换。
+- [x] **P1** 为路径包含空格、非 ASCII 应用名、构建失败清理和重复构建补充测试。
 - [ ] **P1** 让失败信息指出具体构建阶段，并保留可选诊断目录。
 
 ### 6. 阶段 1 验收
 
 - [ ] 在全新目录执行 `fia create hello`，无需手工复制框架文件（生成与本地包烟测已通过，待发布 `@fia/cli` 后验证默认安装）。
-- [ ] 执行 `fia dev` 后窗口成功加载，修改 UI 能触发 HMR。
-- [ ] 执行 `fia run` 后使用与正式构建一致的生产启动协议。
-- [ ] 执行 `fia build` 后得到可双击启动、签名与架构验证通过的 `.app`。
-- [ ] 用户全流程不需要创建或打开 Xcode 工程。
-- [ ] HTTP Hello、WebSocket Echo、异常恢复和无残留进程回归通过。
-- [ ] README 和框架文档更新为真实 CLI 用法。
+- [x] 执行 `fia dev` 后窗口成功加载，修改 UI 能触发 HMR。
+- [x] 执行 `fia run` 后使用与正式构建一致的生产启动协议。
+- [x] 执行 `fia build` 后得到可双击启动、签名与架构验证通过的 `.app`。
+- [x] 用户全流程不需要创建或打开 Xcode 工程。
+- [x] HTTP Hello、WebSocket Echo、异常恢复和无残留进程回归通过。
+- [x] README 和框架文档更新为真实 CLI 用法。
 
 ## 建议的近期执行顺序
 
 1. 已形成阶段 0 版本控制基线，并记录验证环境、限制和验收证据。
 2. 已建立 `@fia/cli`、最小命令路由和 `fia doctor`。
 3. 已定稿 `fia.config.ts` 和 React 默认模板，并实现 `fia create`。
-4. 抽取现有应用组装逻辑，实现 `fia build` 和预编译 Host 消费方式。
-5. 在构建闭环稳定后实现 `fia run`、`fia dev`、HMR 与日志聚合。
-6. 用全新目录执行端到端验收，再进入阶段 2。
+4. 已完成 `fia build`、预编译 Host、`fia run`、`fia dev`、HMR 与日志聚合。
+5. 发布 `@fia/cli` 后在完全独立目录验证默认 `bun install` 流程。
+6. 保持阶段 1 回归绿灯，进入阶段 2。
 
 ## 进入阶段 1 前需要定案
 
 - [x] **框架名称**：正式使用 FIA Framework、`fia` 命令和 `@fia/cli` 包名。
 - [x] **默认 UI 模板**：首版使用 React；阶段 0 的 vanilla 页面不构成承诺。
 - [ ] **HTTP/WS 职责边界**：明确普通业务请求、流式事件和命令调用分别使用哪条通道。
-- [ ] **Host 分发方式**：确定预编译 Host 的版本命名、下载/内嵌策略和完整性校验。
+- [x] **Host 分发方式**：CLI 内嵌版本化 arm64 Host，并使用 manifest 与 SHA-256 校验。
 - [ ] **最低系统版本**：阶段 1 继续固定 macOS 14+，长期支持范围在发布前复审。
 
 以下决策不阻塞阶段 1，继续保留在后续阶段：原生插件 ABI/API、更新器信任模型、watchdog 默认策略。

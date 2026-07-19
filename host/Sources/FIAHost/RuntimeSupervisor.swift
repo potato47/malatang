@@ -54,7 +54,7 @@ final class RuntimeSupervisor: NSObject {
         resetRunState()
 
         do {
-            let runtimeURL = try locateRuntime()
+            let launch = try locateRuntime()
             let dataDirectory = try createDataDirectory()
             let bootstrapToken = try RuntimeProtocol.secureToken()
             let controlToken = try RuntimeProtocol.secureToken()
@@ -64,7 +64,8 @@ final class RuntimeSupervisor: NSObject {
             let input = Pipe()
             let output = Pipe()
             let error = Pipe()
-            process.executableURL = runtimeURL
+            process.executableURL = launch.executable
+            process.arguments = launch.arguments
             process.currentDirectoryURL = dataDirectory
             process.standardInput = input
             process.standardOutput = output
@@ -174,15 +175,32 @@ final class RuntimeSupervisor: NSObject {
         sigtermWorkItem = nil
     }
 
-    private func locateRuntime() throws -> URL {
-        let url = bundle.bundleURL
-            .appendingPathComponent("Contents", isDirectory: true)
-            .appendingPathComponent("MacOS", isDirectory: true)
-            .appendingPathComponent("fia-runtime", isDirectory: false)
+    private struct RuntimeLaunch {
+        let executable: URL
+        let arguments: [String]
+    }
+
+    private func locateRuntime() throws -> RuntimeLaunch {
+        let url: URL
+        let arguments: [String]
+        switch configuration.runtime.mode {
+        case .production:
+            url = bundle.bundleURL
+                .appendingPathComponent("Contents", isDirectory: true)
+                .appendingPathComponent("MacOS", isDirectory: true)
+                .appendingPathComponent("fia-runtime", isDirectory: false)
+            arguments = []
+        case .development:
+            guard let executable = configuration.runtime.executable,
+                  let configuredArguments = configuration.runtime.arguments
+            else { throw RuntimeLocationError.invalidDevelopmentConfiguration }
+            url = URL(fileURLWithPath: executable, isDirectory: false)
+            arguments = configuredArguments
+        }
         guard FileManager.default.isExecutableFile(atPath: url.path) else {
             throw RuntimeLocationError.missingExecutable(url.path)
         }
-        return url
+        return RuntimeLaunch(executable: url, arguments: arguments)
     }
 
     private func createDataDirectory() throws -> URL {
@@ -259,6 +277,11 @@ final class RuntimeSupervisor: NSObject {
         }
         if let message = String(data: data, encoding: .utf8) {
             logger.info("\(message, privacy: .public)")
+            if configuration.runtime.isDevelopment
+                || ProcessInfo.processInfo.environment["FIA_INTERNAL_DIAGNOSTICS"] == "1"
+            {
+                try? FileHandle.standardError.write(contentsOf: Data("fia-runtime: \(message)".utf8))
+            }
         }
     }
 
@@ -403,11 +426,13 @@ final class RuntimeSupervisor: NSObject {
 private enum RuntimeLocationError: Error, LocalizedError {
     case missingExecutable(String)
     case duplicateToken
+    case invalidDevelopmentConfiguration
 
     var errorDescription: String? {
         switch self {
         case let .missingExecutable(path): "Runtime executable is missing or not executable at \(path)"
         case .duplicateToken: "Secure random generation returned duplicate tokens"
+        case .invalidDevelopmentConfiguration: "Development runtime configuration is incomplete"
         }
     }
 }

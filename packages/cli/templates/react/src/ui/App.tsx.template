@@ -81,7 +81,7 @@ export function App() {
         </article>
       </section>
 
-      <footer>Direct Bun development runtime · FIA Host integration follows in a later phase</footer>
+      <footer>FIA managed runtime · secure local session · React hot reload</footer>
     </main>
   );
 }

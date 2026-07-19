@@ -31,6 +31,9 @@ describe("fia command routing", () => {
     expect(await runCLI([], { io: output.io })).toBe(0);
     expect(output.stdout.join("")).toContain("Usage:");
     expect(output.stdout.join("")).toContain("doctor");
+    expect(output.stdout.join("")).toContain("dev");
+    expect(output.stdout.join("")).toContain("build");
+    expect(output.stdout.join("")).toContain("run");
     expect(output.stderr).toEqual([]);
   });
 
@@ -96,6 +99,18 @@ describe("fia command routing", () => {
       const result = capture();
       expect(await runCLI(args, { io: result.io })).toBe(2);
       expect(result.stderr.join("")).toContain("fia: error:");
+    }
+  });
+
+  test("shows application command help and rejects options", async () => {
+    for (const command of ["dev", "build", "run"] as const) {
+      const help = capture();
+      expect(await runCLI([command, "--help"], { io: help.io })).toBe(0);
+      expect(help.stdout.join("")).toContain(`fia [--debug] ${command}`);
+
+      const invalid = capture();
+      expect(await runCLI([command, "--unknown"], { io: invalid.io })).toBe(2);
+      expect(invalid.stderr.join("")).toContain(`unknown ${command} option`);
     }
   });
 

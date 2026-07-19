@@ -1,29 +1,12 @@
-import page from "./ui/index.html";
+import { defineApp } from "@fia/cli/runtime";
 
 interface EchoRequest {
   id: string;
   message: string;
 }
 
-function runtimePort(): number {
-  const value = process.env.PORT;
-  if (value === undefined) return 3000;
-  const port = Number(value);
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new Error("PORT must be an integer between 0 and 65535");
-  }
-  return port;
-}
-
-const server = Bun.serve({
-  hostname: "127.0.0.1",
-  port: runtimePort(),
-  development: {
-    hmr: true,
-    console: true,
-  },
+export default defineApp({
   routes: {
-    "/": page,
     "/api/hello": () => Response.json({
       message: "Hello from __FIA_PACKAGE_NAME__",
       timestamp: new Date().toISOString(),
@@ -53,5 +36,3 @@ const server = Bun.serve({
     },
   },
 });
-
-console.log(`Listening on ${server.url}`);

@@ -1,11 +1,12 @@
 import { constants } from "node:fs";
 import { access, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { FIA_CONFIG_VERSION, type FIAConfig } from "./config.ts";
 
 const CONFIG_FILE_NAME = "fia.config.ts";
 const DEFAULT_ENTRY = "src/server.ts";
+const DEFAULT_UI = "src/ui/index.html";
 const DEFAULT_APP_VERSION = "0.1.0";
 const DEFAULT_WINDOW = {
   width: 1024,
@@ -19,7 +20,8 @@ export type ProjectConfigErrorCode =
   | "CONFIG_IMPORT_FAILED"
   | "CONFIG_INVALID"
   | "CONFIG_UNSUPPORTED_VERSION"
-  | "CONFIG_ENTRY_INVALID";
+  | "CONFIG_ENTRY_INVALID"
+  | "CONFIG_UI_INVALID";
 
 export class ProjectConfigError extends Error {
   readonly code: ProjectConfigErrorCode;
@@ -44,6 +46,7 @@ export interface ResolvedFIAConfig {
     readonly quitOnLastWindowClosed: boolean;
   };
   readonly entry: string;
+  readonly ui: string;
   readonly window: {
     readonly width: number;
     readonly height: number;
@@ -117,20 +120,61 @@ function optionalDimension(
   return value;
 }
 
-function resolveEntry(projectRoot: string, value: string): string {
+function resolveProjectFile(
+  projectRoot: string,
+  value: string,
+  field: "entry" | "ui",
+  code: "CONFIG_ENTRY_INVALID" | "CONFIG_UI_INVALID",
+): string {
   if (isAbsolute(value)) {
-    throw new ProjectConfigError("CONFIG_ENTRY_INVALID", "entry: must be relative to fia.config.ts", {
-      path: "entry",
+    throw new ProjectConfigError(code, `${field}: must be relative to fia.config.ts`, {
+      path: field,
     });
   }
-  const entry = resolve(projectRoot, value);
-  const fromRoot = relative(projectRoot, entry);
+  const file = resolve(projectRoot, value);
+  const fromRoot = relative(projectRoot, file);
   if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-    throw new ProjectConfigError("CONFIG_ENTRY_INVALID", "entry: must stay inside the project directory", {
-      path: "entry",
+    throw new ProjectConfigError(code, `${field}: must stay inside the project directory`, {
+      path: field,
     });
   }
-  return entry;
+  return file;
+}
+
+async function requireReadableProjectFile(
+  projectRoot: string,
+  value: string,
+  field: "entry" | "ui",
+  code: "CONFIG_ENTRY_INVALID" | "CONFIG_UI_INVALID",
+): Promise<string> {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new ProjectConfigError(code, `${field}: expected a non-empty relative path`, { path: field });
+  }
+  const file = resolveProjectFile(projectRoot, value, field, code);
+  try {
+    const fileStat = await stat(file);
+    if (!fileStat.isFile()) throw new Error("not a file");
+    await access(file, constants.R_OK);
+    const [physicalRoot, physicalFile] = await Promise.all([realpath(projectRoot), realpath(file)]);
+    const physicalRelative = relative(physicalRoot, physicalFile);
+    if (
+      physicalRelative === "" ||
+      physicalRelative === ".." ||
+      physicalRelative.startsWith(`..${sep}`) ||
+      isAbsolute(physicalRelative)
+    ) {
+      throw new ProjectConfigError(code, `${field}: resolved file must stay inside the project directory`, {
+        path: field,
+      });
+    }
+  } catch (error) {
+    if (error instanceof ProjectConfigError) throw error;
+    throw new ProjectConfigError(code, `${field}: file is not readable: ${value}`, {
+      path: field,
+      cause: error,
+    });
+  }
+  return file;
 }
 
 export async function resolveProjectConfig(
@@ -140,7 +184,7 @@ export async function resolveProjectConfig(
 ): Promise<ResolvedFIAConfig> {
   const projectRoot = resolve(projectDirectory);
   const root = objectAt(value, "config");
-  exactKeys(root, ["configVersion", "app", "entry", "window"], "config");
+  exactKeys(root, ["configVersion", "app", "entry", "ui", "window"], "config");
 
   if (root.configVersion === undefined) invalid("configVersion", "is required");
   if (root.configVersion !== FIA_CONFIG_VERSION) {
@@ -157,6 +201,9 @@ export async function resolveProjectConfig(
   const app = objectAt(root.app, "app");
   exactKeys(app, ["name", "identifier", "version", "quitOnLastWindowClosed"], "app");
   const name = requiredString(app, "name", "app");
+  if (name !== name.trim() || name === "." || name === ".." || /[\0/:]/.test(name)) {
+    invalid("app.name", "must be a safe macOS application name without surrounding whitespace, '/', ':', or NUL");
+  }
   const identifier = requiredString(app, "identifier", "app");
   const identifierPattern = /^[A-Za-z0-9][A-Za-z0-9-]*(\.[A-Za-z0-9][A-Za-z0-9-]*)+$/;
   if (!identifierPattern.test(identifier)) invalid("app.identifier", "expected a reverse-DNS bundle identifier");
@@ -165,32 +212,11 @@ export async function resolveProjectConfig(
   const quitOnLastWindowClosed = optionalBoolean(app, "quitOnLastWindowClosed", "app", true);
 
   const entryValue = root.entry === undefined ? DEFAULT_ENTRY : root.entry;
-  if (typeof entryValue !== "string" || entryValue.trim().length === 0) {
-    invalid("entry", "expected a non-empty relative path");
-  }
-  const entry = resolveEntry(projectRoot, entryValue);
-  try {
-    const entryStat = await stat(entry);
-    if (!entryStat.isFile()) throw new Error("not a file");
-    await access(entry, constants.R_OK);
-    const [physicalRoot, physicalEntry] = await Promise.all([realpath(projectRoot), realpath(entry)]);
-    const physicalRelative = relative(physicalRoot, physicalEntry);
-    if (
-      physicalRelative === "" ||
-      physicalRelative === ".." ||
-      physicalRelative.startsWith(`..${sep}`) ||
-      isAbsolute(physicalRelative)
-    ) {
-      throw new ProjectConfigError("CONFIG_ENTRY_INVALID", "entry: resolved file must stay inside the project directory", {
-        path: "entry",
-      });
-    }
-  } catch (error) {
-    if (error instanceof ProjectConfigError) throw error;
-    throw new ProjectConfigError("CONFIG_ENTRY_INVALID", `entry: file is not readable: ${entryValue}`, {
-      path: "entry",
-      cause: error,
-    });
+  const uiValue = root.ui === undefined ? DEFAULT_UI : root.ui;
+  const entry = await requireReadableProjectFile(projectRoot, entryValue as string, "entry", "CONFIG_ENTRY_INVALID");
+  const ui = await requireReadableProjectFile(projectRoot, uiValue as string, "ui", "CONFIG_UI_INVALID");
+  if (extname(ui).toLowerCase() !== ".html") {
+    throw new ProjectConfigError("CONFIG_UI_INVALID", "ui: expected an HTML entry file", { path: "ui" });
   }
 
   const window = root.window === undefined ? {} : objectAt(root.window, "window");
@@ -208,6 +234,7 @@ export async function resolveProjectConfig(
     configPath,
     app: { name, identifier, version, quitOnLastWindowClosed },
     entry,
+    ui,
     window: { width, height, minWidth, minHeight },
   };
 }

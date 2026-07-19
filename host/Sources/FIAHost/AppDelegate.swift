@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import FIAHostCore
 import Foundation
 
@@ -9,9 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var runtime: RuntimeSupervisor?
     private var terminationPending = false
     private var autoQuitScheduled = false
+    private var terminationSignalSources: [DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        installMainMenu()
+        installTerminationSignalHandlers()
         NSApp.setActivationPolicy(.regular)
 
         do {
@@ -20,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let configuration = try HostConfiguration.load(from: configurationURL)
             self.configuration = configuration
+            installMainMenu(applicationName: configuration.app.name)
             let windowController = HostWindowController(configuration: configuration)
             self.windowController = windowController
             windowController.onWebFailure = { [weak self] detail in
@@ -35,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.runtime = runtime
             runtime.start()
         } catch {
+            installMainMenu(applicationName: "FIA Host")
             let windowController = HostWindowController(configuration: nil)
             self.windowController = windowController
             windowController.showFailure(
@@ -65,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        terminationSignalSources.forEach { $0.cancel() }
+        terminationSignalSources.removeAll()
         runtime?.forceStop()
     }
 
@@ -105,14 +111,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func installMainMenu() {
+    private func installTerminationSignalHandlers() {
+        for signalNumber in [SIGINT, SIGTERM] {
+            Darwin.signal(signalNumber, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
+            source.setEventHandler {
+                NSApp.terminate(nil)
+            }
+            source.resume()
+            terminationSignalSources.append(source)
+        }
+    }
+
+    private func installMainMenu(applicationName: String) {
         let mainMenu = NSMenu()
 
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenu.addItem(
-            withTitle: "Quit FIA Prototype",
+            withTitle: "Quit \(applicationName)",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )

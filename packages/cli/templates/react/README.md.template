@@ -4,15 +4,16 @@ This project was created with FIA Framework.
 
 ```bash
 bun run dev
+bun run build
+bun run run
 ```
 
 If the project was created with `--no-install`, run `bun install` first.
 
-Open the printed loopback URL to try the React page, HTTP Hello request, and WebSocket Echo.
+`bun run dev` launches the native FIA window with React hot reload. The other commands create a
+signed local application or launch the current source through the production runtime protocol.
 
-## Current runtime boundary
+## Runtime boundary
 
-This phase 1 scaffold calls `Bun.serve` directly so it can run in a browser today. It is not yet
-connected to the Swift Host bootstrap protocol, FIA session authentication, or the production
-runtime lifecycle. The server entry will need to migrate to the FIA-managed runtime contract when
-`fia dev`, `fia run`, and `fia build` are implemented.
+The server entry exports `defineApp({ routes, websocket })`. FIA owns the loopback listener,
+bootstrap session, Host protocol, and process lifecycle; application code owns its route behavior.

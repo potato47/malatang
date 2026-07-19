@@ -27,16 +27,51 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         }
     }
 
+    public struct Runtime: Codable, Equatable, Sendable {
+        public enum Mode: String, Codable, Equatable, Sendable {
+            case production
+            case development
+        }
+
+        public let mode: Mode
+        public let executable: String?
+        public let arguments: [String]?
+
+        public init(mode: Mode, executable: String? = nil, arguments: [String]? = nil) {
+            self.mode = mode
+            self.executable = executable
+            self.arguments = arguments
+        }
+
+        public static let production = Runtime(mode: .production)
+        public var isDevelopment: Bool { mode == .development }
+    }
+
+    private struct LegacyConfiguration: Codable {
+        let schemaVersion: Int
+        let protocolVersion: Int
+        let app: App
+        let window: Window
+    }
+
     public let schemaVersion: Int
     public let protocolVersion: Int
     public let app: App
     public let window: Window
+    public let runtime: Runtime
 
-    public init(schemaVersion: Int, protocolVersion: Int, app: App, window: Window) {
+    public init(
+        schemaVersion: Int,
+        protocolVersion: Int,
+        app: App,
+        window: Window,
+        runtime: Runtime = .production
+    ) {
         self.schemaVersion = schemaVersion
         self.protocolVersion = protocolVersion
         self.app = app
         self.window = window
+        self.runtime = runtime
     }
 
     public static func load(from url: URL, maximumBytes: Int = 64 * 1024) throws -> HostConfiguration {
@@ -56,16 +91,55 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         } catch {
             throw HostConfigurationError.invalidJSON
         }
-        guard let root = object as? [String: Any] else { throw HostConfigurationError.invalidShape }
-        try requireExactKeys(root, expected: ["schemaVersion", "protocolVersion", "app", "window"], at: "root")
-        guard let app = root["app"] as? [String: Any] else { throw HostConfigurationError.invalidShape }
-        try requireExactKeys(app, expected: ["name", "identifier", "quitOnLastWindowClosed"], at: "app")
-        guard let window = root["window"] as? [String: Any] else { throw HostConfigurationError.invalidShape }
-        try requireExactKeys(window, expected: ["width", "height", "minWidth", "minHeight"], at: "window")
+        guard let root = object as? [String: Any], let schemaVersion = root["schemaVersion"] as? Int else {
+            throw HostConfigurationError.invalidShape
+        }
+        guard let appObject = root["app"] as? [String: Any], let windowObject = root["window"] as? [String: Any] else {
+            throw HostConfigurationError.invalidShape
+        }
+        try requireExactKeys(appObject, expected: ["name", "identifier", "quitOnLastWindowClosed"], at: "app")
+        try requireExactKeys(windowObject, expected: ["width", "height", "minWidth", "minHeight"], at: "window")
 
         let configuration: HostConfiguration
         do {
-            configuration = try JSONDecoder().decode(HostConfiguration.self, from: data)
+            switch schemaVersion {
+            case 1:
+                try requireExactKeys(
+                    root,
+                    expected: ["schemaVersion", "protocolVersion", "app", "window"],
+                    at: "root"
+                )
+                let legacy = try JSONDecoder().decode(LegacyConfiguration.self, from: data)
+                configuration = HostConfiguration(
+                    schemaVersion: legacy.schemaVersion,
+                    protocolVersion: legacy.protocolVersion,
+                    app: legacy.app,
+                    window: legacy.window,
+                    runtime: .production
+                )
+            case 2:
+                try requireExactKeys(
+                    root,
+                    expected: ["schemaVersion", "protocolVersion", "app", "window", "runtime"],
+                    at: "root"
+                )
+                guard let runtimeObject = root["runtime"] as? [String: Any],
+                      let mode = runtimeObject["mode"] as? String
+                else { throw HostConfigurationError.invalidShape }
+                switch mode {
+                case Runtime.Mode.production.rawValue:
+                    try requireExactKeys(runtimeObject, expected: ["mode"], at: "runtime")
+                case Runtime.Mode.development.rawValue:
+                    try requireExactKeys(runtimeObject, expected: ["mode", "executable", "arguments"], at: "runtime")
+                default:
+                    throw HostConfigurationError.invalidRuntime
+                }
+                configuration = try JSONDecoder().decode(HostConfiguration.self, from: data)
+            default:
+                throw HostConfigurationError.unsupportedSchema(schemaVersion)
+            }
+        } catch let error as HostConfigurationError {
+            throw error
         } catch {
             throw HostConfigurationError.invalidShape
         }
@@ -74,7 +148,9 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
     }
 
     private func validate() throws {
-        guard schemaVersion == 1 else { throw HostConfigurationError.unsupportedSchema(schemaVersion) }
+        guard schemaVersion == 1 || schemaVersion == 2 else {
+            throw HostConfigurationError.unsupportedSchema(schemaVersion)
+        }
         guard protocolVersion == 1 else { throw HostConfigurationError.unsupportedProtocol(protocolVersion) }
         guard !app.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw HostConfigurationError.invalidApplicationName
@@ -89,6 +165,22 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         }
         guard window.width >= window.minWidth, window.height >= window.minHeight else {
             throw HostConfigurationError.invalidWindowDimensions
+        }
+        switch runtime.mode {
+        case .production:
+            guard runtime.executable == nil, runtime.arguments == nil else {
+                throw HostConfigurationError.invalidRuntime
+            }
+        case .development:
+            guard schemaVersion == 2,
+                  let executable = runtime.executable,
+                  NSString(string: executable).isAbsolutePath,
+                  !executable.contains("\0"),
+                  let arguments = runtime.arguments,
+                  !arguments.isEmpty,
+                  arguments.count <= 128,
+                  arguments.allSatisfy({ !$0.isEmpty && !$0.contains("\0") })
+            else { throw HostConfigurationError.invalidRuntime }
         }
     }
 
@@ -114,6 +206,7 @@ public enum HostConfigurationError: Error, Equatable, LocalizedError, Sendable {
     case invalidApplicationName
     case invalidBundleIdentifier
     case invalidWindowDimensions
+    case invalidRuntime
 
     public var errorDescription: String? {
         switch self {
@@ -126,7 +219,7 @@ public enum HostConfigurationError: Error, Equatable, LocalizedError, Sendable {
         case .invalidApplicationName: "Application name must not be empty"
         case .invalidBundleIdentifier: "Application identifier is invalid"
         case .invalidWindowDimensions: "Window dimensions are invalid"
+        case .invalidRuntime: "Runtime launch configuration is invalid"
         }
     }
 }
-

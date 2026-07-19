@@ -9,7 +9,7 @@
 
 ## 2. 所有权
 
-生产环境固定由 Swift Host 创建和拥有 Bun runtime：
+生产和开发环境都固定由 Swift Host 创建和拥有 Bun runtime：
 
 ```text
 Swift Host owns Bun runtime
@@ -17,6 +17,10 @@ Swift Host owns Bun runtime
 
 禁止 UI 绕过 Host 直接启动独立的 FIA runtime。FIA 的进程所有权到 Bun runtime 为止；
 应用代码自行启动的外部进程不属于框架生命周期 API，应用必须自行负责权限、回收和错误处理。
+
+生产配置由 Host 启动包内 `Contents/MacOS/fia-runtime`；开发配置由同一预编译 Host 启动当前
+Bun 与 CLI 生成的 `--hot` 入口。两种模式使用相同 stdin/stdout 协议和父进程回收规则，开发
+模式不会让 CLI 或 WebView 绕过 Host 直接拥有 Runtime。
 
 ## 3. 生命管道
 

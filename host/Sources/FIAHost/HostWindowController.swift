@@ -5,11 +5,13 @@ import WebKit
 @MainActor
 final class HostWindowController: NSWindowController, WKNavigationDelegate {
     private var navigationPolicy: NavigationPolicy?
+    private let developmentMode: Bool
     private var retryAction: (() -> Void)?
     private var quitAction: (() -> Void)?
     var onWebFailure: ((String) -> Void)?
 
     init(configuration: HostConfiguration?) {
+        developmentMode = configuration?.runtime.isDevelopment ?? false
         let width = configuration?.window.width ?? 900
         let height = configuration?.window.height ?? 620
         let window = NSWindow(
@@ -73,7 +75,7 @@ final class HostWindowController: NSWindowController, WKNavigationDelegate {
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
-        webView.isInspectable = false
+        webView.isInspectable = developmentMode
         window?.contentView = webView
         webView.load(URLRequest(
             url: bootstrapURL,

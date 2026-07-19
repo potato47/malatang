@@ -51,16 +51,20 @@ describe("FIA project creation", () => {
 
     const metadata = JSON.parse(await readFile(resolve(project, "package.json"), "utf8")) as {
       name: string;
+      scripts: Record<string, string>;
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
     };
     expect(metadata).toMatchObject({ name: "hello-world" });
     expect(metadata.dependencies).toEqual({ react: "^19.2.7", "react-dom": "^19.2.7" });
     expect(metadata.devDependencies["@fia/cli"]).toBe("file:../cli");
+    expect(metadata.scripts).toMatchObject({ dev: "fia dev", build: "fia build", run: "fia run" });
 
     const config = await readFile(resolve(project, "fia.config.ts"), "utf8");
     expect(config).toContain('name: "Hello World"');
     expect(config).toContain('identifier: "com.example.hello-world"');
+    expect(config).toContain('ui: "src/ui/index.html"');
+    expect(await readFile(resolve(project, "src/server.ts"), "utf8")).toContain("defineApp");
     expect(messages.values.join("")).toContain("bun install");
     expect(messages.values.join("")).toContain("bun run dev");
   });

@@ -2,6 +2,11 @@ import { renderDoctorText, runDoctor } from "./doctor.ts";
 import { createProject, type CreateProjectDependencies } from "./create.ts";
 import { CLI_VERSION } from "./metadata.ts";
 import { SystemDoctorProbe, type DoctorProbe } from "./system-probe.ts";
+import {
+  executeApplicationCommand,
+  type ApplicationCommand,
+  type ApplicationCommandDependencies,
+} from "./application.ts";
 
 export interface CLIIO {
   stdout(value: string): void;
@@ -12,6 +17,7 @@ export interface CLIDependencies {
   io?: CLIIO;
   doctorProbe?: DoctorProbe;
   create?: CreateProjectDependencies;
+  application?: ApplicationCommandDependencies;
   workingDirectory?: string;
 }
 
@@ -26,10 +32,16 @@ Usage:
   fia [--help]
   fia [--version]
   fia [--debug] create <name> [--no-install] [--git]
+  fia [--debug] dev
+  fia [--debug] build
+  fia [--debug] run
   fia [--debug] doctor [--json]
 
 Commands:
   create       Create a React and Bun FIA project
+  dev          Launch the application with React HMR
+  build        Build and ad-hoc sign a production .app
+  run          Build and launch the current source in production mode
   doctor       Check the local FIA development environment
 
 Global options:
@@ -61,6 +73,39 @@ Options:
   --json       Emit a machine-readable DoctorReport
   --debug      Include diagnostic command details
 `;
+
+const applicationHelp: Record<ApplicationCommand, string> = {
+  dev: `Launch the FIA application with hot module replacement
+
+Usage:
+  fia [--debug] dev
+
+Options:
+  -h, --help   Show help for dev
+  --debug      Include diagnostic command details
+`,
+  build: `Build and ad-hoc sign a production FIA application
+
+Usage:
+  fia [--debug] build
+
+Output:
+  dist/<application name>.app
+
+Options:
+  -h, --help   Show help for build
+  --debug      Include diagnostic command details
+`,
+  run: `Build and launch the current source using the production protocol
+
+Usage:
+  fia [--debug] run
+
+Options:
+  -h, --help   Show help for run
+  --debug      Include diagnostic command details
+`,
+};
 
 function usageError(io: CLIIO, message: string): number {
   io.stderr(`fia: error: ${message}\nRun 'fia --help' for usage.\n`);
@@ -129,6 +174,29 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
       return 0;
     } catch (error) {
       io.stderr(`fia: error: ${error instanceof Error ? error.message : "project creation failed"}\n`);
+      if (debug) io.stderr(`${debugError(error)}\n`);
+      return 1;
+    }
+  }
+  if (command === "dev" || command === "build" || command === "run") {
+    const flags = remaining.slice(1);
+    if (flags.includes("-h") || flags.includes("--help")) {
+      if (flags.length !== 1) return usageError(io, `${command} --help does not accept other options`);
+      io.stdout(applicationHelp[command]);
+      return 0;
+    }
+    if (flags.length > 0) return usageError(io, `unknown ${command} option: ${flags[0]}`);
+    try {
+      await executeApplicationCommand({
+        command,
+        cwd: dependencies.workingDirectory ?? process.cwd(),
+        debug,
+        io,
+        dependencies: dependencies.application,
+      });
+      return 0;
+    } catch (error) {
+      io.stderr(`fia: error: ${error instanceof Error ? error.message : `${command} failed`}\n`);
       if (debug) io.stderr(`${debugError(error)}\n`);
       return 1;
     }
