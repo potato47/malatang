@@ -140,6 +140,19 @@ export function readWorkspaceVersionFromLock(source: string): string {
   return match[1]!;
 }
 
+export function replaceLockVersion(source: string, current: string, target: string): string {
+  if (readWorkspaceVersionFromLock(source) !== current) {
+    throw new Error(`bun.lock workspace version does not match package version ${current}`);
+  }
+  const start = source.indexOf('"packages/cli":');
+  const remaining = source.slice(start);
+  const packagesSection = /\n\s*"packages"\s*:/.exec(remaining);
+  const end = start + packagesSection!.index;
+  const block = source.slice(start, end);
+  const replaced = block.replace(`"version": "${current}"`, `"version": "${target}"`);
+  return source.slice(0, start) + replaced + source.slice(end);
+}
+
 async function requireCleanWorkingTree(): Promise<void> {
   const status = (await run(
     ["git", "status", "--porcelain", "--untracked-files=all"],
@@ -163,9 +176,11 @@ async function writeVersionSources(current: string, target: string): Promise<voi
   if (packageSource.version !== current) throw new Error("package version changed during the version update");
   packageSource.version = target;
   const metadataSource = await readFile(METADATA_PATH, "utf8");
+  const lockSource = await readFile(LOCK_PATH, "utf8");
   await Promise.all([
     writeFile(PACKAGE_PATH, `${JSON.stringify(packageSource, null, 2)}\n`, "utf8"),
     writeFile(METADATA_PATH, replaceMetadataVersion(metadataSource, current, target), "utf8"),
+    writeFile(LOCK_PATH, replaceLockVersion(lockSource, current, target), "utf8"),
   ]);
 }
 
