@@ -66,12 +66,12 @@ describe("published CLI shape", () => {
     const version = await run(["--version"]);
     const doctor = await run(["doctor", "--json"]);
 
-    expect(version).toEqual({ exitCode: 0, stdout: "fia 0.1.0\n", stderr: "" });
+    expect(version).toEqual({ exitCode: 0, stdout: `fia ${CLI_VERSION}\n`, stderr: "" });
     expect(doctor.exitCode).toBe(0);
     expect(doctor.stderr).toBe("");
     expect(JSON.parse(doctor.stdout)).toMatchObject({
       schemaVersion: 1,
-      cli: { name: "@semicoder/fia", version: "0.1.0" },
+      cli: { name: "@semicoder/fia", version: CLI_VERSION },
       ok: true,
     });
   });

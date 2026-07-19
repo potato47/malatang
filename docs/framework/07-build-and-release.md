@@ -70,10 +70,20 @@ protocol，并在复制前校验 SHA-256 与 Mach-O 架构。`bun run host:packa
 
 ## 5. npm 发布
 
-npm 发布流程只从仓库根目录进入，避免误发布私有的 workspace 根包：
+npm 版本与发布流程只从仓库根目录进入。先从干净工作树准备下一个严格递增的 SemVer：
+
+```bash
+bun run version:npm -- 0.3.0
+```
+
+该命令同步 `packages/cli/package.json`、CLI metadata 和 `bun.lock`，重新构建内嵌 arm64 Host，
+校验 manifest/checksum；任何步骤失败都会回滚这些版本化文件。随后执行发布预演，避免误发布
+私有的 workspace 根包：
 
 ```bash
 bun run release:npm --dry-run
+git add packages/cli/package.json packages/cli/src/metadata.ts bun.lock packages/cli/assets/host
+git commit -m "release: v0.3.0"
 bun run release:npm
 ```
 

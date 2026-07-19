@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderDoctorText, runDoctor } from "../src/doctor.ts";
+import { CLI_PACKAGE_NAME, CLI_VERSION } from "../src/metadata.ts";
 import { commandResult, FakeDoctorProbe } from "./support.ts";
 
 const expectedIDs = [
@@ -21,7 +22,7 @@ describe("fia doctor", () => {
 
     expect(report).toMatchObject({
       schemaVersion: 1,
-      cli: { name: "@semicoder/fia", version: "0.1.0" },
+      cli: { name: CLI_PACKAGE_NAME, version: CLI_VERSION },
       ok: true,
     });
     expect(report.checks.map((check) => check.id)).toEqual(expectedIDs);

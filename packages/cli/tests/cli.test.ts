@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { runCLI, type CLIIO } from "../src/cli.ts";
+import { CLI_VERSION } from "../src/metadata.ts";
 import { FakeDoctorProbe } from "./support.ts";
 
 const temporaryDirectories: string[] = [];
@@ -44,7 +45,7 @@ describe("fia command routing", () => {
     expect(await runCLI(["--help"], { io: help.io })).toBe(0);
     expect(await runCLI(["--version"], { io: version.io })).toBe(0);
     expect(help.stdout.join("")).toContain("FIA command-line interface");
-    expect(version.stdout.join("")).toBe("fia 0.1.0\n");
+    expect(version.stdout.join("")).toBe(`fia ${CLI_VERSION}\n`);
   });
 
   test("renders doctor text and JSON without stderr noise", async () => {

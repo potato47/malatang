@@ -95,7 +95,14 @@ Implementation progress and upcoming work are tracked in [TODO.md](./TODO.md).
 
 ## Publish the npm package
 
-Run the entire npm release workflow from the repository root. The dry run validates version and
+Prepare a new version from a clean working tree. This updates package and CLI metadata, refreshes
+`bun.lock`, rebuilds the embedded Host, and validates the resulting manifest and checksum:
+
+```bash
+bun run version:npm -- 0.3.0
+```
+
+Then run the entire npm release workflow from the repository root. The dry run validates version and
 Host metadata, runs every test, and asks npm to show the exact public package payload without
 publishing it:
 
@@ -114,7 +121,6 @@ bun run release:npm
 Before the first public release, choose and add a license, complete the npm repository metadata,
 and confirm publish access plus 2FA for the `@semicoder` scope.
 
-The real release refuses a dirty Git working tree, verifies that the exact version is not already
-published, and publishes the `@semicoder/fia` workspace with public access. When changing the CLI
-version, update the package and CLI metadata, then run `bun run host:package` so the embedded Host
-manifest has the same version before running the release command.
+The version command requires a clean Git working tree and rolls back package metadata, lockfile, Host,
+and manifest if an update step fails. The real release also refuses a dirty tree, verifies that the
+exact version is not already published, and publishes the `@semicoder/fia` workspace with public access.

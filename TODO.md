@@ -115,7 +115,7 @@
 - [ ] **P0** 选择并添加开源许可证，补齐 npm `repository`、`homepage`、`bugs` 等发布元数据。
 - [ ] **P0** 确认 npm `@semicoder` scope 发布权限并启用发布 2FA。
 - [ ] 正式公开发布 `@semicoder/fia`，并验证 npm 页面、dist-tag 和全新目录安装。
-- [x] 当前自动化基线通过：CLI 48 项、Runtime 11 项、Swift Host 27 项。
+- [x] 当前自动化基线通过：CLI 52 项、Runtime 11 项、Swift Host 27 项。
 - [x] README 和框架文档更新为真实 CLI 用法。
 
 ## 建议的近期执行顺序

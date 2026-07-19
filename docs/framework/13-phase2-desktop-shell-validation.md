@@ -25,7 +25,7 @@
 | 验证 | 结果 |
 | --- | --- |
 | `bun run typecheck` | 通过 |
-| `bun run test:cli` | 48 项通过，覆盖 config v2、Native API、模板和三种模式构建 fixture |
+| `bun run test:cli` | 52 项通过，覆盖 config v2、Native API、模板、版本流程和三种模式构建 fixture |
 | `bun run test:runtime` | 11 项通过 |
 | `bun run test:host` | 27 项通过、7 个 suite，覆盖 Core 与 AppKit |
 | `bun run check` | 完整通过 |
@@ -57,8 +57,8 @@ manifest、签名、架构、重复构建和原子替换。生产 UI 另有回�
 
 ## 内嵌 Host 基线
 
-- Host version：`0.1.0`
-- SHA-256：`672cc9f6145961ed844e04b500f3b59fa9537fe8ec721369ecaf1a675e781c89`
+- Host version：`0.2.0`
+- SHA-256：`5edbc26f9e924b1321feb22635707d1d2779e2971560a9cd04d04fbf2a6560be`
 - configuration schemas：`[1, 2, 3]`
 - Runtime protocol：`1`
 

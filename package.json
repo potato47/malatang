@@ -22,6 +22,7 @@
     "prototype:verify": "bun run tools/verify-prototype.ts",
     "prototype:lifecycle": "bun run tools/test-lifecycle.ts",
     "check": "bun run typecheck && bun run test:cli && bun run test:runtime && bun run test:host",
+    "version:npm": "bun run tools/version-npm.ts",
     "release:npm": "bun run tools/publish-npm.ts"
   },
   "devDependencies": {
