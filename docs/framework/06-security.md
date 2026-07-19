@@ -64,7 +64,7 @@ FIA 不向应用提供内置的文件、外部进程、源码管理或领域工�
 ## 6. 签名与运行数据
 
 - `.app` 内所有 executable 和 framework 先内层后外层签名。
-- 发布构建启用 hardened runtime。
+- 阶段 1 本地构建使用 ad-hoc 签名；阶段 3 的 Developer ID 发布构建必须启用 hardened runtime。
 - 应用运行时不得修改 bundle 内文件。
 - 更新通过替换整个签名应用完成。
 - 数据、日志和下载内容只写入系统允许目录。

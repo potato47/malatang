@@ -2,6 +2,9 @@
 
 ## 1. 组件划分
 
+本节描述目标组件职责。阶段 1 已实现单窗口 Host、托管 Runtime、开发/构建编排和 ad-hoc
+签名；多窗口、状态栏、native bridge、公证和分发产物仍按路线图在后续阶段实现。
+
 ### `fia` CLI
 
 由 Bun/TypeScript 编写并编译为单文件可执行程序，负责：
@@ -87,11 +90,12 @@ Host 健康检查使用独立 control token，不复用已废弃的 bootstrap to
 ### UI 与 Bun
 
 - 页面与资源：HTTP
-- 普通查询：HTTP JSON
-- 双向应用命令和状态事件：WebSocket
-- 大文件：HTTP streaming
+- 普通查询、命令调用和下载：HTTP
+- 可由 `Response` 表达的单向流：HTTP streaming
+- 服务端主动推送和持续双向状态事件：应用 WebSocket
 
-WebSocket 协议需要支持：
+阶段 1 只提供应用 WebSocket handler 和会话安全边界，不规定业务消息格式。若后续提供框架级
+WebSocket RPC，应独立版本化并覆盖：
 
 - request / response
 - event

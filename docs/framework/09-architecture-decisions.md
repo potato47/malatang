@@ -110,13 +110,21 @@ Runtime API。实现 `fia dev/run/build` 时必须迁移为 FIA 托管 Server；
 `fia.config.ts` 的 `ui` 字段独立指定。FIA 独占 `Bun.serve`、随机端口、认证、内部路由与
 Host 生命周期。旧式直接 `Bun.serve` 入口明确报迁移错误，不自动改写源码。
 
+## ADR-017：应用数据通道与框架控制通道分离
+
+**状态：已接受**
+
+普通查询、命令调用、下载和可用 `Response` 表达的流式响应使用 HTTP `routes/fetch`；需要
+服务端主动推送或持续双向交互的应用事件使用应用 WebSocket。Host/Runtime initialize、ready、
+shutdown、health、bootstrap 和 HMR 控制属于 FIA 内部通道，不复用应用业务协议。阶段 2 的
+native bridge 使用独立的 schema、origin 校验和授权边界，也不通过应用 WebSocket 暴露 Swift。
+
 ## 待决策事项
 
-- HTTP RPC 与 WebSocket RPC 的职责分界
 - native plugin 的 ABI/API 稳定策略
 - updater 选型与信任模型
 - 是否默认启用严格 native watchdog
-- 最低 macOS 版本是否长期保持 14
+- 阶段 3 是否继续保持 macOS 14 为最低版本
 
 ## 参考资料
 

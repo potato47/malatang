@@ -103,7 +103,7 @@ fia create hello --git
 阶段 1 已实现：
 
 - `fia dev`：组装临时 `.app`，由 Host 启动带 HMR 的 FIA Runtime 并聚合日志。
-- `fia run`：使用生产启动协议运行未发布的本地 `.app`。
+- `fia run`：从当前源码构建临时生产 `.app` 并使用生产启动协议运行，不修改 `dist/`。
 - `fia build`：编译 runtime、校验内嵌预编译 Host、组装、ad-hoc 签名并严格验证 `.app`。
 
 `fia build` 在 `.fia/build/<build-id>/` staging 中完成全部工作，验证通过后原子替换

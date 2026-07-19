@@ -1,5 +1,8 @@
 # macOS 原生能力
 
+> 状态：阶段 2 目标设计。阶段 1 当前只实现 Dock 单窗口模式、应用菜单、WebView 和 Runtime
+> 生命周期；状态栏、多窗口、以下 native bridge 命令和运行时模式切换尚未进入公共 API。
+
 ## 1. 应用运行模式
 
 框架提供三个预设：
@@ -21,7 +24,7 @@
 
 使用 `NSStatusBar.system.statusItem`。Host 必须强引用 `NSStatusItem`。
 
-首期支持：
+阶段 2 首批计划支持：
 
 - template image
 - 左键显示/隐藏主窗口

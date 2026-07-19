@@ -75,7 +75,8 @@ Runtime PIDs that it launches itself. Generated files live under `.fia/` and `di
 The generated template uses the FIA-managed Runtime: Host-owned process lifecycle, one-time
 bootstrap, authenticated HTTP/WebSocket routes, strict production CSP, and development HMR are
 enabled by default. See the [framework documentation](./docs/framework/README.md), the
-[phase 0 validation baseline](./docs/framework/11-phase0-validation.md), and the
+[phase 0 validation baseline](./docs/framework/11-phase0-validation.md), the
+[phase 1 CLI MVP validation](./docs/framework/12-phase1-cli-mvp-validation.md), and the
 [experimental runtime protocol](./docs/framework/10-phase0-runtime-protocol.md).
 
 Implementation progress and upcoming work are tracked in [TODO.md](./TODO.md).
@@ -97,6 +98,9 @@ publish from the same directory:
 npm login --registry https://registry.npmjs.org/
 bun run release:npm
 ```
+
+Before the first public release, choose and add a license, complete the npm repository metadata,
+and confirm publish access plus 2FA for the `@semicoder` scope.
 
 The real release refuses a dirty Git working tree, verifies that the exact version is not already
 published, and publishes the `@semicoder/fia` workspace with public access. When changing the CLI
