@@ -45,12 +45,12 @@ final class DesktopController {
     }
 
     func start() {
+        applyActivationPolicy(state.dockVisible)
         if !statusBarController.setSymbol(state.statusBarSymbol) {
             state.statusBarSymbol = configuration.statusBar.symbol
             _ = statusBarController.setSymbol(state.statusBarSymbol)
         }
         statusBarController.setVisible(state.statusBarVisible)
-        applyActivationPolicy(state.dockVisible)
         applyWindowFlags()
         synchronizeWindowState(emit: false)
         persist()

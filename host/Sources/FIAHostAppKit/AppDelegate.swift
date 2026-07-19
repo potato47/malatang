@@ -15,7 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installTerminationSignalHandlers()
-        NSApp.setActivationPolicy(.regular)
 
         do {
             guard let configurationURL = Bundle.main.url(forResource: "fia-config", withExtension: "json") else {
@@ -47,8 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windowController.onWebFailure = { [weak self] detail in
                 self?.showRuntimeFailure(title: "Web content failed to load", detail: detail)
             }
-            windowController.show()
-            windowController.focus()
 
             let desktopController = DesktopController(
                 configuration: configuration,
@@ -66,12 +63,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             desktopController.start()
 
+            if configuration.app.mode != .statusBar {
+                windowController.show()
+                windowController.focus()
+            }
+
             let runtime = RuntimeSupervisor(configuration: configuration) { [weak self] event in
                 self?.handleRuntimeEvent(event)
             }
             self.runtime = runtime
             runtime.start()
         } catch {
+            NSApp.setActivationPolicy(.regular)
             installMainMenu(applicationName: "FIA Host")
             let windowController = HostWindowController(configuration: nil)
             self.windowController = windowController
