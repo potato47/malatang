@@ -334,6 +334,9 @@ function infoPlist(config: ResolvedFIAConfig): string {
   const name = plistEscape(config.app.name);
   const identifier = plistEscape(config.app.identifier);
   const version = plistEscape(config.app.version);
+  const icon = config.app.icon === undefined
+    ? ""
+    : "  <key>CFBundleIconFile</key><string>AppIcon</string>\n";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -342,7 +345,7 @@ function infoPlist(config: ResolvedFIAConfig): string {
   <key>CFBundleDisplayName</key><string>${name}</string>
   <key>CFBundleExecutable</key><string>${HOST_EXECUTABLE}</string>
   <key>CFBundleIdentifier</key><string>${identifier}</string>
-  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+${icon}  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>${name}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${version}</string>
@@ -397,6 +400,9 @@ async function assembleApp(
     await copyFile(runtime.executable, runtimeDestination);
     await chmod(runtimeDestination, 0o755);
   }
+  if (context.config.app.icon !== undefined) {
+    await copyFile(context.config.app.icon, resolve(resources, "AppIcon.icns"));
+  }
 
   await Promise.all([
     Bun.write(resolve(contents, "Info.plist"), infoPlist(context.config)),
@@ -435,18 +441,23 @@ async function verifyApp(context: BuildContext, mode: "development" | "productio
   const host = resolve(contents, "MacOS", HOST_EXECUTABLE);
   const plist = resolve(contents, "Info.plist");
   const configuration = resolve(contents, "Resources/fia-config.json");
-  await Promise.all([
+  const requiredResources = [
     access(host, constants.X_OK),
     access(plist, constants.R_OK),
     access(configuration, constants.R_OK),
-  ]);
-  const expected = new Map([
+  ];
+  if (context.config.app.icon !== undefined) {
+    requiredResources.push(access(resolve(contents, "Resources/AppIcon.icns"), constants.R_OK));
+  }
+  await Promise.all(requiredResources);
+  const expected = new Map<string, string>([
     ["CFBundleIdentifier", context.config.app.identifier],
     ["CFBundleExecutable", HOST_EXECUTABLE],
     ["CFBundlePackageType", "APPL"],
     ["CFBundleShortVersionString", context.config.app.version],
     ["LSMinimumSystemVersion", "14.0"],
   ]);
+  if (context.config.app.icon !== undefined) expected.set("CFBundleIconFile", "AppIcon");
   for (const [key, value] of expected) {
     if (await plistValue(plist, key, context) !== value) throw new Error(`Info.plist ${key} verification failed`);
   }

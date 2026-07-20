@@ -7,6 +7,7 @@ export default defineConfig({
     identifier: __FIA_APP_IDENTIFIER_JSON__,
     version: "0.1.0",
     mode: "dock",
+    icon: "assets/icon.icns",
   },
   entry: "src/server.ts",
   ui: "src/ui/index.html",

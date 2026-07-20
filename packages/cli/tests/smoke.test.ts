@@ -97,6 +97,8 @@ describe("published CLI shape", () => {
     expect(manifest).toMatchObject({ configurationSchemas: [1, 2, 3], runtimeProtocol: 1 });
     expect(hasher.digest("hex")).toBe(manifest.sha256);
     expect(await Bun.file(resolve(packageRoot, "templates/react/src/server.ts.template")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "templates/react/assets/icon.png")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "templates/react/assets/icon.icns")).exists()).toBe(true);
 
     const configModule = await import(`../dist/config.js?test=${crypto.randomUUID()}`) as {
       FIA_CONFIG_VERSION: number;
@@ -111,5 +113,7 @@ describe("published CLI shape", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(await Bun.file(resolve(cwd, "built-project/src/ui/App.tsx")).exists()).toBe(true);
+    expect(await Bun.file(resolve(cwd, "built-project/assets/icon.png")).exists()).toBe(true);
+    expect(await Bun.file(resolve(cwd, "built-project/assets/icon.icns")).exists()).toBe(true);
   });
 });

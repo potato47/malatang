@@ -8,6 +8,7 @@ export interface FIAAppConfig {
   identifier: string;
   version?: string;
   mode?: FIAApplicationMode;
+  icon?: string;
 }
 
 export interface FIAWindowConfig {

@@ -202,6 +202,16 @@ describe("public FIA configuration", () => {
     );
   });
 
+  test("resolves a readable ICNS app icon inside the project", async () => {
+    const root = await project();
+    await writeFile(resolve(root, "icon.icns"), "test icon");
+    const config = await resolveProjectConfig({
+      ...minimal(),
+      app: { name: "Hello", identifier: "com.example.hello", icon: "icon.icns" },
+    }, root);
+    expect(config.app.icon).toBe(resolve(root, "icon.icns"));
+  });
+
   test("requires an existing readable entry inside the project", async () => {
     const root = await project();
     const outsideRoot = await project();
@@ -253,6 +263,30 @@ describe("public FIA configuration", () => {
       resolveProjectConfig({ ...minimal(), ui: "src/server.ts" }, root),
       "CONFIG_UI_INVALID",
       "ui",
+    );
+  });
+
+  test("requires an ICNS icon inside the project", async () => {
+    const root = await project();
+    const outsideRoot = await project();
+    await writeFile(resolve(root, "icon.png"), "not an icns");
+    await writeFile(resolve(outsideRoot, "icon.icns"), "outside icon");
+    await symlink(resolve(outsideRoot, "icon.icns"), resolve(root, "linked.icns"));
+    await expectConfigError(
+      resolveProjectConfig({
+        ...minimal(),
+        app: { name: "Hello", identifier: "com.example.hello", icon: "icon.png" },
+      }, root),
+      "CONFIG_ICON_INVALID",
+      "app.icon",
+    );
+    await expectConfigError(
+      resolveProjectConfig({
+        ...minimal(),
+        app: { name: "Hello", identifier: "com.example.hello", icon: "linked.icns" },
+      }, root),
+      "CONFIG_ICON_INVALID",
+      "app.icon",
     );
   });
 

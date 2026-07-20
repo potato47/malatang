@@ -39,6 +39,8 @@ describe("FIA project creation", () => {
       ".gitignore",
       "AGENTS.md",
       "README.md",
+      "assets/icon.icns",
+      "assets/icon.png",
       "fia.config.ts",
       "package.json",
       "src/server.ts",
@@ -67,6 +69,7 @@ describe("FIA project creation", () => {
     expect(config).toContain('name: "Hello World"');
     expect(config).toContain('identifier: "com.example.hello-world"');
     expect(config).toContain('ui: "src/ui/index.html"');
+    expect(config).toContain('icon: "assets/icon.icns"');
     expect(config).not.toContain("closeBehavior");
     const agentGuide = await readFile(resolve(project, "AGENTS.md"), "utf8");
     expect(agentGuide).toContain("Agent guide for Hello World");

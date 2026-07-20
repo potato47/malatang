@@ -27,7 +27,8 @@ export type ProjectConfigErrorCode =
   | "CONFIG_INVALID"
   | "CONFIG_UNSUPPORTED_VERSION"
   | "CONFIG_ENTRY_INVALID"
-  | "CONFIG_UI_INVALID";
+  | "CONFIG_UI_INVALID"
+  | "CONFIG_ICON_INVALID";
 
 export class ProjectConfigError extends Error {
   readonly code: ProjectConfigErrorCode;
@@ -50,6 +51,7 @@ export interface ResolvedFIAConfig {
     readonly identifier: string;
     readonly version: string;
     readonly mode: FIAApplicationMode;
+    readonly icon?: string;
   };
   readonly entry: string;
   readonly ui: string;
@@ -169,8 +171,8 @@ function optionalDimension(
 function resolveProjectFile(
   projectRoot: string,
   value: string,
-  field: "entry" | "ui",
-  code: "CONFIG_ENTRY_INVALID" | "CONFIG_UI_INVALID",
+  field: "entry" | "ui" | "app.icon",
+  code: "CONFIG_ENTRY_INVALID" | "CONFIG_UI_INVALID" | "CONFIG_ICON_INVALID",
 ): string {
   if (isAbsolute(value)) {
     throw new ProjectConfigError(code, `${field}: must be relative to fia.config.ts`, {
@@ -190,8 +192,8 @@ function resolveProjectFile(
 async function requireReadableProjectFile(
   projectRoot: string,
   value: string,
-  field: "entry" | "ui",
-  code: "CONFIG_ENTRY_INVALID" | "CONFIG_UI_INVALID",
+  field: "entry" | "ui" | "app.icon",
+  code: "CONFIG_ENTRY_INVALID" | "CONFIG_UI_INVALID" | "CONFIG_ICON_INVALID",
 ): Promise<string> {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new ProjectConfigError(code, `${field}: expected a non-empty relative path`, { path: field });
@@ -245,7 +247,7 @@ export async function resolveProjectConfig(
   }
 
   const app = objectAt(root.app, "app");
-  exactKeys(app, ["name", "identifier", "version", "mode"], "app");
+  exactKeys(app, ["name", "identifier", "version", "mode", "icon"], "app");
   const name = requiredString(app, "name", "app");
   if (name !== name.trim() || name === "." || name === ".." || /[\0/:]/.test(name)) {
     invalid("app.name", "must be a safe macOS application name without surrounding whitespace, '/', ':', or NUL");
@@ -256,6 +258,20 @@ export async function resolveProjectConfig(
   const version = optionalString(app, "version", "app", DEFAULT_APP_VERSION);
   if (!/^\d+\.\d+\.\d+$/.test(version)) invalid("app.version", "expected a numeric X.Y.Z version");
   const mode = optionalEnum(app, "mode", "app", ["dock", "statusBar", "hybrid"], "dock");
+  let icon: string | undefined;
+  if (app.icon !== undefined) {
+    icon = await requireReadableProjectFile(
+      projectRoot,
+      app.icon as string,
+      "app.icon",
+      "CONFIG_ICON_INVALID",
+    );
+    if (extname(icon).toLowerCase() !== ".icns") {
+      throw new ProjectConfigError("CONFIG_ICON_INVALID", "app.icon: expected an ICNS file", {
+        path: "app.icon",
+      });
+    }
+  }
 
   const entryValue = root.entry === undefined ? DEFAULT_ENTRY : root.entry;
   const uiValue = root.ui === undefined ? DEFAULT_UI : root.ui;
@@ -304,7 +320,7 @@ export async function resolveProjectConfig(
     configVersion: FIA_CONFIG_VERSION,
     projectRoot,
     configPath,
-    app: { name, identifier, version, mode },
+    app: { name, identifier, version, mode, ...(icon === undefined ? {} : { icon }) },
     entry,
     ui,
     window: {

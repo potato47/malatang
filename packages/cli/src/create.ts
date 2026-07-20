@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { CLI_VERSION } from "./metadata.ts";
 
@@ -41,6 +41,11 @@ const TEMPLATE_FILES = [
   ["src/ui/main.tsx.template", "src/ui/main.tsx"],
   ["src/ui/App.tsx.template", "src/ui/App.tsx"],
   ["src/ui/style.css", "src/ui/style.css"],
+] as const;
+
+const TEMPLATE_ASSETS = [
+  ["assets/icon.png", "assets/icon.png"],
+  ["assets/icon.icns", "assets/icon.icns"],
 ] as const;
 
 function titleFromName(name: string): string {
@@ -114,6 +119,12 @@ async function renderTemplate(
     }
     await mkdir(resolve(target, ".."), { recursive: true });
     await writeFile(target, contents, "utf8");
+  }
+  for (const [sourceName, destinationName] of TEMPLATE_ASSETS) {
+    const source = resolve(templateDirectory, sourceName);
+    const target = resolve(destination, destinationName);
+    await mkdir(resolve(target, ".."), { recursive: true });
+    await copyFile(source, target);
   }
 }
 

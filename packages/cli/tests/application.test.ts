@@ -71,6 +71,10 @@ describe("FIA application commands", () => {
     expect(await Bun.file(resolve(app, "Contents/Info.plist")).exists()).toBe(true);
     expect(await Bun.file(resolve(app, "Contents/MacOS/FIAHost")).exists()).toBe(true);
     expect(await Bun.file(resolve(app, "Contents/MacOS/fia-runtime")).exists()).toBe(true);
+    expect(await Bun.file(resolve(app, "Contents/Resources/AppIcon.icns")).exists()).toBe(true);
+    expect(await readFile(resolve(app, "Contents/Info.plist"), "utf8")).toContain(
+      "<key>CFBundleIconFile</key><string>AppIcon</string>",
+    );
     expect(JSON.parse(await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"))).toMatchObject({
       schemaVersion: 3,
       app: { mode: "dock" },
