@@ -42,6 +42,19 @@ describe("fia doctor", () => {
     expect(report.checks.slice(0, 3).map((check) => check.status)).toEqual(["fail", "fail", "fail"]);
   });
 
+  test("accepts Bun versions newer than the minimum", async () => {
+    const probe = new FakeDoctorProbe();
+    probe.bunVersion = "1.4.0";
+
+    const report = await runDoctor(probe);
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.find((check) => check.id === "bun")).toMatchObject({
+      status: "pass",
+      message: "Bun 1.4.0",
+    });
+  });
+
   test("fails when Bun is unavailable", async () => {
     const probe = new FakeDoctorProbe();
     probe.bunVersion = undefined;

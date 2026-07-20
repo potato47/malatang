@@ -9,7 +9,7 @@ application modes, window controls, and a typed native bridge.
 ## Requirements
 
 - macOS 14 or newer on Apple Silicon
-- Bun 1.3.14
+- Bun 1.3.14 or newer
 - Xcode/Swift toolchain capable of Swift tools 6.0 (framework development only)
 
 Ordinary FIA projects consume the versioned arm64 Host embedded in `@semicoder/fia`, so Xcode and Swift

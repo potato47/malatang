@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isBunVersionSupported, MINIMUM_BUN_VERSION } from "./bun-version.ts";
 import { CLI_VERSION } from "./metadata.ts";
 import { loadProjectConfig, type ResolvedFIAConfig } from "./project-config.ts";
 
@@ -62,7 +63,6 @@ interface BuildContext {
   io: ApplicationIO;
 }
 
-const BUN_VERSION = "1.3.14";
 const HOST_EXECUTABLE = "FIAHost";
 const RUNTIME_EXECUTABLE = "fia-runtime";
 const CSP_NONCE = "__FIA_CSP_NONCE__";
@@ -586,7 +586,9 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error("fia dev/build/run require macOS on Apple Silicon");
   }
-  if (Bun.version !== BUN_VERSION) throw new Error(`FIA requires Bun ${BUN_VERSION}; found ${Bun.version}`);
+  if (!isBunVersionSupported(Bun.version)) {
+    throw new Error(`FIA requires Bun ${MINIMUM_BUN_VERSION} or newer; found ${Bun.version}`);
+  }
 
   const config = await loadProjectConfig(options.cwd);
   const buildID = `${Date.now()}-${crypto.randomUUID()}`;

@@ -45,7 +45,7 @@ arm64 Host 与 manifest。tarball 约 163.8 KB，解包约 597.9 KB。发布命�
 
 ## 当前阶段边界
 
-- 只支持 macOS 14+、Apple Silicon 和 Bun 1.3.14。
+- 只支持 macOS 14+、Apple Silicon 和 Bun 1.3.14+。
 - 只输出 ad-hoc 签名的本地 `.app`；Developer ID、hardened runtime、公证、ZIP/DMG 属于阶段 3。
 - Runtime 异常时 Host 显示诊断页并允许用户手动重试；自动退避重启和 native watchdog 尚未实现。
 - 当前应用通信 API 是 HTTP routes/fetch 与应用 WebSocket；native bridge 属于阶段 2。

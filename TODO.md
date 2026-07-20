@@ -40,7 +40,7 @@
 - [x] 建立 Swift tools 6.0、macOS 14、arm64 的 AppKit Host 和可测试 Host Core。
 - [x] 程序化创建主菜单、`NSWindow`、`WKWebView` 和原生诊断页。
 - [x] 限制 WebView 主 frame 导航；外部 HTTP(S) 链接交给系统浏览器。
-- [x] 建立固定 Bun 1.3.14 的单文件 Runtime，并内嵌 HTML、TypeScript 和 CSS。
+- [x] 建立最低 Bun 1.3.14 的单文件 Runtime，并内嵌 HTML、TypeScript 和 CSS。
 - [x] 示例 UI 展示认证状态、HTTP Hello、WebSocket Echo 和错误状态。
 - [x] 实现手动重启 Runtime 和退出操作，不进行自动重启。
 - [x] 实现 graceful shutdown → SIGTERM → SIGKILL 分级退出。

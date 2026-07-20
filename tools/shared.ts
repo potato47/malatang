@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { isBunVersionSupported, MINIMUM_BUN_VERSION } from "../packages/cli/src/bun-version.ts";
 
 export const repositoryRoot = resolve(import.meta.dir, "..");
 export const generatedRoot = resolve(repositoryRoot, ".fia/generated");
@@ -37,8 +38,8 @@ export async function run(command: readonly string[], options: RunOptions = {}):
 }
 
 export function requireBunVersion(): void {
-  if (Bun.version !== "1.3.14") {
-    throw new Error(`FIA phase 0 requires Bun 1.3.14; found ${Bun.version}`);
+  if (!isBunVersionSupported(Bun.version)) {
+    throw new Error(`FIA requires Bun ${MINIMUM_BUN_VERSION} or newer; found ${Bun.version}`);
   }
 }
 

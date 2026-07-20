@@ -97,7 +97,7 @@ fia create hello --git
 
 ## 4. React 模板与托管 Runtime
 
-模板使用 React 19 和 Bun 1.3.14 full-stack HTML route：
+模板使用 React 19 和 Bun 1.3.14+ full-stack HTML route：
 
 - `/` 提供 React 页面与 HMR 资源。
 - `/api/hello` 展示普通 HTTP JSON 请求。

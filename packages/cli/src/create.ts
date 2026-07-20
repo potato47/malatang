@@ -79,7 +79,7 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
     version: "0.1.0",
     private: true,
     type: "module",
-    engines: { bun: "1.3.14" },
+    engines: { bun: ">=1.3.14" },
     scripts: {
       dev: "fia dev",
       build: "fia build",

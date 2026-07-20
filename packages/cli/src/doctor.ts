@@ -2,8 +2,8 @@ import {
   CLI_PACKAGE_NAME,
   CLI_VERSION,
   MINIMUM_MACOS_MAJOR_VERSION,
-  REQUIRED_BUN_VERSION,
 } from "./metadata.ts";
+import { isBunVersionSupported, MINIMUM_BUN_VERSION } from "./bun-version.ts";
 import { ACCESS_MODE, type CommandResult, type DoctorProbe } from "./system-probe.ts";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
@@ -120,9 +120,9 @@ async function architectureCheck({ probe, debug }: CheckContext): Promise<Doctor
 
 async function bunCheck({ probe, debug }: CheckContext): Promise<DoctorCheckResult> {
   if (probe.bunVersion === undefined) {
-    return result("bun", "Bun", true, "fail", `Bun ${REQUIRED_BUN_VERSION} is required`);
+    return result("bun", "Bun", true, "fail", `Bun ${MINIMUM_BUN_VERSION} or newer is required`);
   }
-  const supported = probe.bunVersion === REQUIRED_BUN_VERSION;
+  const supported = isBunVersionSupported(probe.bunVersion);
   return result(
     "bun",
     "Bun",
@@ -130,7 +130,7 @@ async function bunCheck({ probe, debug }: CheckContext): Promise<DoctorCheckResu
     supported ? "pass" : "fail",
     supported
       ? `Bun ${probe.bunVersion}`
-      : `Bun ${probe.bunVersion} is unsupported; FIA requires ${REQUIRED_BUN_VERSION}`,
+      : `Bun ${probe.bunVersion} is unsupported; FIA requires ${MINIMUM_BUN_VERSION} or newer`,
     debug ? [`Bun.version: ${probe.bunVersion}`] : undefined,
   );
 }

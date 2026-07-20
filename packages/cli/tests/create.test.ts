@@ -52,11 +52,13 @@ describe("FIA project creation", () => {
 
     const metadata = JSON.parse(await readFile(resolve(project, "package.json"), "utf8")) as {
       name: string;
+      engines: Record<string, string>;
       scripts: Record<string, string>;
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
     };
     expect(metadata).toMatchObject({ name: "hello-world" });
+    expect(metadata.engines).toEqual({ bun: ">=1.3.14" });
     expect(metadata.dependencies).toEqual({ react: "^19.2.7", "react-dom": "^19.2.7" });
     expect(metadata.devDependencies["@semicoder/fia"]).toBe("file:../cli");
     expect(metadata.scripts).toMatchObject({ dev: "fia dev", build: "fia build", run: "fia run" });

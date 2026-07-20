@@ -53,5 +53,5 @@ export default defineApp({
 `fia dev` uses the embedded arm64 Host and Bun HMR, `fia run` launches a temporary production
 build, and `fia build` atomically writes an ad-hoc signed `.app` under `dist/`.
 
-FIA currently requires macOS 14 or newer, Apple Silicon, and Bun 1.3.14. The package is prepared
+FIA currently requires macOS 14 or newer, Apple Silicon, and Bun 1.3.14 or newer. The package is prepared
 for publication but is not published by this repository workflow yet.

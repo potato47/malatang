@@ -40,7 +40,7 @@
 ## 已知限制
 
 - 仅支持 macOS 14+ 和 Apple Silicon；没有 x64 或 Universal Binary。
-- Runtime 固定 Bun 1.3.14，升级前必须重新执行协议、安全、签名和生命周期验证。
+- Runtime 最低要求 Bun 1.3.14；使用更新版本时仍应执行协议、安全、签名和生命周期验证。
 - `fia-config.json` schema 1 和 Runtime protocol 1 是阶段 0 内部协议；阶段 1 Host 同时支持
   带 runtime 模式的内部 schema 2，二者都不是公共项目配置。
 - 只验证 ad-hoc 本地签名；Developer ID、hardened runtime、公证和 DMG 属于阶段 3。
