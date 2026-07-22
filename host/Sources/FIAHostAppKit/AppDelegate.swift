@@ -8,6 +8,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: HostWindowController?
     private var desktopController: DesktopController?
     private var runtime: RuntimeSupervisor?
+    private var backend: BackendSupervisor?
+    private var configuration: HostConfiguration?
+    private var pendingBootstrapURL: URL?
+    private var webViewInstalled = false
+    private var backendFailurePresented = false
     private var terminationPending = false
     private var autoQuitScheduled = false
     private var terminationSignalSources: [DispatchSourceSignal] = []
@@ -20,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 throw HostStartupError.missingConfiguration
             }
             let configuration = try HostConfiguration.load(from: configurationURL)
+            self.configuration = configuration
             installMainMenu(applicationName: configuration.app.name)
 
             let settingsStore = try? DesktopSettingsStore(
@@ -66,16 +72,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 windowController.focus()
             }
 
-            if configuration.runtime.isBundled {
-                try showBundledApplication(configuration: configuration)
-                scheduleInternalAutoQuitIfRequested()
-            } else {
+            if configuration.backend.isEnabled {
+                let backend = BackendSupervisor(configuration: configuration) { [weak self] event in
+                    self?.handleBackendEvent(event)
+                }
+                self.backend = backend
+                if configuration.backend.isDevelopment { installBackendReloadSignalHandler() }
+                backend.start()
+            }
+
+            if !configuration.runtime.isBundled {
                 let runtime = RuntimeSupervisor(configuration: configuration) { [weak self] event in
                     self?.handleRuntimeEvent(event)
                 }
                 self.runtime = runtime
                 runtime.start()
             }
+            try showApplicationIfReady()
         } catch {
             NSApp.setActivationPolicy(.regular)
             installMainMenu(applicationName: "FIA Host")
@@ -98,14 +111,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         diagnostic("applicationShouldTerminate invoked")
-        guard let runtime, runtime.isRunning else { return .terminateNow }
         guard !terminationPending else { return .terminateLater }
-        terminationPending = true
         desktopController?.flushSettings()
-        runtime.stop {
-            self.diagnostic("runtime stop completed; replying to AppKit termination")
+        let runningRuntime = runtime?.isRunning == true
+        let runningBackend = backend?.isRunning == true
+        guard runningRuntime || runningBackend else { return .terminateNow }
+        terminationPending = true
+        var remaining = (runningRuntime ? 1 : 0) + (runningBackend ? 1 : 0)
+        let completed: () -> Void = { [weak self] in
+            remaining -= 1
+            guard remaining == 0 else { return }
+            self?.diagnostic("all managed processes stopped; replying to AppKit termination")
             NSApp.reply(toApplicationShouldTerminate: true)
         }
+        if runningRuntime { runtime?.stop(completion: completed) }
+        if runningBackend { backend?.stop(completion: completed) }
         return .terminateLater
     }
 
@@ -114,27 +134,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminationSignalSources.removeAll()
         desktopController?.flushSettings()
         runtime?.forceStop()
+        backend?.forceStop()
     }
 
     private func handleRuntimeEvent(_ event: RuntimeSupervisor.Event) {
         switch event {
         case let .ready(bootstrapURL):
-            windowController?.showWebView(bootstrapURL: bootstrapURL) { [weak desktopController] command in
-                guard let desktopController else {
-                    throw NativeCommandExecutionError(
-                        code: .bridgeUnavailable,
-                        message: "The desktop controller is unavailable"
-                    )
-                }
-                return try desktopController.execute(command)
-            }
-            scheduleInternalAutoQuitIfRequested()
+            pendingBootstrapURL = bootstrapURL
+            do { try showApplicationIfReady() } catch { showRuntimeFailure(title: "UI could not start", detail: error.localizedDescription) }
         case let .failed(title, detail):
             showRuntimeFailure(title: title, detail: detail)
         }
     }
 
-    private func showBundledApplication(configuration: HostConfiguration) throws {
+    private func handleBackendEvent(_ event: BackendSupervisor.Event) {
+        switch event {
+        case .ready:
+            backendFailurePresented = false
+            do { try showApplicationIfReady() } catch { showBackendFailure(title: "Swift backend could not start", detail: error.localizedDescription) }
+        case let .applicationEvent(name, payload):
+            windowController?.emitBackendEvent(name: name, payload: payload)
+        case let .failed(title, detail):
+            showBackendFailure(title: title, detail: detail)
+        }
+    }
+
+    private func showApplicationIfReady() throws {
+        guard !webViewInstalled, let configuration else { return }
+        guard !configuration.backend.isEnabled || backend?.isReady == true else { return }
+        let backendInvoke = backendCommandExecutor()
+        if configuration.runtime.isBundled {
+            try showBundledApplication(configuration: configuration, backendInvoke: backendInvoke)
+        } else {
+            guard let bootstrapURL = pendingBootstrapURL else { return }
+            windowController?.showWebView(
+                bootstrapURL: bootstrapURL,
+                backendInvoke: backendInvoke,
+                execute: nativeCommandExecutor()
+            )
+        }
+        webViewInstalled = true
+        scheduleInternalAutoQuitIfRequested()
+    }
+
+    private func showBundledApplication(
+        configuration: HostConfiguration,
+        backendInvoke: ((BackendBridgeRequest) async throws -> Data)?
+    ) throws {
         guard let resources = Bundle.main.resourceURL,
               let entry = configuration.runtime.entry
         else { throw HostStartupError.missingBundledUI }
@@ -147,8 +193,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowController?.showBundledWebView(
             rootDirectory: root,
             entry: relativeEntry,
+            backendInvoke: backendInvoke,
             execute: nativeCommandExecutor()
         )
+    }
+
+    private func backendCommandExecutor() -> ((BackendBridgeRequest) async throws -> Data)? {
+        guard let backend else { return nil }
+        return { [weak backend] request in
+            guard let backend else {
+                throw BackendInvocationError(
+                    code: .backendUnavailable,
+                    message: "The FIA Swift backend is unavailable"
+                )
+            }
+            return try await backend.invoke(request)
+        }
     }
 
     private func nativeCommandExecutor() -> (NativeBridgeCommand) throws -> DesktopState {
@@ -164,6 +224,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showRuntimeFailure(title: String, detail: String) {
+        webViewInstalled = false
+        pendingBootstrapURL = nil
         windowController?.showFailure(
             title: title,
             detail: detail,
@@ -174,6 +236,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onQuit: { NSApp.terminate(nil) }
         )
         desktopController?.showAndFocusWindow()
+    }
+
+    private func showBackendFailure(title: String, detail: String) {
+        guard webViewInstalled else {
+            windowController?.showFailure(
+                title: title,
+                detail: detail,
+                onRetry: { [weak self] in
+                    self?.windowController?.showLoading("Restarting Swift backend…")
+                    self?.backend?.restart()
+                },
+                onQuit: { NSApp.terminate(nil) }
+            )
+            desktopController?.showAndFocusWindow()
+            return
+        }
+        guard !backendFailurePresented, let window = windowController?.window else { return }
+        backendFailurePresented = true
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: "Restart Backend")
+        alert.addButton(withTitle: "Quit")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            self?.backendFailurePresented = false
+            if response == .alertFirstButtonReturn {
+                self?.backend?.restart()
+            } else {
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     private func scheduleInternalAutoQuitIfRequested() {
@@ -201,6 +294,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             source.resume()
             terminationSignalSources.append(source)
         }
+    }
+
+    private func installBackendReloadSignalHandler() {
+        Darwin.signal(SIGUSR1, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        source.setEventHandler { [weak self] in
+            self?.diagnostic("received Swift backend reload signal")
+            self?.backend?.restart()
+        }
+        source.resume()
+        terminationSignalSources.append(source)
     }
 
     private func installMainMenu(applicationName: String) {

@@ -28,7 +28,8 @@ export type ProjectConfigErrorCode =
   | "CONFIG_UNSUPPORTED_VERSION"
   | "CONFIG_ENTRY_INVALID"
   | "CONFIG_UI_INVALID"
-  | "CONFIG_ICON_INVALID";
+  | "CONFIG_ICON_INVALID"
+  | "CONFIG_SWIFT_INVALID";
 
 export class ProjectConfigError extends Error {
   readonly code: ProjectConfigErrorCode;
@@ -53,7 +54,11 @@ export interface ResolvedFIAConfig {
     readonly mode: FIAApplicationMode;
     readonly icon?: string;
   };
-  readonly runtime: "bun" | "none";
+  readonly runtime: "bun" | "none" | "swift";
+  readonly swift?: {
+    readonly package: string;
+    readonly product: string;
+  };
   readonly entry?: string;
   readonly ui: string;
   readonly window: {
@@ -172,8 +177,8 @@ function optionalDimension(
 function resolveProjectFile(
   projectRoot: string,
   value: string,
-  field: "entry" | "ui" | "app.icon",
-  code: "CONFIG_ENTRY_INVALID" | "CONFIG_UI_INVALID" | "CONFIG_ICON_INVALID",
+  field: "entry" | "ui" | "app.icon" | "swift.package",
+  code: "CONFIG_ENTRY_INVALID" | "CONFIG_UI_INVALID" | "CONFIG_ICON_INVALID" | "CONFIG_SWIFT_INVALID",
 ): string {
   if (isAbsolute(value)) {
     throw new ProjectConfigError(code, `${field}: must be relative to fia.config.ts`, {
@@ -226,6 +231,42 @@ async function requireReadableProjectFile(
   return file;
 }
 
+async function requireSwiftPackage(projectRoot: string, value: unknown): Promise<string> {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new ProjectConfigError("CONFIG_SWIFT_INVALID", "swift.package: expected a non-empty relative path", {
+      path: "swift.package",
+    });
+  }
+  const packageDirectory = resolveProjectFile(
+    projectRoot,
+    value,
+    "swift.package",
+    "CONFIG_SWIFT_INVALID",
+  );
+  try {
+    const packageStat = await stat(packageDirectory);
+    if (!packageStat.isDirectory()) throw new Error("not a directory");
+    await access(resolve(packageDirectory, "Package.swift"), constants.R_OK);
+    const [physicalRoot, physicalPackage] = await Promise.all([realpath(projectRoot), realpath(packageDirectory)]);
+    const physicalRelative = relative(physicalRoot, physicalPackage);
+    if (
+      physicalRelative === "" ||
+      physicalRelative === ".." ||
+      physicalRelative.startsWith(`..${sep}`) ||
+      isAbsolute(physicalRelative)
+    ) {
+      throw new Error("outside project");
+    }
+  } catch (error) {
+    throw new ProjectConfigError(
+      "CONFIG_SWIFT_INVALID",
+      `swift.package: expected a project directory containing Package.swift: ${value}`,
+      { path: "swift.package", cause: error },
+    );
+  }
+  return packageDirectory;
+}
+
 export async function resolveProjectConfig(
   value: unknown,
   projectDirectory: string,
@@ -233,7 +274,7 @@ export async function resolveProjectConfig(
 ): Promise<ResolvedFIAConfig> {
   const projectRoot = resolve(projectDirectory);
   const root = objectAt(value, "config");
-  exactKeys(root, ["configVersion", "app", "runtime", "entry", "ui", "window", "statusBar"], "config");
+  exactKeys(root, ["configVersion", "app", "runtime", "swift", "entry", "ui", "window", "statusBar"], "config");
 
   if (root.configVersion === undefined) invalid("configVersion", "is required");
   if (root.configVersion !== FIA_CONFIG_VERSION) {
@@ -274,11 +315,28 @@ export async function resolveProjectConfig(
     }
   }
 
-  const runtime = optionalEnum(root, "runtime", "config", ["bun", "none"], "bun");
+  const runtime = optionalEnum(root, "runtime", "config", ["bun", "none", "swift"], "bun");
+  let swift: { package: string; product: string } | undefined;
+  if (runtime === "swift") {
+    const swiftValue = objectAt(root.swift, "swift");
+    exactKeys(swiftValue, ["package", "product"], "swift");
+    const packageDirectory = await requireSwiftPackage(projectRoot, swiftValue.package);
+    const product = requiredString(swiftValue, "product", "swift");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(product)) {
+      throw new ProjectConfigError(
+        "CONFIG_SWIFT_INVALID",
+        "swift.product: expected a safe Swift executable product name",
+        { path: "swift.product" },
+      );
+    }
+    swift = { package: packageDirectory, product };
+  } else if (root.swift !== undefined) {
+    invalid("swift", "is only allowed when runtime is \"swift\"");
+  }
   const entryValue = root.entry === undefined ? DEFAULT_ENTRY : root.entry;
   const uiValue = root.ui === undefined ? DEFAULT_UI : root.ui;
-  if (runtime === "none" && root.entry !== undefined) {
-    invalid("entry", "must be omitted when runtime is \"none\"");
+  if (runtime !== "bun" && root.entry !== undefined) {
+    invalid("entry", `must be omitted when runtime is ${JSON.stringify(runtime)}`);
   }
   const entry = runtime === "bun"
     ? await requireReadableProjectFile(projectRoot, entryValue as string, "entry", "CONFIG_ENTRY_INVALID")
@@ -329,6 +387,7 @@ export async function resolveProjectConfig(
     configPath,
     app: { name, identifier, version, mode, ...(icon === undefined ? {} : { icon }) },
     runtime,
+    ...(swift === undefined ? {} : { swift }),
     ...(entry === undefined ? {} : { entry }),
     ui,
     window: {

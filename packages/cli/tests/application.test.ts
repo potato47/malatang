@@ -13,12 +13,13 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-async function project(name = "build-app"): Promise<string> {
+async function project(name = "build-app", runtime: "bun" | "swift" = "bun"): Promise<string> {
   const cwd = await mkdtemp(resolve(tmpdir(), "fia-application-test-"));
   temporaryDirectories.push(cwd);
   const root = await createProject({
     name,
     cwd,
+    runtime,
     install: false,
     initializeGit: false,
     io: { stdout: () => {} },
@@ -51,6 +52,34 @@ function output(): { stdout: string[]; stderr: string[]; io: { stdout(value: str
   };
 }
 
+async function readNDJSON(
+  stream: ReadableStream<Uint8Array>,
+  count: number,
+): Promise<Array<Record<string, unknown>>> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  const messages: Array<Record<string, unknown>> = [];
+  let buffer = "";
+  const timeout = setTimeout(() => void reader.cancel("backend protocol timeout"), 5_000);
+  try {
+    while (messages.length < count) {
+      const result = await reader.read();
+      if (result.done) throw new Error("Swift backend exited before completing the protocol exchange");
+      buffer += decoder.decode(result.value, { stream: true });
+      while (messages.length < count) {
+        const newline = buffer.indexOf("\n");
+        if (newline < 0) break;
+        messages.push(JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>);
+        buffer = buffer.slice(newline + 1);
+      }
+    }
+    return messages;
+  } finally {
+    clearTimeout(timeout);
+    reader.releaseLock();
+  }
+}
+
 describe("FIA application commands", () => {
   test("injects CSP nonces only into HTML tags, not JavaScript strings", () => {
     const html = '<style>.example { color: red; }</style><script>const warning = "<script async>";</script>';
@@ -76,11 +105,12 @@ describe("FIA application commands", () => {
       "<key>CFBundleIconFile</key><string>AppIcon</string>",
     );
     expect(JSON.parse(await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"))).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       app: { mode: "dock" },
       window: { closeBehavior: "quit", restoreState: true },
       statusBar: { symbol: "circle.grid.2x2.fill" },
       runtime: { mode: "production" },
+      backend: { mode: "none" },
     });
 
     const second = output();
@@ -120,10 +150,66 @@ describe("FIA application commands", () => {
     expect(await Bun.file(resolve(app, "Contents/Resources/UI/index.html")).exists()).toBe(true);
     expect(JSON.parse(await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"))).toMatchObject({
       runtime: { mode: "bundled", entry: "UI/index.html" },
+      backend: { mode: "none" },
     });
   }, 20_000);
 
-  test("builds status bar and hybrid desktop modes with schema three", async () => {
+  test("builds and signs an exclusive Swift backend application", async () => {
+    const root = await project("swift-backend-app", "swift");
+    await executeApplicationCommand({ command: "build", cwd: root, debug: false, io: output().io });
+    const app = resolve(root, "dist/Swift Backend App.app");
+    expect(await Bun.file(resolve(app, "Contents/MacOS/FIAHost")).exists()).toBe(true);
+    expect(await Bun.file(resolve(app, "Contents/MacOS/fia-backend")).exists()).toBe(true);
+    expect(await Bun.file(resolve(app, "Contents/MacOS/fia-runtime")).exists()).toBe(false);
+    expect(await Bun.file(resolve(app, "Contents/Resources/UI/index.html")).exists()).toBe(true);
+    expect(JSON.parse(await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"))).toMatchObject({
+      schemaVersion: 4,
+      runtime: { mode: "bundled", entry: "UI/index.html" },
+      backend: { mode: "production" },
+    });
+
+    const backend = resolve(app, "Contents/MacOS/fia-backend");
+    const child = Bun.spawn([backend], { cwd: root, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+    try {
+      child.stdin.write(`${JSON.stringify({
+        protocol: 1,
+        type: "initialize",
+        parentPid: process.pid,
+        dataDirectory: root,
+      })}\n`);
+      child.stdin.write(`${JSON.stringify({
+        protocol: 1,
+        type: "request",
+        id: "production-greet",
+        method: "greet",
+        input: { name: "FIA" },
+      })}\n`);
+      child.stdin.flush();
+      const messages = await readNDJSON(child.stdout, 3);
+      expect(messages[0]).toMatchObject({ protocol: 1, type: "ready", pid: child.pid });
+      expect(messages[1]).toMatchObject({
+        protocol: 1,
+        type: "event",
+        name: "greet.completed",
+        payload: { name: "FIA" },
+      });
+      expect(messages[2]).toMatchObject({
+        protocol: 1,
+        type: "response",
+        id: "production-greet",
+        ok: true,
+        value: { message: "Hello, FIA!" },
+      });
+      child.stdin.write(`${JSON.stringify({ protocol: 1, type: "shutdown", reason: "applicationQuit" })}\n`);
+      child.stdin.end();
+      expect(await child.exited).toBe(0);
+    } finally {
+      if (child.exitCode === null) child.kill("SIGKILL");
+      await child.exited;
+    }
+  }, 60_000);
+
+  test("builds status bar and hybrid desktop modes with schema four", async () => {
     for (const mode of ["statusBar", "hybrid"] as const) {
       const root = await project(`${mode.toLowerCase()}-app`);
       const configPath = resolve(root, "fia.config.ts");
@@ -139,7 +225,7 @@ describe("FIA application commands", () => {
         "utf8",
       )) as Record<string, unknown>;
       expect(configuration).toMatchObject({
-        schemaVersion: 3,
+        schemaVersion: 4,
         app: { mode },
         window: { closeBehavior: "hide" },
       });

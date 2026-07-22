@@ -1,0 +1,125 @@
+import { useCallback, useEffect, useState } from "react";
+import { backend } from "@semicoder/fia/backend";
+import { native, type FIANativeState } from "@semicoder/fia/native";
+
+type Status = "idle" | "working" | "success" | "error";
+
+interface GreetRequest {
+  name: string;
+}
+
+interface GreetResponse {
+  message: string;
+  timestamp: string;
+}
+
+export function App() {
+  const [backendStatus, setBackendStatus] = useState<Status>("idle");
+  const [backendMessage, setBackendMessage] = useState("Ready to call the Swift backend.");
+  const [nativeStatus, setNativeStatus] = useState<Status>("idle");
+  const [nativeMessage, setNativeMessage] = useState("Checking the FIA native bridge …");
+  const [desktopState, setDesktopState] = useState<FIANativeState | null>(null);
+
+  const callSwift = useCallback(async () => {
+    setBackendStatus("working");
+    try {
+      const result = await backend.invoke<GreetRequest, GreetResponse>("greet", { name: "FIA" });
+      setBackendStatus("success");
+      setBackendMessage(`${result.message} · ${new Date(result.timestamp).toLocaleTimeString()}`);
+    } catch (error) {
+      setBackendStatus("error");
+      setBackendMessage(error instanceof Error ? error.message : "Swift backend request failed");
+    }
+  }, []);
+
+  const runNative = useCallback(async (action: () => Promise<FIANativeState>) => {
+    setNativeStatus("working");
+    try {
+      const state = await action();
+      setDesktopState(state);
+      setNativeStatus("success");
+      setNativeMessage(`${state.mode} mode · ${state.window.alwaysOnTop ? "floating" : "normal"} window`);
+    } catch (error) {
+      setNativeStatus("error");
+      setNativeMessage(error instanceof Error ? error.message : "Native command failed");
+    }
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = backend.onEvent<{ name: string }>("greet.completed", ({ name }) => {
+      setBackendMessage(`Swift emitted greet.completed for ${name}`);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!native.isAvailable()) {
+      setNativeMessage("Native bridge unavailable outside the FIA Host.");
+      return;
+    }
+    let active = true;
+    const update = (state: FIANativeState) => {
+      if (!active) return;
+      setDesktopState(state);
+      setNativeStatus("success");
+      setNativeMessage(`${state.mode} mode · secure native bridge ready`);
+    };
+    const unsubscribe = native.onEvent((event) => {
+      if (event.type === "stateChanged") update(event.state);
+    });
+    void native.getState().then(update).catch((error: unknown) => {
+      if (!active) return;
+      setNativeStatus("error");
+      setNativeMessage(error instanceof Error ? error.message : "Native bridge failed");
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  return (
+    <main>
+      <header className="hero">
+        <div className="eyebrow">FIA Framework · React + Swift</div>
+        <h1>__FIA_DISPLAY_NAME__</h1>
+        <p>A Swift backend scaffold with a secure asynchronous bridge.</p>
+      </header>
+
+      <section className="grid" aria-label="Runtime checks">
+        <article className={`card ${backendStatus}`}>
+          <span className="badge">Swift RPC</span>
+          <h2>Typed greeting</h2>
+          <p>{backendMessage}</p>
+          <button type="button" onClick={callSwift} disabled={backendStatus === "working"}>
+            Call Swift
+          </button>
+        </article>
+
+        <article className={`card ${nativeStatus}`}>
+          <span className="badge">Native</span>
+          <h2>Desktop shell</h2>
+          <p>{nativeMessage}</p>
+          <div className="actions">
+            <button
+              type="button"
+              disabled={nativeStatus === "working" || desktopState === null}
+              onClick={() => void runNative(() => native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop))}
+            >
+              Toggle floating
+            </button>
+            <button
+              type="button"
+              disabled={nativeStatus === "working" || desktopState === null}
+              onClick={() => void runNative(() => native.statusBar.setVisible(!desktopState!.statusBarVisible))}
+            >
+              Toggle status item
+            </button>
+          </div>
+        </article>
+      </section>
+
+      <footer>FIA Swift backend · secure process bridge · React hot reload</footer>
+    </main>
+  );
+}

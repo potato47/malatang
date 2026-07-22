@@ -96,6 +96,7 @@ describe("fia command routing", () => {
       ["create", "hello", "--no-install", "--no-install"],
       ["create", "hello", "--git", "--git"],
       ["create", "hello", "--force"],
+      ["create", "hello", "--runtime", "node"],
     ]) {
       const result = capture();
       expect(await runCLI(args, { io: result.io })).toBe(2);

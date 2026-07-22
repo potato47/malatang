@@ -43,7 +43,7 @@ const manifest = {
   sha256: hasher.digest("hex"),
   architecture: "arm64",
   minimumSystemVersion: "14.0",
-  configurationSchemas: [1, 2, 3],
+  configurationSchemas: [1, 2, 3, 4],
   runtimeProtocol: 1,
 };
 await Bun.write(resolve(destinationDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

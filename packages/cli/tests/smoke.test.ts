@@ -54,9 +54,19 @@ describe("published CLI shape", () => {
         import: "./dist/native.js",
         default: "./dist/native.js",
       },
+      "./backend": {
+        types: "./dist/backend.d.ts",
+        import: "./dist/backend.js",
+        default: "./dist/backend.js",
+      },
     });
     expect(packageMetadata.files).toContain("templates");
     expect(packageMetadata.files).toContain("assets");
+    expect(packageMetadata.files).toEqual(expect.arrayContaining([
+      "swift/Package.swift",
+      "swift/Sources",
+      "swift/Tests",
+    ]));
     expect(packageMetadata.publishConfig).toEqual({ access: "public" });
   });
 
@@ -83,6 +93,8 @@ describe("published CLI shape", () => {
     expect(await Bun.file(resolve(packageRoot, "dist/runtime.d.ts")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "dist/native.js")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "dist/native.d.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "dist/backend.js")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "dist/backend.d.ts")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "dist/managed-runtime.js")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "assets/host/darwin-arm64/FIAHost")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "assets/host/darwin-arm64/manifest.json")).exists()).toBe(true);
@@ -94,11 +106,12 @@ describe("published CLI shape", () => {
     )) as { sha256: string; configurationSchemas: number[]; runtimeProtocol: number };
     const hasher = new Bun.CryptoHasher("sha256");
     hasher.update(await Bun.file(host).arrayBuffer());
-    expect(manifest).toMatchObject({ configurationSchemas: [1, 2, 3], runtimeProtocol: 1 });
+    expect(manifest).toMatchObject({ configurationSchemas: [1, 2, 3, 4], runtimeProtocol: 1 });
     expect(hasher.digest("hex")).toBe(manifest.sha256);
     expect(await Bun.file(resolve(packageRoot, "templates/react/src/server.ts.template")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "templates/react/assets/icon.png")).exists()).toBe(true);
     expect(await Bun.file(resolve(packageRoot, "templates/react/assets/icon.icns")).exists()).toBe(true);
+    expect(await Bun.file(resolve(packageRoot, "swift/Package.swift")).exists()).toBe(true);
 
     const configModule = await import(`../dist/config.js?test=${crypto.randomUUID()}`) as {
       FIA_CONFIG_VERSION: number;

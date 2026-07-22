@@ -7,5 +7,5 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src/config.ts", "src/runtime.ts", "src/native.ts"]
+  "include": ["src/config.ts", "src/runtime.ts", "src/native.ts", "src/backend.ts"]
 }

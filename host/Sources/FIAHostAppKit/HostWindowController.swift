@@ -10,6 +10,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     private var retryAction: (() -> Void)?
     private var quitAction: (() -> Void)?
     private var bridgeHandler: NativeBridgeHandler?
+    private var backendBridgeHandler: BackendBridgeHandler?
     private var bundledResourceHandler: BundledResourceSchemeHandler?
     private weak var webView: WKWebView?
     private let terminateApplication: @MainActor () -> Void
@@ -118,14 +119,16 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
 
     func showWebView(
         bootstrapURL: URL,
+        backendInvoke: ((BackendBridgeRequest) async throws -> Data)? = nil,
         execute: @escaping (NativeBridgeCommand) throws -> DesktopState
     ) {
-        installWebView(url: bootstrapURL, schemeHandler: nil, execute: execute)
+        installWebView(url: bootstrapURL, schemeHandler: nil, backendInvoke: backendInvoke, execute: execute)
     }
 
     func showBundledWebView(
         rootDirectory: URL,
         entry: String,
+        backendInvoke: ((BackendBridgeRequest) async throws -> Data)? = nil,
         execute: @escaping (NativeBridgeCommand) throws -> DesktopState
     ) {
         let handler = BundledResourceSchemeHandler(rootDirectory: rootDirectory)
@@ -134,12 +137,13 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
             showFailure(title: "Invalid bundled UI entry", detail: entry, onRetry: nil, onQuit: nil)
             return
         }
-        installWebView(url: url, schemeHandler: handler, execute: execute)
+        installWebView(url: url, schemeHandler: handler, backendInvoke: backendInvoke, execute: execute)
     }
 
     private func installWebView(
         url: URL,
         schemeHandler: WKURLSchemeHandler?,
+        backendInvoke: ((BackendBridgeRequest) async throws -> Data)?,
         execute: @escaping (NativeBridgeCommand) throws -> DesktopState
     ) {
         uninstallBridge()
@@ -172,6 +176,19 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
             name: NativeBridgeHandler.name
         )
         bridgeHandler = handler
+        if let backendInvoke {
+            let backendHandler = BackendBridgeHandler(
+                webView: webView,
+                originPolicy: bridgeOrigin,
+                invoke: backendInvoke
+            )
+            configuration.userContentController.addScriptMessageHandler(
+                backendHandler,
+                contentWorld: .page,
+                name: BackendBridgeHandler.name
+            )
+            backendBridgeHandler = backendHandler
+        }
         self.webView = webView
         webView.navigationDelegate = self
         webView.isInspectable = developmentMode
@@ -187,6 +204,17 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         webView?.callAsyncJavaScript(
             "globalThis.dispatchEvent(new CustomEvent('fia:native-event', { detail: event }))",
             arguments: ["event": payload],
+            in: nil,
+            in: .page,
+            completionHandler: nil
+        )
+    }
+
+    func emitBackendEvent(name: String, payload: Data) {
+        guard let value = try? JSONSerialization.jsonObject(with: payload, options: [.fragmentsAllowed]) else { return }
+        webView?.callAsyncJavaScript(
+            "globalThis.dispatchEvent(new CustomEvent('fia:backend-event', { detail: { name, payload } }))",
+            arguments: ["name": name, "payload": value],
             in: nil,
             in: .page,
             completionHandler: nil
@@ -213,7 +241,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         detailLabel.textColor = .secondaryLabelColor
         detailLabel.maximumNumberOfLines = 12
 
-        let retryButton = NSButton(title: "Restart Runtime", target: self, action: #selector(retryPressed))
+        let retryButton = NSButton(title: "Retry", target: self, action: #selector(retryPressed))
         retryButton.bezelStyle = .rounded
         retryButton.isHidden = onRetry == nil
 
@@ -305,8 +333,13 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
             forName: NativeBridgeHandler.name,
             contentWorld: .page
         )
+        webView?.configuration.userContentController.removeScriptMessageHandler(
+            forName: BackendBridgeHandler.name,
+            contentWorld: .page
+        )
         webView?.navigationDelegate = nil
         bridgeHandler = nil
+        backendBridgeHandler = nil
         bundledResourceHandler = nil
         webView = nil
     }

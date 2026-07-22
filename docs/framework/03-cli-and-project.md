@@ -20,6 +20,22 @@ hello/
         └── style.css
 ```
 
+`fia create hello --runtime swift` 将 `src/server.ts` 替换为 SwiftPM 后端：
+
+```text
+hello/
+├── fia.config.ts
+├── package.json
+├── Backend/
+│   ├── Package.swift
+│   └── Sources/AppBackend/main.swift
+└── src/ui/
+    ├── index.html
+    ├── main.tsx
+    ├── App.tsx
+    └── style.css
+```
+
 后续 `fia dev/run/build` 产生的文件统一放在 `.fia/`，正式应用产物放在 `dist/`；两者默认
 加入 `.gitignore`。图标、状态栏资源和 `native/` 属于后续增量，不在首版模板中公开。
 
@@ -83,14 +99,33 @@ HMR，但框架会生成空后端；`fia run` 与 `fia build` 将 UI 写入
 `Contents/MacOS/fia-runtime`。该模式保留 Native Bridge 和 HTTPS/WSS 远程请求，但不提供
 FIA HTTP 路由、应用 WebSocket 或其他 Bun 服务端能力。
 
+Swift 应用使用独占的 `runtime: "swift"`，必须提供项目内的 SwiftPM package 和安全的可执行
+product 名，并省略 `entry`：
+
+```ts
+export default defineConfig({
+  configVersion: 2,
+  runtime: "swift",
+  app: { name: "My App", identifier: "com.example.my-app" },
+  ui: "src/ui/index.html",
+  swift: { package: "Backend", product: "MyAppBackend" },
+});
+```
+
+`swift.package` 必须是配置目录内包含 `Package.swift` 的真实目录，不能经符号链接越出项目；
+`swift.product` 只接受安全的可执行文件名。Swift 与 Bun 应用后端互斥。开发环境仍需要 Bun
+构建 UI 和提供 HMR，同时以 debug 模式构建 Swift；生产以 release/arm64 构建并只打包
+`fia-backend` 和静态 UI。
+
 公共 `configVersion` 与应用包内 `fia-config.json.schemaVersion` 是不同边界。阶段 2 CLI
-只接受公共 schema 2，旧项目需要显式迁移；Host 内部 schema 3 承载桌面字段，同时继续读取
-历史内部 schema 1/2。三种置顶/Spaces 行为相互独立，不做隐式绑定。
+只接受公共 schema 2，旧项目需要显式迁移；Host 内部 schema 4 把 UI Runtime 与可选 Backend
+分开，同时继续读取历史内部 schema 1–3。三种置顶/Spaces 行为相互独立，不做隐式绑定。
 
 ## 3. `fia create`
 
 ```bash
 fia create hello
+fia create hello --runtime swift
 fia create hello --no-install
 fia create hello --git
 ```
@@ -122,6 +157,10 @@ fia create hello --git
 模板 UI 还从 `@semicoder/fia/native` 导入类型化桌面 API，展示当前 Dock/状态栏模式并切换
 状态栏与窗口浮动级别。该模块在普通浏览器中返回 `isAvailable() === false`，不会伪造原生能力。
 
+Swift 模板另从 `@semicoder/fia/backend` 调用示例 `greet` RPC 并订阅
+`greet.completed` 事件。Swift 侧导入 `FIABackend`，以 `BackendApplication.handle` 注册 Codable
+模型。首版由调用端泛型维护 TypeScript 类型，不生成跨语言模型代码。
+
 ## 5. CLI 构建闭环
 
 阶段 1 已实现：
@@ -130,9 +169,13 @@ fia create hello --git
 - `fia run`：从当前源码构建临时生产 `.app` 并使用生产启动协议运行，不修改 `dist/`。
 - `fia build`：编译 runtime、校验内嵌预编译 Host、组装、ad-hoc 签名并严格验证 `.app`。
 
+Swift 模式下，CLI 使用 `swift build --product` 串行构建后端并验证 product、可执行权限和 arm64
+架构。`fia dev` 监听 `Package.swift`、`Package.resolved` 与 `Sources/`，防抖后重建；失败保留旧
+后端，成功后通过内部 `SIGUSR1` 让 Host 只替换 Backend PID，不重载窗口或前端。
+
 `fia build` 在 `.fia/build/<build-id>/` staging 中完成全部工作，验证通过后原子替换
 `dist/<app.name>.app`。`fia run` 使用 `.fia/run/` 临时产物，`fia dev` 使用 `.fia/dev/`
 临时 Host 和外部 Bun 入口；两者退出后清理本次 staging。
 
-目标进程所有权保持不变：生产和 FIA 开发模式均由 Swift Host 拥有 Bun runtime，CLI 退出
-后通过 Host 生命周期链路回收 runtime，不允许残留后台进程。
+目标进程所有权保持不变：生产和 FIA 开发模式均由 Swift Host 拥有全部 Bun runtime 与 Swift
+backend 子进程，CLI 退出后通过 Host 生命周期链路回收，不允许残留后台进程。

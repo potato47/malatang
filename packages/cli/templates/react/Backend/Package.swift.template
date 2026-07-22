@@ -1,0 +1,22 @@
+// swift-tools-version: 6.0
+
+import PackageDescription
+
+let package = Package(
+    name: "__FIA_SWIFT_PRODUCT__",
+    platforms: [.macOS(.v14)],
+    products: [
+        .executable(name: "__FIA_SWIFT_PRODUCT__", targets: ["AppBackend"]),
+    ],
+    dependencies: [
+        .package(path: "../node_modules/@semicoder/fia/swift"),
+    ],
+    targets: [
+        .executableTarget(
+            name: "AppBackend",
+            dependencies: [
+                .product(name: "FIABackend", package: "swift"),
+            ]
+        ),
+    ]
+)

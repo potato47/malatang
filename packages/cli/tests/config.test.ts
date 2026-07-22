@@ -107,6 +107,77 @@ describe("public FIA configuration", () => {
     );
   });
 
+  test("resolves an exclusive Swift backend package", async () => {
+    const root = await project();
+    await mkdir(resolve(root, "Backend"));
+    await writeFile(resolve(root, "Backend/Package.swift"), "// swift-tools-version: 6.0\n");
+    await rm(resolve(root, "src/server.ts"));
+    const config = await resolveProjectConfig({
+      ...minimal(),
+      runtime: "swift",
+      swift: { package: "Backend", product: "HelloBackend" },
+    }, root);
+    expect(config).toMatchObject({
+      runtime: "swift",
+      swift: { package: resolve(root, "Backend"), product: "HelloBackend" },
+    });
+    expect(config.entry).toBeUndefined();
+
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), runtime: "swift" }, root),
+      "CONFIG_INVALID",
+      "swift",
+    );
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), swift: { package: "Backend", product: "HelloBackend" } }, root),
+      "CONFIG_INVALID",
+      "swift",
+    );
+    await expectConfigError(
+      resolveProjectConfig({
+        ...minimal(),
+        runtime: "swift",
+        swift: { package: "Backend", product: "../unsafe" },
+      }, root),
+      "CONFIG_SWIFT_INVALID",
+      "swift.product",
+    );
+    await expectConfigError(
+      resolveProjectConfig({
+        ...minimal(),
+        runtime: "swift",
+        swift: { package: "Missing", product: "HelloBackend" },
+      }, root),
+      "CONFIG_SWIFT_INVALID",
+      "swift.package",
+    );
+
+    const outsideRoot = await project();
+    await mkdir(resolve(outsideRoot, "Backend"));
+    await writeFile(resolve(outsideRoot, "Backend/Package.swift"), "// swift-tools-version: 6.0\n");
+    await symlink(resolve(outsideRoot, "Backend"), resolve(root, "LinkedBackend"));
+    await expectConfigError(
+      resolveProjectConfig({
+        ...minimal(),
+        runtime: "swift",
+        swift: { package: "LinkedBackend", product: "HelloBackend" },
+      }, root),
+      "CONFIG_SWIFT_INVALID",
+      "swift.package",
+    );
+
+    await expectConfigError(
+      resolveProjectConfig({
+        ...minimal(),
+        runtime: "swift",
+        entry: "src/server.ts",
+        swift: { package: "Backend", product: "HelloBackend" },
+      }, root),
+      "CONFIG_INVALID",
+      "entry",
+    );
+  });
+
   test("loads a default TypeScript export from the project root", async () => {
     const root = await project();
     await writeFile(resolve(root, "fia.config.ts"), `

@@ -105,6 +105,47 @@ describe("FIA project creation", () => {
     expect(calls.every((call) => call.cwd.includes(".fia-create-with-git-"))).toBe(true);
   });
 
+  test("generates a Swift backend project", async () => {
+    const cwd = await workspace();
+    const project = await createProject({
+      name: "swift-notes",
+      cwd,
+      runtime: "swift",
+      install: false,
+      initializeGit: false,
+      io: output().io,
+      dependencies: { cliPackageSpec: "file:../cli" },
+    });
+
+    for (const file of [
+      "Backend/Package.swift",
+      "Backend/Sources/AppBackend/main.swift",
+      "src/ui/App.tsx",
+      "fia.config.ts",
+    ]) {
+      expect(await Bun.file(resolve(project, file)).exists()).toBe(true);
+    }
+    expect(await Bun.file(resolve(project, "src/server.ts")).exists()).toBe(false);
+    expect(await readFile(resolve(project, "fia.config.ts"), "utf8")).toContain('runtime: "swift"');
+    expect(await readFile(resolve(project, "fia.config.ts"), "utf8")).toContain('product: "SwiftNotesBackend"');
+    expect(await readFile(resolve(project, "Backend/Package.swift"), "utf8")).toContain(
+      '.executable(name: "SwiftNotesBackend"',
+    );
+    expect(await readFile(resolve(project, "src/ui/App.tsx"), "utf8")).toContain("backend.invoke");
+
+    const numeric = await createProject({
+      name: "3d-notes",
+      cwd,
+      runtime: "swift",
+      install: false,
+      initializeGit: false,
+      io: output().io,
+    });
+    expect(await readFile(resolve(numeric, "fia.config.ts"), "utf8")).toContain(
+      'product: "App3dNotesBackend"',
+    );
+  });
+
   test("rejects unsafe names and existing targets", async () => {
     const cwd = await workspace();
     for (const name of ["Hello", "hello_world", "hello/world", "hello--world", "hello-"]) {

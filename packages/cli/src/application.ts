@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, watch } from "node:fs";
 import {
   access,
   chmod,
@@ -50,7 +50,7 @@ interface HostManifest {
   sha256: string;
   architecture: "arm64";
   minimumSystemVersion: "14.0";
-  configurationSchemas: readonly [1, 2, 3];
+  configurationSchemas: readonly [1, 2, 3, 4];
   runtimeProtocol: 1;
 }
 
@@ -66,6 +66,7 @@ interface BuildContext {
 
 const HOST_EXECUTABLE = "FIAHost";
 const RUNTIME_EXECUTABLE = "fia-runtime";
+const BACKEND_EXECUTABLE = "fia-backend";
 const CSP_NONCE = "__FIA_CSP_NONCE__";
 
 function tagEnd(html: string, start: number): number | undefined {
@@ -217,7 +218,7 @@ async function verifyHostAsset(directory: string, debug: boolean, io: Applicatio
     || manifest.architecture !== "arm64"
     || manifest.minimumSystemVersion !== "14.0"
     || manifest.runtimeProtocol !== 1
-    || manifest.configurationSchemas.join(",") !== "1,2,3"
+    || manifest.configurationSchemas.join(",") !== "1,2,3,4"
   ) {
     throw new Error("precompiled Host manifest is incompatible with this CLI");
   }
@@ -301,6 +302,61 @@ interface ProductionUI {
   readonly entry: string;
 }
 
+interface SwiftBackendBuild {
+  readonly executable: string;
+  readonly scratchPath: string;
+}
+
+async function buildSwiftBackend(
+  context: BuildContext,
+  configuration: "debug" | "release",
+  scratchPath = resolve(context.stagingRoot, "swift-build"),
+): Promise<SwiftBackendBuild> {
+  const swift = context.config.swift;
+  if (swift === undefined) throw new Error("Swift backend configuration is missing");
+  await mkdir(scratchPath, { recursive: true });
+  const common = [
+    "/usr/bin/xcrun",
+    "swift",
+    "build",
+    "--configuration",
+    configuration,
+    "--arch",
+    "arm64",
+    "--package-path",
+    swift.package,
+    "--scratch-path",
+    scratchPath,
+  ] as const;
+  await checked(
+    `Swift backend ${configuration} build`,
+    [...common, "--product", swift.product],
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  );
+  const binPath = (await checked(
+    "Swift backend binary path",
+    [...common, "--show-bin-path"],
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  )).trim();
+  const executable = resolve(binPath, swift.product);
+  await access(executable, constants.R_OK | constants.X_OK);
+  const architectures = (await checked(
+    "Swift backend architecture verification",
+    ["/usr/bin/lipo", "-archs", executable],
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  )).trim();
+  if (architectures !== "arm64") {
+    throw new Error(`Swift backend architecture is ${architectures}; expected arm64`);
+  }
+  return { executable, scratchPath };
+}
+
 async function buildProductionUI(context: BuildContext): Promise<ProductionUI> {
   const outputDirectory = resolve(context.stagingRoot, "ui");
   await mkdir(outputDirectory, { recursive: true });
@@ -371,9 +427,10 @@ function hostConfiguration(
     executable: string;
     arguments: string[];
   },
+  backend: { mode: "none" } | { mode: "production" } | { mode: "development"; executable: string },
 ): Record<string, unknown> {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     protocolVersion: 1,
     app: {
       name: config.app.name,
@@ -383,6 +440,7 @@ function hostConfiguration(
     window: config.window,
     statusBar: config.statusBar,
     runtime,
+    backend,
   };
 }
 
@@ -397,6 +455,10 @@ async function assembleApp(
     sourceDirectory: string;
     entry: string;
   },
+  backend: { mode: "none" } | { mode: "production"; executable: string } | {
+    mode: "development";
+    executable: string;
+  } = { mode: "none" },
 ): Promise<void> {
   const contents = resolve(context.appPath, "Contents");
   const macOS = resolve(contents, "MacOS");
@@ -409,12 +471,18 @@ async function assembleApp(
   await copyFile(hostSource, hostDestination);
   await chmod(hostDestination, 0o755);
   let runtimeDestination: string | undefined;
+  let backendDestination: string | undefined;
   if (runtime.mode === "production") {
     runtimeDestination = resolve(macOS, RUNTIME_EXECUTABLE);
     await copyFile(runtime.executable, runtimeDestination);
     await chmod(runtimeDestination, 0o755);
   } else if (runtime.mode === "bundled") {
     await cp(runtime.sourceDirectory, resolve(resources, "UI"), { recursive: true });
+  }
+  if (backend.mode === "production") {
+    backendDestination = resolve(macOS, BACKEND_EXECUTABLE);
+    await copyFile(backend.executable, backendDestination);
+    await chmod(backendDestination, 0o755);
   }
   if (context.config.app.icon !== undefined) {
     await copyFile(context.config.app.icon, resolve(resources, "AppIcon.icns"));
@@ -432,6 +500,11 @@ async function assembleApp(
           : runtime.mode === "bundled"
           ? { mode: "bundled", entry: runtime.entry }
           : { mode: "development", executable: runtime.executable, arguments: runtime.arguments },
+        backend.mode === "production"
+          ? { mode: "production" }
+          : backend.mode === "development"
+          ? { mode: "development", executable: backend.executable }
+          : { mode: "none" },
       ), null, 2)}\n`,
     ),
   ]);
@@ -439,9 +512,12 @@ async function assembleApp(
   if (runtimeDestination !== undefined) {
     await checked("Runtime signing", ["/usr/bin/codesign", "--force", "--sign", "-", runtimeDestination], context.config.projectRoot, context.debug, context.io);
   }
+  if (backendDestination !== undefined) {
+    await checked("Swift backend signing", ["/usr/bin/codesign", "--force", "--sign", "-", backendDestination], context.config.projectRoot, context.debug, context.io);
+  }
   await checked("Host signing", ["/usr/bin/codesign", "--force", "--sign", "-", hostDestination], context.config.projectRoot, context.debug, context.io);
   await checked("application signing", ["/usr/bin/codesign", "--force", "--sign", "-", context.appPath], context.config.projectRoot, context.debug, context.io);
-  await verifyApp(context, runtime.mode);
+  await verifyApp(context, runtime.mode, backend.mode);
 }
 
 async function plistValue(plist: string, key: string, context: BuildContext): Promise<string> {
@@ -454,7 +530,11 @@ async function plistValue(plist: string, key: string, context: BuildContext): Pr
   )).trim();
 }
 
-async function verifyApp(context: BuildContext, mode: "development" | "production" | "bundled"): Promise<void> {
+async function verifyApp(
+  context: BuildContext,
+  mode: "development" | "production" | "bundled",
+  backendMode: "none" | "production" | "development" = "none",
+): Promise<void> {
   const contents = resolve(context.appPath, "Contents");
   const host = resolve(contents, "MacOS", HOST_EXECUTABLE);
   const plist = resolve(contents, "Info.plist");
@@ -485,6 +565,11 @@ async function verifyApp(context: BuildContext, mode: "development" | "productio
     await access(runtime, constants.X_OK);
     executables.push(runtime);
   }
+  if (backendMode === "production") {
+    const backend = resolve(contents, "MacOS", BACKEND_EXECUTABLE);
+    await access(backend, constants.X_OK);
+    executables.push(backend);
+  }
   for (const executable of executables) {
     const architectures = (await checked(
       "application architecture verification",
@@ -506,12 +591,15 @@ async function verifyApp(context: BuildContext, mode: "development" | "productio
 
 async function productionApp(context: BuildContext): Promise<void> {
   const ui = await buildProductionUI(context);
-  if (context.config.runtime === "none") {
+  if (context.config.runtime === "none" || context.config.runtime === "swift") {
+    const backend = context.config.runtime === "swift"
+      ? await buildSwiftBackend(context, "release")
+      : undefined;
     await assembleApp(context, {
       mode: "bundled",
       sourceDirectory: ui.directory,
       entry: `UI/${basename(ui.entry)}`,
-    });
+    }, backend === undefined ? { mode: "none" } : { mode: "production", executable: backend.executable });
     return;
   }
   if (context.config.entry === undefined) throw new Error("Bun runtime entry is missing");
@@ -539,7 +627,7 @@ async function productionApp(context: BuildContext): Promise<void> {
   await assembleApp(context, { mode: "production", executable: runtime });
 }
 
-async function developmentApp(context: BuildContext): Promise<void> {
+async function developmentApp(context: BuildContext): Promise<SwiftBackendBuild | undefined> {
   let application = context.config.entry;
   if (application === undefined) {
     application = resolve(context.stagingRoot, "empty-application.ts");
@@ -547,11 +635,15 @@ async function developmentApp(context: BuildContext): Promise<void> {
   }
   const entry = resolve(context.stagingRoot, "runtime-entry.ts");
   await Bun.write(entry, generatedEntry(application, context.managedRuntimePath, "development", context.config.ui));
+  const backend = context.config.runtime === "swift"
+    ? await buildSwiftBackend(context, "debug")
+    : undefined;
   await assembleApp(context, {
     mode: "development",
     executable: process.execPath,
     arguments: ["--hot", "--no-clear-screen", entry],
-  });
+  }, backend === undefined ? { mode: "none" } : { mode: "development", executable: backend.executable });
+  return backend;
 }
 
 async function streamToIO(stream: ReadableStream<Uint8Array>, sink: (value: string) => void): Promise<void> {
@@ -570,7 +662,56 @@ async function streamToIO(stream: ReadableStream<Uint8Array>, sink: (value: stri
   }
 }
 
-async function launchHost(context: BuildContext): Promise<void> {
+function watchSwiftBackend(
+  context: BuildContext,
+  build: SwiftBackendBuild,
+  host: Bun.Subprocess,
+): () => void {
+  const swift = context.config.swift;
+  if (swift === undefined) return () => {};
+  let closed = false;
+  let building = false;
+  let dirty = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const rebuild = async (): Promise<void> => {
+    if (closed) return;
+    if (building) {
+      dirty = true;
+      return;
+    }
+    building = true;
+    dirty = false;
+    context.io.stdout("Rebuilding Swift backend…\n");
+    try {
+      await buildSwiftBackend(context, "debug", build.scratchPath);
+      if (!closed && host.exitCode === null) {
+        host.kill("SIGUSR1");
+        context.io.stdout("Swift backend rebuilt; restarting backend process\n");
+      }
+    } catch (error) {
+      context.io.stderr(`Swift backend rebuild failed: ${error instanceof Error ? error.message : error}\n`);
+    } finally {
+      building = false;
+      if (dirty && !closed) void rebuild();
+    }
+  };
+
+  const watcher = watch(swift.package, { recursive: true }, (_event, filename) => {
+    const path = filename?.toString().replaceAll("\\", "/") ?? "";
+    if (path !== "Package.swift" && path !== "Package.resolved" && !path.startsWith("Sources/")) return;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = setTimeout(() => void rebuild(), 200);
+  });
+  watcher.on("error", (error) => context.io.stderr(`Swift backend watcher failed: ${error.message}\n`));
+  return () => {
+    closed = true;
+    if (timer !== undefined) clearTimeout(timer);
+    watcher.close();
+  };
+}
+
+async function launchHost(context: BuildContext, swiftBuild?: SwiftBackendBuild): Promise<void> {
   const executable = resolve(context.appPath, "Contents/MacOS", HOST_EXECUTABLE);
   context.io.stdout(`Launching ${context.config.app.name}\n`);
   const child = Bun.spawn([executable], {
@@ -588,6 +729,7 @@ async function launchHost(context: BuildContext): Promise<void> {
   };
   const interrupt = (): void => forward("SIGINT");
   const terminate = (): void => forward("SIGTERM");
+  const stopWatching = swiftBuild === undefined ? () => {} : watchSwiftBackend(context, swiftBuild, child);
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   try {
@@ -598,6 +740,7 @@ async function launchHost(context: BuildContext): Promise<void> {
     ]);
     if (exitCode !== 0) throw new Error(`Host exited with status ${exitCode}`);
   } finally {
+    stopWatching();
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);
   }
@@ -613,7 +756,11 @@ async function replaceDistribution(context: BuildContext): Promise<string> {
   try {
     await rename(context.appPath, destination);
     const destinationContext = { ...context, appPath: destination };
-    await verifyApp(destinationContext, context.config.runtime === "none" ? "bundled" : "production");
+    await verifyApp(
+      destinationContext,
+      context.config.runtime === "bun" ? "production" : "bundled",
+      context.config.runtime === "swift" ? "production" : "none",
+    );
   } catch (error) {
     await rm(destination, { recursive: true, force: true });
     if (hadPrevious && await Bun.file(resolve(previous, "Contents/Info.plist")).exists()) {
@@ -655,8 +802,8 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
     await typecheck(context);
     if (config.runtime === "bun") await validateApplication(context);
     if (options.command === "dev") {
-      await developmentApp(context);
-      await launchHost(context);
+      const swiftBuild = await developmentApp(context);
+      await launchHost(context, swiftBuild);
       return;
     }
 

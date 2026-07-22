@@ -2,18 +2,19 @@
 
 FIA is a macOS desktop UI framework for applications built with TypeScript and Web technologies.
 The repository contains the completed **phase 0 risk prototype**, the **phase 1 CLI MVP**, and the
-first **phase 2 desktop shell** slice. A reusable Swift/AppKit host launches a FIA-managed Bun runtime,
-while `@semicoder/fia` provides project creation, HMR, production runs, signed local builds, desktop
-application modes, window controls, and a typed native bridge.
+first **phase 2 desktop shell** slice. A reusable Swift/AppKit host can launch either a FIA-managed Bun
+runtime or an application-owned Swift backend, while `@semicoder/fia` provides project creation, HMR,
+production runs, signed local builds, desktop application modes, window controls, and typed bridges.
 
 ## Requirements
 
 - macOS 14 or newer on Apple Silicon
 - Bun 1.3.14 or newer
-- Xcode/Swift toolchain capable of Swift tools 6.0 (framework development only)
+- Swift 6 toolchain (framework development and `runtime: "swift"` projects)
 
 Ordinary FIA projects consume the versioned arm64 Host embedded in `@semicoder/fia`, so Xcode and Swift
-are not required for `fia create/dev/run/build`.
+are not required for Bun or UI-only projects. Swift backend projects require Swift 6 while developing
+and building; their end users do not need Bun, SwiftPM, or Xcode.
 
 ## CLI development
 
@@ -47,6 +48,31 @@ Set `runtime: "none"` and omit `entry` for a UI-only application. Development st
 bundling and HMR, while production packages the generated UI under `Contents/Resources/UI` and does
 not include the Bun runtime executable. The default `runtime: "bun"` keeps the full-stack server entry.
 
+Use the exclusive Swift backend mode when application logic should be written with Swift and Codable:
+
+```ts
+export default defineConfig({
+  configVersion: 2,
+  runtime: "swift",
+  app: { name: "Hello", identifier: "com.example.hello" },
+  ui: "src/ui/index.html",
+  swift: { package: "Backend", product: "HelloBackend" },
+});
+```
+
+The UI calls it through the separate asynchronous backend bridge:
+
+```ts
+import { backend } from "@semicoder/fia/backend";
+
+const value = await backend.invoke<{ name: string }, { message: string }>("greet", { name: "FIA" });
+const off = backend.onEvent<{ progress: number }>("sync.progress", event => console.log(event.progress));
+```
+
+Production Swift applications contain static `fia-app://` UI and `Contents/MacOS/fia-backend`, with no
+`fia-runtime`. During `fia dev`, Bun remains the UI bundler/HMR server; successful Swift rebuilds restart
+only the backend process.
+
 Web UI code imports the native desktop API from its own browser entry:
 
 ```ts
@@ -66,7 +92,8 @@ export default defineApp({
 });
 ```
 
-`fia create hello` generates the default React/Bun template and normally runs `bun install`;
+`fia create hello` generates the default React/Bun template; `fia create hello --runtime swift` generates
+React UI, a SwiftPM backend, and an example RPC. Both normally run `bun install`;
 `--no-install` skips installation and `--git` opts into repository initialization. The package is
 not published by this repository workflow yet, so workspace smoke tests use `--no-install` or an
 injected local package reference.

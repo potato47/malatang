@@ -1,6 +1,6 @@
 # FIA 开发 TODO
 
-- 最后更新：2026-07-19
+- 最后更新：2026-07-22
 - 当前基线：阶段 0 风险原型与阶段 1 CLI MVP 本地主流程均已验收
 - 当前重点：阶段 2 系统服务切片，以及独立推进的 npm 首次公开发布验收
 
@@ -115,7 +115,7 @@
 - [ ] **P0** 选择并添加开源许可证，补齐 npm `repository`、`homepage`、`bugs` 等发布元数据。
 - [ ] **P0** 确认 npm `@semicoder` scope 发布权限并启用发布 2FA。
 - [ ] 正式公开发布 `@semicoder/fia`，并验证 npm 页面、dist-tag 和全新目录安装。
-- [x] 当前自动化基线通过：CLI 52 项、Runtime 11 项、Swift Host 27 项。
+- [x] 当前自动化基线通过：CLI 67 项、Runtime 11 项、Swift Host 36 项、Swift Backend SDK 5 项。
 - [x] README 和框架文档更新为真实 CLI 用法。
 
 ## 建议的近期执行顺序
@@ -141,6 +141,15 @@
 以下决策不阻塞阶段 1，继续保留在后续阶段：原生插件 ABI/API、更新器信任模型、watchdog 默认策略。
 
 ## 后续阶段规划
+
+### Swift 后端模式（已完成）
+
+- [x] 增加独占 `runtime: "swift"` 配置、SwiftPM 脚手架和 Swift 6 doctor 门禁。
+- [x] 发布本地 `FIABackend` SwiftPM SDK 与独立 `@semicoder/fia/backend` Bridge。
+- [x] Host schema 4 分离 UI Runtime/Backend，并实现 NDJSON RPC、事件、超时和分级退出。
+- [x] 开发构建失败保留旧后端，成功后只平滑重启 Backend PID。
+- [x] 生产包使用静态 UI 和签名 `fia-backend`，不携带 Bun Runtime。
+- [x] 配置、脚手架、SDK、Host 与生产协议交换纳入自动化回归。
 
 ### 阶段 2：原生桌面能力
 

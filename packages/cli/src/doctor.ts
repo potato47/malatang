@@ -29,11 +29,13 @@ export interface DoctorReport {
 
 export interface DoctorOptions {
   debug?: boolean;
+  requiresSwift?: boolean;
 }
 
 interface CheckContext {
   probe: DoctorProbe;
   debug: boolean;
+  requiresSwift: boolean;
 }
 
 function firstLine(value: string): string | undefined {
@@ -166,26 +168,38 @@ async function optionalCommandCheck(
   label: string,
   command: readonly string[],
   availableMessage: (commandResult: CommandResult) => string,
+  required = false,
 ): Promise<DoctorCheckResult> {
   const commandResult = await context.probe.run(command);
   const available = commandResult.exitCode === 0 && !commandResult.timedOut;
   return result(
     id,
     label,
-    false,
-    available ? "pass" : failureStatus(false),
-    available ? availableMessage(commandResult) : `${label} is not available (optional)`,
+    required,
+    available ? "pass" : failureStatus(required),
+    available ? availableMessage(commandResult) : `${label} is not available${required ? "" : " (optional)"}`,
     context.debug ? commandDetails(command, commandResult) : undefined,
   );
 }
 
 async function swiftCheck(context: CheckContext): Promise<DoctorCheckResult> {
-  return await optionalCommandCheck(
-    context,
+  const command = ["/usr/bin/xcrun", "swift", "--version"] as const;
+  const commandResult = await context.probe.run(command);
+  const line = firstLine(commandResult.stdout);
+  const major = Number.parseInt(line?.match(/Swift version\s+(\d+)/i)?.[1] ?? "", 10);
+  const available = commandResult.exitCode === 0 && !commandResult.timedOut && Number.isFinite(major);
+  const supported = available && major >= 6;
+  return result(
     "swift",
     "Swift",
-    ["/usr/bin/xcrun", "swift", "--version"],
-    (commandResult) => firstLine(commandResult.stdout) ?? "Swift is available",
+    context.requiresSwift,
+    supported ? "pass" : failureStatus(context.requiresSwift),
+    supported
+      ? line ?? "Swift 6 is available"
+      : available
+      ? `Swift ${major} is unsupported; Swift backend projects require Swift 6 or newer`
+      : `Swift is not available${context.requiresSwift ? "" : " (optional)"}`,
+    context.debug ? commandDetails(command, commandResult) : undefined,
   );
 }
 
@@ -231,7 +245,7 @@ async function developerIDCheck(context: CheckContext): Promise<DoctorCheckResul
 }
 
 export async function runDoctor(probe: DoctorProbe, options: DoctorOptions = {}): Promise<DoctorReport> {
-  const context = { probe, debug: options.debug === true };
+  const context = { probe, debug: options.debug === true, requiresSwift: options.requiresSwift === true };
   const checks: DoctorCheckResult[] = [];
   for (const check of [
     platformCheck,

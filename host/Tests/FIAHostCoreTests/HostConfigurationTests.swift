@@ -53,6 +53,29 @@ struct HostConfigurationTests {
         #expect(throws: HostConfigurationError.self) { try HostConfiguration.decode(outsideUI) }
     }
 
+    @Test func decodesSchemaFourWithAnOrthogonalSwiftBackend() throws {
+        let schemaFour = current
+            .replacing(#""schemaVersion":3"#, with: #""schemaVersion":4"#)
+            .replacing(
+                #""runtime":{"mode":"production"}"#,
+                with: #""runtime":{"mode":"bundled","entry":"UI/index.html"},"backend":{"mode":"production"}"#
+            )
+        let production = try HostConfiguration.decode(schemaFour)
+        #expect(production.runtime.isBundled)
+        #expect(production.backend.mode == .production)
+
+        let development = schemaFour
+            .replacing(
+                #""runtime":{"mode":"bundled","entry":"UI/index.html"}"#,
+                with: #""runtime":{"mode":"development","executable":"/usr/bin/bun","arguments":["--hot","entry.ts"]}"#
+            )
+            .replacing(#""backend":{"mode":"production"}"#, with: #""backend":{"mode":"development","executable":"/tmp/AppBackend"}"#)
+        #expect(try HostConfiguration.decode(development).backend.isDevelopment)
+
+        let invalid = schemaFour.replacing("UI/index.html", with: "../outside.html")
+        #expect(throws: HostConfigurationError.self) { try HostConfiguration.decode(invalid) }
+    }
+
     @Test func rejectsInvalidRuntimeShapes() {
         let externalProduction = #"{"schemaVersion":2,"protocolVersion":1,"app":{"name":"Built App","identifier":"com.example.built","quitOnLastWindowClosed":true},"window":{"width":1024,"height":700,"minWidth":720,"minHeight":480},"runtime":{"mode":"production","executable":"/tmp/bun"}}"#.data(using: .utf8)!
         let relativeDevelopment = #"{"schemaVersion":2,"protocolVersion":1,"app":{"name":"Dev App","identifier":"com.example.dev","quitOnLastWindowClosed":true},"window":{"width":1024,"height":700,"minWidth":720,"minHeight":480},"runtime":{"mode":"development","executable":"bin/bun","arguments":["--hot"]}}"#.data(using: .utf8)!

@@ -9,6 +9,7 @@ local builds, typed desktop configuration, a secure native bridge, and environme
 ```bash
 fia --version
 fia create hello
+fia create hello --runtime swift
 fia create hello --no-install --git
 fia dev
 fia run
@@ -35,6 +36,32 @@ export default defineConfig({
 Bun remains a development/build dependency for browser bundling and HMR. Omit `runtime` (or use
 `runtime: "bun"`) when the application has FIA HTTP or WebSocket routes.
 
+`runtime: "swift"` selects an exclusive Swift backend. It requires Swift 6, a project-local SwiftPM
+package, an executable product, and no `entry`:
+
+```ts
+export default defineConfig({
+  configVersion: 2,
+  runtime: "swift",
+  app: { name: "Hello", identifier: "com.example.hello" },
+  ui: "src/ui/index.html",
+  swift: { package: "Backend", product: "HelloBackend" },
+});
+```
+
+UI code uses the independent asynchronous bridge:
+
+```ts
+import { backend } from "@semicoder/fia/backend";
+
+const result = await backend.invoke<{ name: string }, { message: string }>("greet", { name: "FIA" });
+const unsubscribe = backend.onEvent("greet.completed", payload => console.log(payload));
+```
+
+The npm package also contains the local SwiftPM SDK under `swift/`. Production packages static UI and
+`fia-backend` without Bun; development keeps Bun only for browser HMR and restarts the Swift child after
+successful source builds.
+
 Web UI code imports the typed Host bridge from the native subpath:
 
 ```ts
@@ -57,5 +84,6 @@ export default defineApp({
 `fia dev` uses the embedded arm64 Host and Bun HMR, `fia run` launches a temporary production
 build, and `fia build` atomically writes an ad-hoc signed `.app` under `dist/`.
 
-FIA currently requires macOS 14 or newer, Apple Silicon, and Bun 1.3.14 or newer. The package is prepared
-for publication but is not published by this repository workflow yet.
+FIA currently requires macOS 14 or newer, Apple Silicon, and Bun 1.3.14 or newer. Swift backend projects
+also require Swift 6 at development/build time. The package is prepared for publication but is not
+published by this repository workflow yet.

@@ -97,6 +97,26 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         public var isBundled: Bool { mode == .bundled }
     }
 
+    public struct Backend: Codable, Equatable, Sendable {
+        public enum Mode: String, Codable, Equatable, Sendable {
+            case none
+            case production
+            case development
+        }
+
+        public let mode: Mode
+        public let executable: String?
+
+        public init(mode: Mode, executable: String? = nil) {
+            self.mode = mode
+            self.executable = executable
+        }
+
+        public static let none = Backend(mode: .none)
+        public var isEnabled: Bool { mode != .none }
+        public var isDevelopment: Bool { mode == .development }
+    }
+
     private struct LegacyApp: Codable {
         let name: String
         let identifier: String
@@ -124,6 +144,7 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
     public let window: Window
     public let statusBar: StatusBar
     public let runtime: Runtime
+    public let backend: Backend
 
     public init(
         schemaVersion: Int,
@@ -131,7 +152,8 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         app: App,
         window: Window,
         statusBar: StatusBar,
-        runtime: Runtime = .production
+        runtime: Runtime = .production,
+        backend: Backend = .none
     ) {
         self.schemaVersion = schemaVersion
         self.protocolVersion = protocolVersion
@@ -139,6 +161,39 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         self.window = window
         self.statusBar = statusBar
         self.runtime = runtime
+        self.backend = backend
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case protocolVersion
+        case app
+        case window
+        case statusBar
+        case runtime
+        case backend
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        protocolVersion = try container.decode(Int.self, forKey: .protocolVersion)
+        app = try container.decode(App.self, forKey: .app)
+        window = try container.decode(Window.self, forKey: .window)
+        statusBar = try container.decode(StatusBar.self, forKey: .statusBar)
+        runtime = try container.decode(Runtime.self, forKey: .runtime)
+        backend = try container.decodeIfPresent(Backend.self, forKey: .backend) ?? .none
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(protocolVersion, forKey: .protocolVersion)
+        try container.encode(app, forKey: .app)
+        try container.encode(window, forKey: .window)
+        try container.encode(statusBar, forKey: .statusBar)
+        try container.encode(runtime, forKey: .runtime)
+        if schemaVersion >= 4 { try container.encode(backend, forKey: .backend) }
     }
 
     public static func load(from url: URL, maximumBytes: Int = 64 * 1024) throws -> HostConfiguration {
@@ -169,6 +224,8 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
                 configuration = try decodeLegacy(data, root: root, schemaVersion: schemaVersion)
             case 3:
                 configuration = try decodeCurrent(data, root: root)
+            case 4:
+                configuration = try decodeSchemaFour(data, root: root)
             default:
                 throw HostConfigurationError.unsupportedSchema(schemaVersion)
             }
@@ -244,6 +301,45 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         return try JSONDecoder().decode(HostConfiguration.self, from: data)
     }
 
+    private static func decodeSchemaFour(_ data: Data, root: [String: Any]) throws -> HostConfiguration {
+        try requireExactKeys(
+            root,
+            expected: ["schemaVersion", "protocolVersion", "app", "window", "statusBar", "runtime", "backend"],
+            at: "root"
+        )
+        guard let appObject = root["app"] as? [String: Any],
+              let windowObject = root["window"] as? [String: Any],
+              let statusBarObject = root["statusBar"] as? [String: Any]
+        else { throw HostConfigurationError.invalidShape }
+        try requireExactKeys(appObject, expected: ["name", "identifier", "mode"], at: "app")
+        try requireExactKeys(
+            windowObject,
+            expected: [
+                "width", "height", "minWidth", "minHeight", "closeBehavior", "restoreState",
+                "alwaysOnTop", "visibleOnAllSpaces", "visibleOverFullScreen",
+            ],
+            at: "window"
+        )
+        try requireExactKeys(statusBarObject, expected: ["symbol", "tooltip"], at: "statusBar")
+        try validateRuntimeShape(root["runtime"])
+        try validateBackendShape(root["backend"])
+        return try JSONDecoder().decode(HostConfiguration.self, from: data)
+    }
+
+    private static func validateBackendShape(_ value: Any?) throws {
+        guard let object = value as? [String: Any], let mode = object["mode"] as? String else {
+            throw HostConfigurationError.invalidBackend
+        }
+        switch mode {
+        case Backend.Mode.none.rawValue, Backend.Mode.production.rawValue:
+            try requireExactKeys(object, expected: ["mode"], at: "backend")
+        case Backend.Mode.development.rawValue:
+            try requireExactKeys(object, expected: ["mode", "executable"], at: "backend")
+        default:
+            throw HostConfigurationError.invalidBackend
+        }
+    }
+
     private static func validateRuntimeShape(_ value: Any?) throws {
         guard let runtimeObject = value as? [String: Any], let mode = runtimeObject["mode"] as? String else {
             throw HostConfigurationError.invalidShape
@@ -261,7 +357,7 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
     }
 
     private func validate() throws {
-        guard (1...3).contains(schemaVersion) else {
+        guard (1...4).contains(schemaVersion) else {
             throw HostConfigurationError.unsupportedSchema(schemaVersion)
         }
         guard protocolVersion == 1 else { throw HostConfigurationError.unsupportedProtocol(protocolVersion) }
@@ -319,6 +415,19 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
                   runtime.entry == nil
             else { throw HostConfigurationError.invalidRuntime }
         }
+        switch backend.mode {
+        case .none, .production:
+            guard backend.executable == nil else { throw HostConfigurationError.invalidBackend }
+        case .development:
+            guard schemaVersion >= 4,
+                  let executable = backend.executable,
+                  NSString(string: executable).isAbsolutePath,
+                  !executable.contains("\0")
+            else { throw HostConfigurationError.invalidBackend }
+        }
+        if schemaVersion < 4, backend != .none { throw HostConfigurationError.invalidBackend }
+        if backend.mode == .production, runtime.mode != .bundled { throw HostConfigurationError.invalidBackend }
+        if backend.mode == .development, runtime.mode != .development { throw HostConfigurationError.invalidBackend }
     }
 
     private static func requireExactKeys(
@@ -344,6 +453,7 @@ public enum HostConfigurationError: Error, Equatable, LocalizedError, Sendable {
     case invalidWindowDimensions
     case invalidStatusBar
     case invalidRuntime
+    case invalidBackend
 
     public var errorDescription: String? {
         switch self {
@@ -358,6 +468,7 @@ public enum HostConfigurationError: Error, Equatable, LocalizedError, Sendable {
         case .invalidWindowDimensions: "Window dimensions are invalid"
         case .invalidStatusBar: "Status bar configuration is invalid"
         case .invalidRuntime: "Runtime launch configuration is invalid"
+        case .invalidBackend: "Swift backend launch configuration is invalid"
         }
     }
 }

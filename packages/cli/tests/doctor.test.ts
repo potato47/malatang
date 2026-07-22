@@ -101,6 +101,29 @@ describe("fia doctor", () => {
     expect(optional.map((check) => check.status)).toEqual(["warn", "warn", "warn", "warn", "warn"]);
   });
 
+  test("requires Swift 6 for Swift backend projects", async () => {
+    const missing = new FakeDoctorProbe();
+    missing.setCommand(
+      ["/usr/bin/xcrun", "swift", "--version"],
+      commandResult("", { exitCode: 1, stderr: "not installed" }),
+    );
+    const missingReport = await runDoctor(missing, { requiresSwift: true });
+    expect(missingReport.ok).toBe(false);
+    expect(missingReport.checks.find((check) => check.id === "swift")).toMatchObject({
+      required: true,
+      status: "fail",
+    });
+
+    const old = new FakeDoctorProbe();
+    old.setCommand(
+      ["/usr/bin/xcrun", "swift", "--version"],
+      commandResult("Apple Swift version 5.10\n"),
+    );
+    const oldReport = await runDoctor(old, { requiresSwift: true });
+    expect(oldReport.ok).toBe(false);
+    expect(oldReport.checks.find((check) => check.id === "swift")?.message).toContain("unsupported");
+  });
+
   test("adds command details only in debug mode", async () => {
     const probe = new FakeDoctorProbe();
     probe.setCommand(

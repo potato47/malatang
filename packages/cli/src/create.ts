@@ -17,6 +17,7 @@ export interface CreateProjectDependencies {
 export interface CreateProjectOptions {
   name: string;
   cwd: string;
+  runtime?: "bun" | "swift";
   install: boolean;
   initializeGit: boolean;
   io: CreateIO;
@@ -30,17 +31,29 @@ export class CreateProjectError extends Error {
   }
 }
 
-const TEMPLATE_FILES = [
+const COMMON_TEMPLATE_FILES = [
+  ["tsconfig.json", "tsconfig.json"],
+  ["gitignore", ".gitignore"],
+  ["src/ui/index.html", "src/ui/index.html"],
+  ["src/ui/main.tsx.template", "src/ui/main.tsx"],
+  ["src/ui/style.css", "src/ui/style.css"],
+] as const;
+
+const BUN_TEMPLATE_FILES = [
   ["AGENTS.md.template", "AGENTS.md"],
   ["fia.config.ts.template", "fia.config.ts"],
   ["README.md.template", "README.md"],
-  ["tsconfig.json", "tsconfig.json"],
-  ["gitignore", ".gitignore"],
   ["src/server.ts.template", "src/server.ts"],
-  ["src/ui/index.html", "src/ui/index.html"],
-  ["src/ui/main.tsx.template", "src/ui/main.tsx"],
   ["src/ui/App.tsx.template", "src/ui/App.tsx"],
-  ["src/ui/style.css", "src/ui/style.css"],
+] as const;
+
+const SWIFT_TEMPLATE_FILES = [
+  ["AGENTS.swift.md.template", "AGENTS.md"],
+  ["fia.config.swift.ts.template", "fia.config.ts"],
+  ["README.swift.md.template", "README.md"],
+  ["src/ui/App.swift.tsx.template", "src/ui/App.tsx"],
+  ["Backend/Package.swift.template", "Backend/Package.swift"],
+  ["Backend/Sources/AppBackend/main.swift.template", "Backend/Sources/AppBackend/main.swift"],
 ] as const;
 
 const TEMPLATE_ASSETS = [
@@ -108,9 +121,11 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
 async function renderTemplate(
   templateDirectory: string,
   destination: string,
+  runtime: "bun" | "swift",
   replacements: Readonly<Record<string, string>>,
 ): Promise<void> {
-  for (const [sourceName, destinationName] of TEMPLATE_FILES) {
+  const runtimeFiles = runtime === "swift" ? SWIFT_TEMPLATE_FILES : BUN_TEMPLATE_FILES;
+  for (const [sourceName, destinationName] of [...COMMON_TEMPLATE_FILES, ...runtimeFiles]) {
     const source = resolve(templateDirectory, sourceName);
     const target = resolve(destination, destinationName);
     let contents = await readFile(source, "utf8");
@@ -141,16 +156,20 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
   const templateDirectory = dependencies.templateDirectory ?? resolve(import.meta.dir, "../templates/react");
   const cliPackageSpec = dependencies.cliPackageSpec ?? `^${CLI_VERSION}`;
   const appName = titleFromName(options.name);
+  const runtime = options.runtime ?? "bun";
+  const swiftBaseName = appName.replaceAll(" ", "");
+  const swiftProduct = `${/^\d/.test(swiftBaseName) ? "App" : ""}${swiftBaseName}Backend`;
   const identifier = `com.example.${options.name}`;
 
   options.io.stdout(`Creating ${appName} in ${projectRoot}\n`);
   try {
     await mkdir(temporaryRoot);
-    await renderTemplate(templateDirectory, temporaryRoot, {
+    await renderTemplate(templateDirectory, temporaryRoot, runtime, {
       __FIA_APP_NAME_JSON__: JSON.stringify(appName),
       __FIA_APP_IDENTIFIER_JSON__: JSON.stringify(identifier),
       __FIA_DISPLAY_NAME__: appName,
       __FIA_PACKAGE_NAME__: options.name,
+      __FIA_SWIFT_PRODUCT__: swiftProduct,
     });
     await writeFile(
       resolve(temporaryRoot, "package.json"),
@@ -187,6 +206,8 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
   }
 
   const installStep = options.install ? "" : "  bun install\n";
-  options.io.stdout(`\nCreated ${appName}. Next steps:\n  cd ${options.name}\n${installStep}  bun run dev\n`);
+  options.io.stdout(
+    `\nCreated ${appName} (${runtime}). Next steps:\n  cd ${options.name}\n${installStep}  bun run dev\n`,
+  );
   return projectRoot;
 }

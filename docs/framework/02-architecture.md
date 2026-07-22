@@ -27,6 +27,7 @@ native bridge；多窗口、其余系统服务、公证和分发产物仍按路�
 - `NSStatusItem` 状态栏入口
 - 菜单、快捷键、通知、文件面板和 Keychain
 - 启动、监控和停止 Bun 进程
+- 启动、监控、热重启和停止应用 Swift 后端进程
 - 受限的 JavaScript-to-native bridge
 
 ### Bun Application Runtime
@@ -39,11 +40,24 @@ native bridge；多窗口、其余系统服务、公证和分发产物仍按路�
 - 应用数据持久化
 - 响应 Host 发出的生命周期消息
 
+### Swift Application Backend
+
+`runtime: "swift"` 项目独占的应用可执行文件，使用随 npm 包发布的 `FIABackend` SwiftPM SDK：
+
+- 使用 `Codable` 注册异步 RPC handler
+- 通过 NDJSON stdin/stdout 接收请求、返回响应并主动发送事件
+- 通过 `BackendContext` 获取应用数据目录、取消状态和结构化日志
+- 开发时由 CLI 增量构建并由 Host 平滑重启；生产时签名为 `fia-backend`
+
 ### Web UI
 
-运行在 WKWebView 中，可使用 React、Solid、Svelte 或无框架 TypeScript。UI 只能通过经过验证的 HTTP/WebSocket API 访问 Bun，通过窄接口 native bridge 访问 Swift。
+运行在 WKWebView 中，可使用 React、Solid、Svelte 或无框架 TypeScript。UI 通过经过验证的
+HTTP/WebSocket API 访问 Bun，或通过独立 backend bridge 访问应用 Swift 后端；系统原生能力
+仍只通过窄接口 native bridge 暴露。
 
 ## 2. 启动序列
+
+下列序列适用于 Bun 模式：
 
 ```text
 1. LaunchServices 启动 Swift Host
@@ -120,6 +134,20 @@ WebSocket RPC，应独立版本化并覆盖：
 非当前 Runtime 精确 origin。不得提供任意 Objective-C selector、任意 Swift 类型调用或
 通用进程执行 bridge。
 
+应用 Swift 后端不进入上述 allowlist。它单独注册 `fiaBackend` handler，公共入口为
+`@semicoder/fia/backend`，只接受精确应用 origin 的主 frame，并把 JSON 请求转发给
+`fia-backend`。Host 等 UI Runtime 与后端都 ready 后才加载应用页面。
+
+### Host 与应用 Swift 后端
+
+- stdin：`initialize`、`request`、`shutdown`
+- stdout：`ready`、`response`、`event`，仅允许最大 1 MiB 的 NDJSON
+- stderr：应用日志
+- Host 限制 128 个并发请求，默认 RPC 超时 30 秒
+- 正常退出依次执行 shutdown、2 秒后 SIGTERM、再 2 秒后 SIGKILL
+- 开发重启期间，旧请求返回 `BACKEND_RESTARTED`，未 ready 的新请求返回
+  `BACKEND_UNAVAILABLE`
+
 ### Swift 与 Bun
 
 首期使用：
@@ -154,7 +182,9 @@ Bun 主动请求复杂原生能力，可扩展一个独立 framed IPC 通道，�
 - Host protocol
 - Bun runtime protocol
 - native bridge API
+- Swift backend protocol
 - project config schema
 
 当前版本为 Runtime protocol 1、native bridge protocol 1、公共 config schema 2、Host 内部
-config schema 3。Host 和 runtime 主版本不匹配时，应显示兼容性错误页面，而不是继续运行未知协议。
+config schema 4、Swift backend protocol 1。Host 继续读取内部 schema 1–3；协议主版本不匹配时，
+应显示兼容性错误页面，而不是继续运行未知协议。

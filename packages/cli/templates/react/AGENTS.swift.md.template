@@ -1,0 +1,22 @@
+# Agent guide for __FIA_DISPLAY_NAME__
+
+This FIA desktop application uses React in WKWebView, an application-specific Swift backend, and the
+generic Swift/AppKit Host supplied by `@semicoder/fia`.
+
+## Project map
+
+- `fia.config.ts` selects `runtime: "swift"` and names the SwiftPM executable product.
+- `Backend/` contains Codable RPC handlers built with the `FIABackend` SDK.
+- `src/ui/` contains React code. Use `@semicoder/fia/backend` for application RPC and events.
+- Use `@semicoder/fia/native` only for desktop window, Dock, and status bar capabilities.
+- `dist/` and `.fia/` are generated and must not be edited or committed.
+
+## Workflow
+
+Run `bun run typecheck` after UI changes and `swift test --package-path Backend` after backend changes.
+Use `bun run dev` for combined UI HMR and automatic Swift backend rebuilds. Run `bun run build` after
+configuration, protocol, packaging, or native behavior changes.
+
+Keep stdout reserved for the FIA backend protocol; use `BackendContext.logger` for diagnostics. Keep
+RPC inputs and outputs Codable and Sendable, validate untrusted data at each handler, and unsubscribe
+from frontend events during component cleanup.
