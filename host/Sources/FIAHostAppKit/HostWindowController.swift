@@ -10,6 +10,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     private var retryAction: (() -> Void)?
     private var quitAction: (() -> Void)?
     private var bridgeHandler: NativeBridgeHandler?
+    private var bundledResourceHandler: BundledResourceSchemeHandler?
     private weak var webView: WKWebView?
     private let terminateApplication: @MainActor () -> Void
 
@@ -119,11 +120,38 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         bootstrapURL: URL,
         execute: @escaping (NativeBridgeCommand) throws -> DesktopState
     ) {
+        installWebView(url: bootstrapURL, schemeHandler: nil, execute: execute)
+    }
+
+    func showBundledWebView(
+        rootDirectory: URL,
+        entry: String,
+        execute: @escaping (NativeBridgeCommand) throws -> DesktopState
+    ) {
+        let handler = BundledResourceSchemeHandler(rootDirectory: rootDirectory)
+        let encodedEntry = entry.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? entry
+        guard let url = URL(string: "\(BundledResourceSchemeHandler.scheme)://\(BundledResourceSchemeHandler.host)/\(encodedEntry)") else {
+            showFailure(title: "Invalid bundled UI entry", detail: entry, onRetry: nil, onQuit: nil)
+            return
+        }
+        installWebView(url: url, schemeHandler: handler, execute: execute)
+    }
+
+    private func installWebView(
+        url: URL,
+        schemeHandler: WKURLSchemeHandler?,
+        execute: @escaping (NativeBridgeCommand) throws -> DesktopState
+    ) {
         uninstallBridge()
-        guard let origin = URL(string: "\(bootstrapURL.scheme!)://\(bootstrapURL.host!):\(bootstrapURL.port!)"),
+        bundledResourceHandler = schemeHandler as? BundledResourceSchemeHandler
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.path = ""
+        components?.query = nil
+        components?.fragment = nil
+        guard let origin = components?.url,
               let bridgeOrigin = NativeBridgeOriginPolicy(origin: origin)
         else {
-            showFailure(title: "Invalid runtime URL", detail: bootstrapURL.absoluteString, onRetry: nil, onQuit: nil)
+            showFailure(title: "Invalid application URL", detail: url.absoluteString, onRetry: nil, onQuit: nil)
             return
         }
         navigationPolicy = NavigationPolicy(origin: origin)
@@ -132,6 +160,9 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        if let schemeHandler {
+            configuration.setURLSchemeHandler(schemeHandler, forURLScheme: BundledResourceSchemeHandler.scheme)
+        }
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         let handler = NativeBridgeHandler(webView: webView, originPolicy: bridgeOrigin, execute: execute)
@@ -146,7 +177,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         webView.isInspectable = developmentMode
         window?.contentView = webView
         webView.load(URLRequest(
-            url: bootstrapURL,
+            url: url,
             cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
             timeoutInterval: 10
         ))
@@ -276,6 +307,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         )
         webView?.navigationDelegate = nil
         bridgeHandler = nil
+        bundledResourceHandler = nil
         webView = nil
     }
 

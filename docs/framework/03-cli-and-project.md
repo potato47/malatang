@@ -38,6 +38,7 @@ export default defineConfig({
     version: "0.1.0",
     mode: "hybrid",
   },
+  runtime: "bun",
   entry: "src/server.ts",
   ui: "src/ui/index.html",
   window: {
@@ -62,6 +63,7 @@ export default defineConfig({
 
 - `app.version`: `0.1.0`
 - `app.mode`: `dock`
+- `runtime`: `bun`
 - `entry`: `src/server.ts`
 - `ui`: `src/ui/index.html`
 - 窗口：`1024 × 700`，最小 `720 × 480`
@@ -72,8 +74,14 @@ export default defineConfig({
 
 CLI 只读取当前目录的 `fia.config.ts`。配置必须默认导出普通对象，未知字段在每一层都报错；
 bundle identifier 使用 reverse-DNS 格式，版本使用数字 `X.Y.Z`。应用名必须可安全用作 `.app`
-目录名。服务入口与 UI HTML 必须是配置目录内的相对路径并指向可读文件。配置版本不兼容时
+目录名。Bun 模式的服务入口与 UI HTML 必须是配置目录内的相对路径并指向可读文件。配置版本不兼容时
 MVP 直接失败，不自动迁移。
+
+纯前端应用可设置 `runtime: "none"` 并省略 `entry`。`fia dev` 仍使用 Bun 完成浏览器构建和
+HMR，但框架会生成空后端；`fia run` 与 `fia build` 将 UI 写入
+`Contents/Resources/UI`，由 Host 通过受限的 `fia-app://app` scheme 加载，不生成或打包
+`Contents/MacOS/fia-runtime`。该模式保留 Native Bridge 和 HTTPS/WSS 远程请求，但不提供
+FIA HTTP 路由、应用 WebSocket 或其他 Bun 服务端能力。
 
 公共 `configVersion` 与应用包内 `fia-config.json.schemaVersion` 是不同边界。阶段 2 CLI
 只接受公共 schema 2，旧项目需要显式迁移；Host 内部 schema 3 承载桌面字段，同时继续读取

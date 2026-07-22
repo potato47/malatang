@@ -185,6 +185,8 @@ final class RuntimeSupervisor: NSObject {
         let url: URL
         let arguments: [String]
         switch configuration.runtime.mode {
+        case .bundled:
+            throw RuntimeLocationError.bundledRuntimeHasNoProcess
         case .production:
             url = bundle.bundleURL
                 .appendingPathComponent("Contents", isDirectory: true)
@@ -428,12 +430,14 @@ private enum RuntimeLocationError: Error, LocalizedError {
     case missingExecutable(String)
     case duplicateToken
     case invalidDevelopmentConfiguration
+    case bundledRuntimeHasNoProcess
 
     var errorDescription: String? {
         switch self {
         case let .missingExecutable(path): "Runtime executable is missing or not executable at \(path)"
         case .duplicateToken: "Secure random generation returned duplicate tokens"
         case .invalidDevelopmentConfiguration: "Development runtime configuration is incomplete"
+        case .bundledRuntimeHasNoProcess: "Bundled UI mode does not have a runtime process"
         }
     }
 }

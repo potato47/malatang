@@ -71,6 +71,7 @@ describe("public FIA configuration", () => {
         version: "0.1.0",
         mode: "dock",
       },
+      runtime: "bun",
       entry: resolve(root, "src/server.ts"),
       ui: resolve(root, "src/ui/index.html"),
       window: {
@@ -86,6 +87,24 @@ describe("public FIA configuration", () => {
       },
       statusBar: { symbol: "circle.grid.2x2.fill", tooltip: "Hello" },
     });
+  });
+
+  test("supports a static UI configuration without a Bun entry", async () => {
+    const root = await project();
+    await rm(resolve(root, "src/server.ts"));
+    const config = await resolveProjectConfig({ ...minimal(), runtime: "none" }, root);
+    expect(config.runtime).toBe("none");
+    expect(config.entry).toBeUndefined();
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), runtime: "none", entry: "src/server.ts" }, root),
+      "CONFIG_INVALID",
+      "entry",
+    );
+    await expectConfigError(
+      resolveProjectConfig({ ...minimal(), runtime: "native" }, root),
+      "CONFIG_INVALID",
+      "config.runtime",
+    );
   });
 
   test("loads a default TypeScript export from the project root", async () => {

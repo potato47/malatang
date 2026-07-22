@@ -31,6 +31,10 @@ export default defineConfig({
 });
 ```
 
+`runtime: "none"` creates a UI-only production app without `fia-runtime`; omit `entry` in this mode.
+Bun remains a development/build dependency for browser bundling and HMR. Omit `runtime` (or use
+`runtime: "bun"`) when the application has FIA HTTP or WebSocket routes.
+
 Web UI code imports the typed Host bridge from the native subpath:
 
 ```ts

@@ -2,6 +2,7 @@ export const FIA_CONFIG_VERSION = 2 as const;
 
 export type FIAApplicationMode = "dock" | "statusBar" | "hybrid";
 export type FIAWindowCloseBehavior = "quit" | "hide";
+export type FIARuntimeMode = "bun" | "none";
 
 export interface FIAAppConfig {
   name: string;
@@ -31,6 +32,7 @@ export interface FIAStatusBarConfig {
 export interface FIAConfig {
   configVersion: typeof FIA_CONFIG_VERSION;
   app: FIAAppConfig;
+  runtime?: FIARuntimeMode;
   entry?: string;
   ui?: string;
   window?: FIAWindowConfig;

@@ -43,6 +43,10 @@ export default defineConfig({
 });
 ```
 
+Set `runtime: "none"` and omit `entry` for a UI-only application. Development still uses Bun for
+bundling and HMR, while production packages the generated UI under `Contents/Resources/UI` and does
+not include the Bun runtime executable. The default `runtime: "bun"` keeps the full-stack server entry.
+
 Web UI code imports the native desktop API from its own browser entry:
 
 ```ts

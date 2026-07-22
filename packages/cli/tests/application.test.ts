@@ -103,6 +103,26 @@ describe("FIA application commands", () => {
     expect(await Bun.file(resolve(root, "dist/Legacy App.app/Contents/Info.plist")).exists()).toBe(false);
   });
 
+  test("builds a bundled UI app without a Bun runtime executable", async () => {
+    const root = await project("static-app");
+    const configPath = resolve(root, "fia.config.ts");
+    const source = await readFile(configPath, "utf8");
+    await writeFile(
+      configPath,
+      source
+        .replace("  entry: \"src/server.ts\",\n", "  runtime: \"none\",\n"),
+    );
+    await rm(resolve(root, "src/server.ts"));
+    await executeApplicationCommand({ command: "build", cwd: root, debug: false, io: output().io });
+    const app = resolve(root, "dist/Static App.app");
+    expect(await Bun.file(resolve(app, "Contents/MacOS/FIAHost")).exists()).toBe(true);
+    expect(await Bun.file(resolve(app, "Contents/MacOS/fia-runtime")).exists()).toBe(false);
+    expect(await Bun.file(resolve(app, "Contents/Resources/UI/index.html")).exists()).toBe(true);
+    expect(JSON.parse(await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"))).toMatchObject({
+      runtime: { mode: "bundled", entry: "UI/index.html" },
+    });
+  }, 20_000);
+
   test("builds status bar and hybrid desktop modes with schema three", async () => {
     for (const mode of ["statusBar", "hybrid"] as const) {
       const root = await project(`${mode.toLowerCase()}-app`);

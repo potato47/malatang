@@ -66,11 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 windowController.focus()
             }
 
-            let runtime = RuntimeSupervisor(configuration: configuration) { [weak self] event in
-                self?.handleRuntimeEvent(event)
+            if configuration.runtime.isBundled {
+                try showBundledApplication(configuration: configuration)
+                scheduleInternalAutoQuitIfRequested()
+            } else {
+                let runtime = RuntimeSupervisor(configuration: configuration) { [weak self] event in
+                    self?.handleRuntimeEvent(event)
+                }
+                self.runtime = runtime
+                runtime.start()
             }
-            self.runtime = runtime
-            runtime.start()
         } catch {
             NSApp.setActivationPolicy(.regular)
             installMainMenu(applicationName: "FIA Host")
@@ -126,6 +131,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             scheduleInternalAutoQuitIfRequested()
         case let .failed(title, detail):
             showRuntimeFailure(title: title, detail: detail)
+        }
+    }
+
+    private func showBundledApplication(configuration: HostConfiguration) throws {
+        guard let resources = Bundle.main.resourceURL,
+              let entry = configuration.runtime.entry
+        else { throw HostStartupError.missingBundledUI }
+        let components = entry.split(separator: "/").map(String.init)
+        guard components.count >= 2, components.first == "UI" else {
+            throw HostStartupError.invalidBundledUIEntry
+        }
+        let relativeEntry = components.dropFirst().joined(separator: "/")
+        let root = resources.appendingPathComponent("UI", isDirectory: true)
+        windowController?.showBundledWebView(
+            rootDirectory: root,
+            entry: relativeEntry,
+            execute: nativeCommandExecutor()
+        )
+    }
+
+    private func nativeCommandExecutor() -> (NativeBridgeCommand) throws -> DesktopState {
+        { [weak desktopController] command in
+            guard let desktopController else {
+                throw NativeCommandExecutionError(
+                    code: .bridgeUnavailable,
+                    message: "The desktop controller is unavailable"
+                )
+            }
+            return try desktopController.execute(command)
         }
     }
 
@@ -205,6 +239,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 private enum HostStartupError: Error, LocalizedError {
     case missingConfiguration
+    case missingBundledUI
+    case invalidBundledUIEntry
 
-    var errorDescription: String? { "Contents/Resources/fia-config.json is missing" }
+    var errorDescription: String? {
+        switch self {
+        case .missingConfiguration: "Contents/Resources/fia-config.json is missing"
+        case .missingBundledUI: "The bundled UI entry is missing"
+        case .invalidBundledUIEntry: "The bundled UI entry must be inside Contents/Resources/UI"
+        }
+    }
 }

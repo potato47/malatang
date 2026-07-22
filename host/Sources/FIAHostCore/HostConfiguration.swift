@@ -72,20 +72,29 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         public enum Mode: String, Codable, Equatable, Sendable {
             case production
             case development
+            case bundled
         }
 
         public let mode: Mode
         public let executable: String?
         public let arguments: [String]?
+        public let entry: String?
 
-        public init(mode: Mode, executable: String? = nil, arguments: [String]? = nil) {
+        public init(
+            mode: Mode,
+            executable: String? = nil,
+            arguments: [String]? = nil,
+            entry: String? = nil
+        ) {
             self.mode = mode
             self.executable = executable
             self.arguments = arguments
+            self.entry = entry
         }
 
         public static let production = Runtime(mode: .production)
         public var isDevelopment: Bool { mode == .development }
+        public var isBundled: Bool { mode == .bundled }
     }
 
     private struct LegacyApp: Codable {
@@ -242,6 +251,8 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         switch mode {
         case Runtime.Mode.production.rawValue:
             try requireExactKeys(runtimeObject, expected: ["mode"], at: "runtime")
+        case Runtime.Mode.bundled.rawValue:
+            try requireExactKeys(runtimeObject, expected: ["mode", "entry"], at: "runtime")
         case Runtime.Mode.development.rawValue:
             try requireExactKeys(runtimeObject, expected: ["mode", "executable", "arguments"], at: "runtime")
         default:
@@ -277,7 +288,23 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         else { throw HostConfigurationError.invalidStatusBar }
         switch runtime.mode {
         case .production:
-            guard runtime.executable == nil, runtime.arguments == nil else {
+            guard runtime.executable == nil, runtime.arguments == nil, runtime.entry == nil else {
+                throw HostConfigurationError.invalidRuntime
+            }
+        case .bundled:
+            let entryComponents = runtime.entry?.split(separator: "/", omittingEmptySubsequences: false) ?? []
+            guard runtime.executable == nil,
+                  runtime.arguments == nil,
+                  let entry = runtime.entry,
+                  !entry.isEmpty,
+                  !entry.hasPrefix("/"),
+                  !entry.contains("\0"),
+                  entryComponents.count >= 2,
+                  entryComponents.first == "UI",
+                  !entryComponents.contains(""),
+                  !entryComponents.contains("."),
+                  !entryComponents.contains("..")
+            else {
                 throw HostConfigurationError.invalidRuntime
             }
         case .development:
@@ -288,7 +315,8 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
                   let arguments = runtime.arguments,
                   !arguments.isEmpty,
                   arguments.count <= 128,
-                  arguments.allSatisfy({ !$0.isEmpty && !$0.contains("\0") })
+                  arguments.allSatisfy({ !$0.isEmpty && !$0.contains("\0") }),
+                  runtime.entry == nil
             else { throw HostConfigurationError.invalidRuntime }
         }
     }

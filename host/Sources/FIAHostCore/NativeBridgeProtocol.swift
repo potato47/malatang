@@ -122,12 +122,11 @@ public struct NativeBridgeOriginPolicy: Equatable, Sendable {
 
     public init?(origin: URL) {
         guard let scheme = origin.scheme?.lowercased(),
-              let host = origin.host?.lowercased(),
-              let port = origin.port
+              let host = origin.host?.lowercased()
         else { return nil }
         self.scheme = scheme
         self.host = host
-        self.port = port
+        self.port = origin.port ?? Self.defaultPort(for: scheme)
     }
 
     public func allows(isMainFrame: Bool, scheme: String, host: String, port: Int) -> Bool {
@@ -135,5 +134,13 @@ public struct NativeBridgeOriginPolicy: Equatable, Sendable {
             && self.scheme == scheme.lowercased()
             && self.host == host.lowercased()
             && self.port == port
+    }
+
+    private static func defaultPort(for scheme: String) -> Int {
+        switch scheme {
+        case "http": 80
+        case "https": 443
+        default: 0
+        }
     }
 }

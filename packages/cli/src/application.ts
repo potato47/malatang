@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import {
   access,
   chmod,
+  cp,
   copyFile,
   lstat,
   mkdir,
@@ -234,12 +235,12 @@ async function verifyHostAsset(directory: string, debug: boolean, io: Applicatio
 }
 
 function generatedEntry(
-  config: ResolvedFIAConfig,
+  applicationPath: string,
   managedRuntimePath: string,
   mode: "development" | "production",
   uiPath: string,
 ): string {
-  const application = JSON.stringify(config.entry);
+  const application = JSON.stringify(applicationPath);
   const runtime = JSON.stringify(managedRuntimePath);
   const ui = JSON.stringify(uiPath);
   if (mode === "development") {
@@ -256,6 +257,7 @@ function generatedEntry(
 }
 
 async function validateApplication(context: BuildContext): Promise<void> {
+  if (context.config.entry === undefined) throw new Error("Bun runtime entry is missing");
   const validator = resolve(context.stagingRoot, "validate-entry.ts");
   await Bun.write(validator, `
     const applicationModule = await import(${JSON.stringify(pathToFileURL(context.config.entry).href)});
@@ -294,7 +296,12 @@ async function typecheck(context: BuildContext): Promise<void> {
   );
 }
 
-async function buildProductionUI(context: BuildContext): Promise<string> {
+interface ProductionUI {
+  readonly directory: string;
+  readonly entry: string;
+}
+
+async function buildProductionUI(context: BuildContext): Promise<ProductionUI> {
   const outputDirectory = resolve(context.stagingRoot, "ui");
   await mkdir(outputDirectory, { recursive: true });
   await checked(
@@ -316,9 +323,8 @@ async function buildProductionUI(context: BuildContext): Promise<string> {
   let html = await readFile(output, "utf8");
   html = injectCSPNonce(html);
   if (!html.includes(CSP_NONCE)) throw new Error("UI build contains no script or style tags to protect with CSP");
-  const template = resolve(context.stagingRoot, "ui-template.txt");
-  await Bun.write(template, html);
-  return template;
+  await Bun.write(output, html);
+  return { directory: outputDirectory, entry: output };
 }
 
 function plistEscape(value: string): string {
@@ -360,7 +366,11 @@ ${icon}  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 
 function hostConfiguration(
   config: ResolvedFIAConfig,
-  runtime: { mode: "production" } | { mode: "development"; executable: string; arguments: string[] },
+  runtime: { mode: "production" } | { mode: "bundled"; entry: string } | {
+    mode: "development";
+    executable: string;
+    arguments: string[];
+  },
 ): Record<string, unknown> {
   return {
     schemaVersion: 3,
@@ -382,6 +392,10 @@ async function assembleApp(
     mode: "development";
     executable: string;
     arguments: string[];
+  } | {
+    mode: "bundled";
+    sourceDirectory: string;
+    entry: string;
   },
 ): Promise<void> {
   const contents = resolve(context.appPath, "Contents");
@@ -399,6 +413,8 @@ async function assembleApp(
     runtimeDestination = resolve(macOS, RUNTIME_EXECUTABLE);
     await copyFile(runtime.executable, runtimeDestination);
     await chmod(runtimeDestination, 0o755);
+  } else if (runtime.mode === "bundled") {
+    await cp(runtime.sourceDirectory, resolve(resources, "UI"), { recursive: true });
   }
   if (context.config.app.icon !== undefined) {
     await copyFile(context.config.app.icon, resolve(resources, "AppIcon.icns"));
@@ -413,6 +429,8 @@ async function assembleApp(
         context.config,
         runtime.mode === "production"
           ? { mode: "production" }
+          : runtime.mode === "bundled"
+          ? { mode: "bundled", entry: runtime.entry }
           : { mode: "development", executable: runtime.executable, arguments: runtime.arguments },
       ), null, 2)}\n`,
     ),
@@ -436,7 +454,7 @@ async function plistValue(plist: string, key: string, context: BuildContext): Pr
   )).trim();
 }
 
-async function verifyApp(context: BuildContext, mode: "development" | "production"): Promise<void> {
+async function verifyApp(context: BuildContext, mode: "development" | "production" | "bundled"): Promise<void> {
   const contents = resolve(context.appPath, "Contents");
   const host = resolve(contents, "MacOS", HOST_EXECUTABLE);
   const plist = resolve(contents, "Info.plist");
@@ -487,9 +505,18 @@ async function verifyApp(context: BuildContext, mode: "development" | "productio
 }
 
 async function productionApp(context: BuildContext): Promise<void> {
-  const uiTemplate = await buildProductionUI(context);
+  const ui = await buildProductionUI(context);
+  if (context.config.runtime === "none") {
+    await assembleApp(context, {
+      mode: "bundled",
+      sourceDirectory: ui.directory,
+      entry: `UI/${basename(ui.entry)}`,
+    });
+    return;
+  }
+  if (context.config.entry === undefined) throw new Error("Bun runtime entry is missing");
   const entry = resolve(context.stagingRoot, "runtime-entry.ts");
-  await Bun.write(entry, generatedEntry(context.config, context.managedRuntimePath, "production", uiTemplate));
+  await Bun.write(entry, generatedEntry(context.config.entry, context.managedRuntimePath, "production", ui.entry));
   const runtime = resolve(context.stagingRoot, RUNTIME_EXECUTABLE);
   await checked(
     "Runtime build",
@@ -513,8 +540,13 @@ async function productionApp(context: BuildContext): Promise<void> {
 }
 
 async function developmentApp(context: BuildContext): Promise<void> {
+  let application = context.config.entry;
+  if (application === undefined) {
+    application = resolve(context.stagingRoot, "empty-application.ts");
+    await Bun.write(application, `export default { [Symbol.for("dev.fia.application")]: true };\n`);
+  }
   const entry = resolve(context.stagingRoot, "runtime-entry.ts");
-  await Bun.write(entry, generatedEntry(context.config, context.managedRuntimePath, "development", context.config.ui));
+  await Bun.write(entry, generatedEntry(application, context.managedRuntimePath, "development", context.config.ui));
   await assembleApp(context, {
     mode: "development",
     executable: process.execPath,
@@ -581,7 +613,7 @@ async function replaceDistribution(context: BuildContext): Promise<string> {
   try {
     await rename(context.appPath, destination);
     const destinationContext = { ...context, appPath: destination };
-    await verifyApp(destinationContext, "production");
+    await verifyApp(destinationContext, context.config.runtime === "none" ? "bundled" : "production");
   } catch (error) {
     await rm(destination, { recursive: true, force: true });
     if (hadPrevious && await Bun.file(resolve(previous, "Contents/Info.plist")).exists()) {
@@ -621,7 +653,7 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
   try {
     options.io.stdout(`Validating ${config.app.name}\n`);
     await typecheck(context);
-    await validateApplication(context);
+    if (config.runtime === "bun") await validateApplication(context);
     if (options.command === "dev") {
       await developmentApp(context);
       await launchHost(context);

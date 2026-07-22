@@ -53,7 +53,8 @@ export interface ResolvedFIAConfig {
     readonly mode: FIAApplicationMode;
     readonly icon?: string;
   };
-  readonly entry: string;
+  readonly runtime: "bun" | "none";
+  readonly entry?: string;
   readonly ui: string;
   readonly window: {
     readonly width: number;
@@ -232,7 +233,7 @@ export async function resolveProjectConfig(
 ): Promise<ResolvedFIAConfig> {
   const projectRoot = resolve(projectDirectory);
   const root = objectAt(value, "config");
-  exactKeys(root, ["configVersion", "app", "entry", "ui", "window", "statusBar"], "config");
+  exactKeys(root, ["configVersion", "app", "runtime", "entry", "ui", "window", "statusBar"], "config");
 
   if (root.configVersion === undefined) invalid("configVersion", "is required");
   if (root.configVersion !== FIA_CONFIG_VERSION) {
@@ -273,9 +274,15 @@ export async function resolveProjectConfig(
     }
   }
 
+  const runtime = optionalEnum(root, "runtime", "config", ["bun", "none"], "bun");
   const entryValue = root.entry === undefined ? DEFAULT_ENTRY : root.entry;
   const uiValue = root.ui === undefined ? DEFAULT_UI : root.ui;
-  const entry = await requireReadableProjectFile(projectRoot, entryValue as string, "entry", "CONFIG_ENTRY_INVALID");
+  if (runtime === "none" && root.entry !== undefined) {
+    invalid("entry", "must be omitted when runtime is \"none\"");
+  }
+  const entry = runtime === "bun"
+    ? await requireReadableProjectFile(projectRoot, entryValue as string, "entry", "CONFIG_ENTRY_INVALID")
+    : undefined;
   const ui = await requireReadableProjectFile(projectRoot, uiValue as string, "ui", "CONFIG_UI_INVALID");
   if (extname(ui).toLowerCase() !== ".html") {
     throw new ProjectConfigError("CONFIG_UI_INVALID", "ui: expected an HTML entry file", { path: "ui" });
@@ -321,7 +328,8 @@ export async function resolveProjectConfig(
     projectRoot,
     configPath,
     app: { name, identifier, version, mode, ...(icon === undefined ? {} : { icon }) },
-    entry,
+    runtime,
+    ...(entry === undefined ? {} : { entry }),
     ui,
     window: {
       width,

@@ -51,4 +51,11 @@ struct NativeBridgeProtocolTests {
         #expect(!policy.allows(isMainFrame: true, scheme: "http", host: "127.0.0.1", port: 49153))
         #expect(!policy.allows(isMainFrame: true, scheme: "https", host: "127.0.0.1", port: 49152))
     }
+
+    @Test func authorizesAHostOnlyCustomSchemeOrigin() throws {
+        let policy = try #require(NativeBridgeOriginPolicy(origin: URL(string: "fia-app://app")!))
+        #expect(policy.allows(isMainFrame: true, scheme: "fia-app", host: "app", port: 0))
+        #expect(!policy.allows(isMainFrame: true, scheme: "fia-app", host: "other", port: 0))
+        #expect(!policy.allows(isMainFrame: false, scheme: "fia-app", host: "app", port: 0))
+    }
 }
