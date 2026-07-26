@@ -1,4 +1,4 @@
 export const CLI_PACKAGE_NAME = "@semicoder/fia";
 export const CLI_COMMAND_NAME = "fia";
-export const CLI_VERSION = "0.3.0";
+export const CLI_VERSION = "0.4.0";
 export const MINIMUM_MACOS_MAJOR_VERSION = 14;

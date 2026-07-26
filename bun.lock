@@ -11,7 +11,7 @@
     },
     "packages/cli": {
       "name": "@semicoder/fia",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "bin": {
         "fia": "bin/fia",
       },
