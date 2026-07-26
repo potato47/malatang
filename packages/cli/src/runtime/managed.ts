@@ -1,11 +1,20 @@
 import { resolve } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
-import { isFIAApplication, type DefinedFIAApplication, type FIARoute } from "../runtime.ts";
+import {
+  BackendApplicationError,
+  isFIAApplication,
+  type DefinedFIAApplication,
+  type FIABackendContext,
+  type FIARoute,
+} from "../runtime.ts";
 import { handleEchoMessage } from "./echo.ts";
 import {
   PROTOCOL_VERSION,
+  MAX_BACKEND_CONCURRENT_REQUESTS,
+  MAX_BACKEND_MESSAGE_BYTES,
   ProtocolError,
   decodeLines,
+  parseBackendHostLine,
   parseInitializeLine,
   parseShutdownLine,
   serializeReady,
@@ -78,12 +87,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function applicationOrThrow(value: unknown): DefinedFIAApplication {
   if (!isFIAApplication(value)) {
     throw new Error(
-      "src/server.ts must default-export defineApp({ routes, websocket }). "
+      "src/server.ts must default-export defineApp({ backend, routes, websocket }). "
         + "Direct Bun.serve() entries are not supported by FIA dev/build/run.",
     );
   }
-  if (value.routes === undefined && value.fetch === undefined) {
-    throw new Error("defineApp requires routes or fetch");
+  if (value.backend === undefined && value.routes === undefined && value.fetch === undefined) {
+    throw new Error("defineApp requires backend methods, routes, or fetch");
+  }
+  if (value.backend !== undefined) {
+    if (!isPlainObject(value.backend) || !isPlainObject(value.backend.methods)) {
+      throw new Error("defineApp backend must provide a methods object");
+    }
+    for (const [name, handler] of Object.entries(value.backend.methods)) {
+      if (!validBackendName(name) || typeof handler !== "function") {
+        throw new Error(`invalid backend method: ${name}`);
+      }
+    }
   }
   if (value.fetch !== undefined && typeof value.fetch !== "function") {
     throw new Error("defineApp fetch must be a function");
@@ -102,6 +121,30 @@ function applicationOrThrow(value: unknown): DefinedFIAApplication {
     validateRoute(path, route);
   }
   return value;
+}
+
+function validBackendName(value: string): boolean {
+  return value.length > 0
+    && Buffer.byteLength(value) <= 256
+    && /^[\p{L}\p{N}._-]+$/u.test(value);
+}
+
+class BackendProtocolWriter {
+  private pending = Promise.resolve();
+
+  write(message: unknown): Promise<void> {
+    const line = `${JSON.stringify(message)}\n`;
+    if (Buffer.byteLength(line) > MAX_BACKEND_MESSAGE_BYTES) {
+      return Promise.reject(new ProtocolError("backend message exceeds 1 MiB"));
+    }
+    const operation = this.pending.then(async () => {
+      await new Promise<void>((resolvePromise, reject) => {
+        process.stdout.write(line, (error) => error === null ? resolvePromise() : reject(error));
+      });
+    });
+    this.pending = operation.catch(() => {});
+    return operation;
+  }
 }
 
 function validateRoute(path: string, route: unknown): void {
@@ -143,6 +186,8 @@ class ManagedRuntime {
   private origin = "";
   private stopping?: Promise<void>;
   private parentTimer?: ReturnType<typeof setInterval>;
+  private readonly backendWriter = new BackendProtocolWriter();
+  private readonly backendRequests = new Map<string, AbortController>();
 
   constructor(initialize: InitializeMessage, options: ManagedRuntimeOptions) {
     Object.defineProperty(this, RUNTIME_MARKER, { value: true });
@@ -181,12 +226,102 @@ class ManagedRuntime {
   async stop(): Promise<void> {
     if (this.stopping !== undefined) return await this.stopping;
     this.stopping = (async () => {
+      for (const controller of this.backendRequests.values()) controller.abort();
+      this.backendRequests.clear();
       if (this.parentTimer !== undefined) clearInterval(this.parentTimer);
       this.parentTimer = undefined;
       await this.server?.stop(true);
       this.server = undefined;
     })();
     return await this.stopping;
+  }
+
+  handleBackendMessage(line: string): void {
+    const request = parseBackendHostLine(line);
+    if (request.type === "cancel") {
+      this.backendRequests.get(request.id)?.abort();
+      return;
+    }
+    if (this.backendRequests.has(request.id)) throw new ProtocolError("duplicate backend request id");
+    if (this.backendRequests.size >= MAX_BACKEND_CONCURRENT_REQUESTS) {
+      void this.backendWriter.write({
+        protocol: PROTOCOL_VERSION,
+        type: "response",
+        id: request.id,
+        ok: false,
+        error: { code: "TOO_MANY_REQUESTS", message: "Too many backend requests" },
+      }).catch((error) => {
+        process.stderr.write(`fia-runtime: backend overload response failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      });
+      return;
+    }
+    const controller = new AbortController();
+    this.backendRequests.set(request.id, controller);
+    void this.invokeBackend(request.id, request.method, request.input, controller)
+      .catch((error) => {
+        process.stderr.write(`fia-runtime: backend response failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      })
+      .finally(() => this.backendRequests.delete(request.id));
+  }
+
+  private async invokeBackend(
+    id: string,
+    method: string,
+    input: unknown,
+    controller: AbortController,
+  ): Promise<void> {
+    const handler = this.application.backend?.methods[method];
+    if (handler === undefined) {
+      await this.writeBackendFailure(id, "METHOD_NOT_FOUND", "Unknown backend method");
+      return;
+    }
+    const context: FIABackendContext = {
+      dataDirectory: this.initialize.dataDirectory,
+      requestID: id,
+      signal: controller.signal,
+      emit: async (name, payload) => {
+        if (!validBackendName(name)) throw new BackendApplicationError("INVALID_EVENT", "Event name is invalid");
+        await this.backendWriter.write({
+          protocol: PROTOCOL_VERSION,
+          type: "event",
+          name,
+          payload: payload === undefined ? null : payload,
+        });
+      },
+    };
+    try {
+      const value = await handler(input, context);
+      if (controller.signal.aborted) return;
+      await this.backendWriter.write({
+        protocol: PROTOCOL_VERSION,
+        type: "response",
+        id,
+        ok: true,
+        value: value === undefined ? null : value,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (error instanceof BackendApplicationError) {
+        if (validBackendName(error.code) && error.message.length > 0 && Buffer.byteLength(error.message) <= 4096) {
+          await this.writeBackendFailure(id, error.code, error.message, error.details);
+        } else {
+          await this.writeBackendFailure(id, "INTERNAL_ERROR", "The backend request failed");
+        }
+        return;
+      }
+      process.stderr.write(`fia-runtime: backend request ${id} failed\n`);
+      await this.writeBackendFailure(id, "INTERNAL_ERROR", "The backend request failed");
+    }
+  }
+
+  private async writeBackendFailure(id: string, code: string, message: string, details?: unknown): Promise<void> {
+    await this.backendWriter.write({
+      protocol: PROTOCOL_VERSION,
+      type: "response",
+      id,
+      ok: false,
+      error: { code, message, ...(details === undefined ? {} : { details }) },
+    });
   }
 
   private serveOptions(): Bun.Serve.Options<SocketData, string> {
@@ -391,7 +526,7 @@ class ManagedRuntime {
 }
 
 async function initializeRuntime(options: ManagedRuntimeOptions): Promise<ManagedRuntime> {
-  const lines = decodeLines(Bun.stdin.stream());
+  const lines = decodeLines(Bun.stdin.stream(), MAX_BACKEND_MESSAGE_BYTES);
   const iterator = lines[Symbol.asyncIterator]();
   const first = await iterator.next();
   if (first.done) throw new ProtocolError("stdin closed before initialize");
@@ -413,8 +548,12 @@ async function initializeRuntime(options: ManagedRuntimeOptions): Promise<Manage
         const next = await iterator.next();
         if (next.done) break;
         if (next.value.length === 0) continue;
-        parseShutdownLine(next.value);
-        break;
+        const parsed = JSON.parse(next.value) as { type?: unknown };
+        if (parsed.type === "shutdown") {
+          parseShutdownLine(next.value);
+          break;
+        }
+        runtime.handleBackendMessage(next.value);
       }
       finish();
     } catch (error) {

@@ -213,7 +213,7 @@ final class BackendSupervisor: NSObject {
     private func locateBackend() throws -> URL {
         let url: URL
         switch configuration.backend.mode {
-        case .none:
+        case .none, .runtime:
             throw BackendLocationError.disabled
         case .production:
             url = bundle.bundleURL

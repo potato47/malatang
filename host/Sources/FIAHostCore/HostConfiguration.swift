@@ -100,6 +100,7 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
     public struct Backend: Codable, Equatable, Sendable {
         public enum Mode: String, Codable, Equatable, Sendable {
             case none
+            case runtime
             case production
             case development
         }
@@ -113,7 +114,8 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         }
 
         public static let none = Backend(mode: .none)
-        public var isEnabled: Bool { mode != .none }
+        public var isEnabled: Bool { mode == .production || mode == .development }
+        public var usesRuntime: Bool { mode == .runtime }
         public var isDevelopment: Bool { mode == .development }
     }
 
@@ -331,7 +333,7 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
             throw HostConfigurationError.invalidBackend
         }
         switch mode {
-        case Backend.Mode.none.rawValue, Backend.Mode.production.rawValue:
+        case Backend.Mode.none.rawValue, Backend.Mode.runtime.rawValue, Backend.Mode.production.rawValue:
             try requireExactKeys(object, expected: ["mode"], at: "backend")
         case Backend.Mode.development.rawValue:
             try requireExactKeys(object, expected: ["mode", "executable"], at: "backend")
@@ -416,7 +418,7 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
             else { throw HostConfigurationError.invalidRuntime }
         }
         switch backend.mode {
-        case .none, .production:
+        case .none, .runtime, .production:
             guard backend.executable == nil else { throw HostConfigurationError.invalidBackend }
         case .development:
             guard schemaVersion >= 4,
@@ -428,6 +430,7 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         if schemaVersion < 4, backend != .none { throw HostConfigurationError.invalidBackend }
         if backend.mode == .production, runtime.mode != .bundled { throw HostConfigurationError.invalidBackend }
         if backend.mode == .development, runtime.mode != .development { throw HostConfigurationError.invalidBackend }
+        if backend.mode == .runtime, runtime.mode == .bundled { throw HostConfigurationError.invalidBackend }
     }
 
     private static func requireExactKeys(

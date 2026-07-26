@@ -35,6 +35,10 @@ struct BackendProtocolTests {
         let requestObject = try JSONSerialization.jsonObject(with: request) as? [String: Any]
         #expect(requestObject?["method"] as? String == "greet")
 
+        let cancel = try BackendProcessProtocol.encodeCancel(id: "request-1")
+        let cancelObject = try JSONSerialization.jsonObject(with: cancel) as? [String: Any]
+        #expect(cancelObject?["type"] as? String == "cancel")
+
         let ready = Data(#"{"protocol":1,"type":"ready","pid":99}"#.utf8)
         #expect(try BackendProcessProtocol.decodeLine(ready, expectedPID: 99) == .ready(pid: 99))
 

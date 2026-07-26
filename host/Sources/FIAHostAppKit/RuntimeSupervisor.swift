@@ -8,7 +8,13 @@ import OSLog
 final class RuntimeSupervisor: NSObject {
     enum Event {
         case ready(bootstrapURL: URL)
+        case applicationEvent(name: String, payload: Data)
         case failed(title: String, detail: String)
+    }
+
+    private struct PendingRequest {
+        let continuation: CheckedContinuation<Data, Error>
+        let timeout: Task<Void, Never>
     }
 
     private struct HealthResponse: Decodable {
@@ -20,6 +26,7 @@ final class RuntimeSupervisor: NSObject {
     private let configuration: HostConfiguration
     private let bundle: Bundle
     private let onEvent: (Event) -> Void
+    private let requestTimeout: Duration
     private let logger = Logger(subsystem: "dev.fia.host", category: "runtime")
 
     private var process: Process?
@@ -40,15 +47,24 @@ final class RuntimeSupervisor: NSObject {
     private var controlToken: String?
     private var healthFailures = 0
     private var dataDirectory: URL?
+    private var pending: [String: PendingRequest] = [:]
 
-    init(configuration: HostConfiguration, bundle: Bundle = .main, onEvent: @escaping (Event) -> Void) {
+    init(
+        configuration: HostConfiguration,
+        bundle: Bundle = .main,
+        requestTimeout: Duration = .seconds(30),
+        onEvent: @escaping (Event) -> Void
+    ) {
         self.configuration = configuration
         self.bundle = bundle
+        self.requestTimeout = requestTimeout
         self.onEvent = onEvent
         super.init()
     }
 
     var isRunning: Bool { process?.isRunning == true }
+    var isReady: Bool { readyDelivered && isRunning }
+    var processIdentifier: Int32? { process?.processIdentifier }
 
     func start() {
         guard process == nil else { return }
@@ -119,7 +135,58 @@ final class RuntimeSupervisor: NSObject {
     }
 
     func restart() {
+        rejectPending(code: .backendRestarted, message: "The Bun backend restarted")
         stop { [weak self] in self?.start() }
+    }
+
+    func invoke(_ request: BackendBridgeRequest) async throws -> Data {
+        guard isReady, let inputPipe else {
+            throw BackendInvocationError(code: .backendUnavailable, message: "The FIA Bun backend is unavailable")
+        }
+        guard pending.count < FIABackendMaximumConcurrentRequests else {
+            throw BackendInvocationError(
+                code: .backendUnavailable,
+                message: "The Bun backend has too many in-flight requests"
+            )
+        }
+        let id = UUID().uuidString.lowercased()
+        let requestTimeout = self.requestTimeout
+        return try await withCheckedThrowingContinuation { continuation in
+            let timeout = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: requestTimeout)
+                guard !Task.isCancelled else { return }
+                self?.cancelBackendRequest(id: id)
+                self?.finish(
+                    id: id,
+                    result: .failure(BackendInvocationError(
+                        code: .backendTimeout,
+                        message: "The Bun backend request timed out"
+                    ))
+                )
+            }
+            pending[id] = PendingRequest(continuation: continuation, timeout: timeout)
+            do {
+                try inputPipe.fileHandleForWriting.write(contentsOf: BackendProcessProtocol.encodeRequest(
+                    id: id,
+                    method: request.method,
+                    input: request.input
+                ))
+            } catch {
+                finish(id: id, result: .failure(BackendInvocationError(
+                    code: .backendUnavailable,
+                    message: "The Bun backend request could not be sent"
+                )))
+            }
+        }
+    }
+
+    private func cancelBackendRequest(id: String) {
+        guard pending[id] != nil else { return }
+        do {
+            try inputPipe?.fileHandleForWriting.write(contentsOf: BackendProcessProtocol.encodeCancel(id: id))
+        } catch {
+            diagnostic("could not cancel backend request \(id)")
+        }
     }
 
     func stop(completion: @escaping () -> Void) {
@@ -133,6 +200,7 @@ final class RuntimeSupervisor: NSObject {
         expectedExit = true
         startupTimeoutTask?.cancel()
         healthTask?.cancel()
+        rejectPending(code: .backendUnavailable, message: "The Bun backend stopped")
 
         do {
             if let inputPipe {
@@ -239,36 +307,70 @@ final class RuntimeSupervisor: NSObject {
             }
             return
         }
-        if readyDelivered, data.contains(where: { !$0.isASCIIWhitespace }) {
-            fail(title: "Runtime protocol error", detail: "Runtime emitted unexpected stdout data.")
-            return
-        }
         outputBuffer.append(data)
-        guard outputBuffer.count <= FIAMaximumControlLineBytes else {
-            fail(title: "Runtime protocol error", detail: RuntimeProtocolError.messageTooLarge.localizedDescription)
-            return
-        }
-        guard let newline = outputBuffer.firstIndex(of: 0x0A) else { return }
-        let line = outputBuffer[..<newline]
-        let trailing = outputBuffer[outputBuffer.index(after: newline)...]
-        guard !readyDelivered else {
-            if trailing.contains(where: { !$0.isASCIIWhitespace }) {
-                fail(title: "Runtime protocol error", detail: "Runtime emitted unexpected stdout data.")
+        while let newline = outputBuffer.firstIndex(of: 0x0A) {
+            let line = Data(outputBuffer[..<newline])
+            outputBuffer.removeSubrange(...newline)
+            guard !line.isEmpty else { continue }
+            do {
+                guard let process else { return }
+                if !readyDelivered {
+                    let ready = try RuntimeProtocol.decodeReadyLine(line, expectedPID: process.processIdentifier)
+                    diagnostic("runtime ready on port \(ready.port)")
+                    readyDelivered = true
+                    startupTimeoutTask?.cancel()
+                    let origin = URL(string: "http://127.0.0.1:\(ready.port)")!
+                    performInitialHealthProbe(origin: origin)
+                } else {
+                    try receiveBackend(BackendProcessProtocol.decodeLine(
+                        line,
+                        expectedPID: process.processIdentifier
+                    ))
+                }
+            } catch {
+                fail(title: "Runtime protocol error", detail: error.localizedDescription)
+                return
             }
+        }
+        let maximum = readyDelivered ? FIABackendMaximumMessageBytes : FIAMaximumControlLineBytes
+        guard outputBuffer.count <= maximum else {
+            fail(title: "Runtime protocol error", detail: "Runtime protocol message is too large.")
             return
         }
+    }
 
-        do {
-            guard let process else { return }
-            let ready = try RuntimeProtocol.decodeReadyLine(Data(line), expectedPID: process.processIdentifier)
-            diagnostic("runtime ready on port \(ready.port)")
-            readyDelivered = true
-            startupTimeoutTask?.cancel()
-            outputBuffer = Data(trailing)
-            let origin = URL(string: "http://127.0.0.1:\(ready.port)")!
-            performInitialHealthProbe(origin: origin)
-        } catch {
-            fail(title: "Runtime protocol error", detail: error.localizedDescription)
+    private func receiveBackend(_ message: BackendProcessMessage) throws {
+        switch message {
+        case .ready:
+            throw BackendProtocolError.invalidMessage
+        case let .success(id, value):
+            guard pending[id] != nil else { throw BackendProtocolError.invalidMessage }
+            finish(id: id, result: .success(value))
+        case let .failure(id, code, message, details):
+            guard pending[id] != nil else { throw BackendProtocolError.invalidMessage }
+            finish(id: id, result: .failure(BackendInvocationError(
+                code: .applicationError,
+                message: message,
+                applicationCode: code,
+                details: details
+            )))
+        case let .event(name, payload):
+            onEvent(.applicationEvent(name: name, payload: payload))
+        }
+    }
+
+    private func finish(id: String, result: Result<Data, Error>) {
+        guard let request = pending.removeValue(forKey: id) else { return }
+        request.timeout.cancel()
+        request.continuation.resume(with: result)
+    }
+
+    private func rejectPending(code: BackendBridgeErrorCode, message: String) {
+        let requests = pending
+        pending.removeAll()
+        for request in requests.values {
+            request.timeout.cancel()
+            request.continuation.resume(throwing: BackendInvocationError(code: code, message: message))
         }
     }
 
@@ -360,6 +462,7 @@ final class RuntimeSupervisor: NSObject {
     private func fail(title: String, detail: String) {
         guard !failureDelivered else { return }
         failureDelivered = true
+        rejectPending(code: .backendUnavailable, message: detail)
         let log = String(data: recentError, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let fullDetail = log?.isEmpty == false ? "\(detail)\n\nRecent runtime log:\n\(log!)" : detail
         diagnostic("failure: \(title): \(detail)")
@@ -377,6 +480,7 @@ final class RuntimeSupervisor: NSObject {
         sigtermWorkItem = nil
         startupTimeoutTask?.cancel()
         healthTask?.cancel()
+        rejectPending(code: .backendUnavailable, message: "The Bun backend exited")
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         errorPipe?.fileHandleForReading.readabilityHandler = nil
         inputPipe = nil

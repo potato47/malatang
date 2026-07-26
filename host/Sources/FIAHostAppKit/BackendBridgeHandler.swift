@@ -35,7 +35,7 @@ final class BackendBridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
                 port: message.frameInfo.securityOrigin.port
               )
         else {
-            replyHandler(Self.failure(code: .invalidRequest, message: "Swift backend bridge access was denied"), nil)
+            replyHandler(Self.failure(code: .invalidRequest, message: "Backend bridge access was denied"), nil)
             return
         }
         let request: BackendBridgeRequest
@@ -53,7 +53,7 @@ final class BackendBridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
             } catch let error as BackendInvocationError {
                 replyHandler(Self.failure(error), nil)
             } catch {
-                replyHandler(Self.failure(code: .backendUnavailable, message: "The Swift backend request failed"), nil)
+                replyHandler(Self.failure(code: .backendUnavailable, message: "The backend request failed"), nil)
             }
         }
     }

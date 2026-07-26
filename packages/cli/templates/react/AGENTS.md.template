@@ -8,7 +8,8 @@ system `WKWebView`, and a Swift/AppKit Host supplied by `@semicoder/fia`.
 - `fia.config.ts` defines the desktop application, window, Dock, and status bar configuration. Keep
   `configVersion: 2` unless the installed FIA version documents a migration.
 - `src/server.ts` is the Bun entry point. Export the application with `defineApp` from
-  `@semicoder/fia/runtime`; add HTTP routes and application WebSocket behavior here.
+  `@semicoder/fia/runtime`; put ordinary commands in `backend.methods`, and add HTTP routes or an
+  application WebSocket only for streaming, files, or long-lived bidirectional channels.
 - `src/ui/` contains the React application and browser assets.
 - `dist/` and `.fia/` are generated. Do not edit or commit them.
 
@@ -30,8 +31,8 @@ bun run build
 
 ## FIA boundaries
 
-- Use relative `fetch` calls for request/response application work and the application WebSocket for
-  bidirectional streams. Keep business APIs in `src/server.ts` rather than the native bridge.
+- Use `backend.invoke()` and `backend.onEvent()` for ordinary application work. Use relative `fetch`
+  for streaming or file transfers and the application WebSocket for long-lived bidirectional streams.
 - Import desktop capabilities from `@semicoder/fia/native`. Never access or introduce a public
   `window.fia` global.
 - Always guard native behavior with `native.isAvailable()` and keep the React UI usable in a normal

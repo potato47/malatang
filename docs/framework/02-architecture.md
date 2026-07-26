@@ -35,7 +35,8 @@ native bridge；多窗口、其余系统服务、公证和分发产物仍按路�
 每个应用独立编译的全栈可执行文件，负责：
 
 - 提供 HTML、JavaScript、CSS 和静态资源
-- HTTP API 与 WebSocket RPC
+- stdin/stdout NDJSON RPC 与应用事件
+- 可选 HTTP streaming、文件传输与 WebSocket 长连接
 - 应用业务逻辑和状态
 - 应用数据持久化
 - 响应 Host 发出的生命周期消息
@@ -51,9 +52,9 @@ native bridge；多窗口、其余系统服务、公证和分发产物仍按路�
 
 ### Web UI
 
-运行在 WKWebView 中，可使用 React、Solid、Svelte 或无框架 TypeScript。UI 通过经过验证的
-HTTP/WebSocket API 访问 Bun，或通过独立 backend bridge 访问应用 Swift 后端；系统原生能力
-仍只通过窄接口 native bridge 暴露。
+运行在 WKWebView 中，可使用 React、Solid、Svelte 或无框架 TypeScript。普通业务调用无论
+Bun 或 Swift 都使用独立 backend bridge；HTTP/WebSocket 只用于 Bun 的流式、文件和长连接
+扩展。系统原生能力仍只通过窄接口 native bridge 暴露。
 
 ## 2. 启动序列
 
@@ -85,8 +86,8 @@ HTTP/WebSocket API 访问 Bun，或通过独立 backend bridge 访问应用 Swif
 }
 ```
 
-stdin/stdout 使用最大 16 KiB 的单行 NDJSON。stdout 只允许传宿主协议；应用日志统一
-写 stderr。initialize 消息携带 bootstrap token、独立的 control token、父 PID 和数据
+控制消息最大 16 KiB，backend request/response/event 最大 1 MiB，均使用单行 NDJSON。
+stdout 只允许协议消息；应用日志统一写 stderr。initialize 消息携带 bootstrap token、独立的 control token、父 PID 和数据
 目录，秘密不得放入进程环境变量或命令行。
 
 bootstrap URL 形如：
@@ -104,24 +105,19 @@ Host 健康检查使用独立 control token，不复用已废弃的 bootstrap to
 ### UI 与 Bun
 
 - 页面与资源：HTTP
-- 普通查询、命令调用和下载：HTTP
+- 普通查询和命令：`backend.invoke()` → WebKit Bridge → Host → stdin/stdout NDJSON
+- 后端主动通知：NDJSON event → Host → `backend.onEvent()`
+- 下载、上传和文件传输：可选 HTTP route
 - 可由 `Response` 表达的单向流：HTTP streaming
-- 服务端主动推送和持续双向状态事件：应用 WebSocket
+- 高频或持续双向数据：应用 WebSocket
 
-阶段 1 只提供应用 WebSocket handler 和会话安全边界，不规定业务消息格式。若后续提供框架级
-WebSocket RPC，应独立版本化并覆盖：
-
-- request / response
-- event
-- stream
-- cancellation
-- error serialization
-- protocol version
-- backpressure
+RPC 与 Swift backend 共用 request/response/event 语义、结构化错误、1 MiB 单消息限制、128
+并发限制和 Host 侧默认 30 秒超时。HTTP/WebSocket 不承载框架 RPC。
 
 ### UI 与 Swift
 
-使用带 Promise reply 的 `WKScriptMessageHandlerWithReply` 提供少量原生命令：
+与 Bun 使用同一 `backend.invoke()` / `backend.onEvent()` API。Host 将 Bridge 消息转发到独立
+`fia-backend` 的 stdin/stdout；生产静态 UI 不需要本机监听端口。
 
 - `window.*`
 - `app.*`

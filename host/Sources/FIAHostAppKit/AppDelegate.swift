@@ -144,6 +144,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do { try showApplicationIfReady() } catch { showRuntimeFailure(title: "UI could not start", detail: error.localizedDescription) }
         case let .failed(title, detail):
             showRuntimeFailure(title: title, detail: detail)
+        case let .applicationEvent(name, payload):
+            windowController?.emitBackendEvent(name: name, payload: payload)
         }
     }
 
@@ -199,15 +201,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func backendCommandExecutor() -> ((BackendBridgeRequest) async throws -> Data)? {
-        guard let backend else { return nil }
-        return { [weak backend] request in
-            guard let backend else {
+        if let backend {
+            return { [weak backend] request in
+                guard let backend else {
+                    throw BackendInvocationError(
+                        code: .backendUnavailable,
+                        message: "The FIA Swift backend is unavailable"
+                    )
+                }
+                return try await backend.invoke(request)
+            }
+        }
+        guard configuration?.backend.usesRuntime == true, let runtime else { return nil }
+        return { [weak runtime] request in
+            guard let runtime else {
                 throw BackendInvocationError(
                     code: .backendUnavailable,
-                    message: "The FIA Swift backend is unavailable"
+                    message: "The FIA Bun backend is unavailable"
                 )
             }
-            return try await backend.invoke(request)
+            return try await runtime.invoke(request)
         }
     }
 

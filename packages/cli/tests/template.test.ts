@@ -73,21 +73,33 @@ describe("generated React template", () => {
     expect(result.exitCode).toBe(0);
   });
 
-  test("exports declarative HTTP and WebSocket handlers", async () => {
+  test("exports declarative RPC, HTTP, and WebSocket handlers", async () => {
     const project = await generatedProject();
     const module = await import(`${pathToFileURL(resolve(project, "src/server.ts")).href}?test=${crypto.randomUUID()}`) as {
       default: DefinedFIAApplication;
     };
     expect(isFIAApplication(module.default)).toBe(true);
 
-    const hello = module.default.routes?.["/api/hello"];
-    if (typeof hello !== "function") throw new Error("Template HTTP route is not a handler");
-    const response = await hello(
-      new Request("http://127.0.0.1/api/hello") as Bun.BunRequest<string>,
+    const greet = module.default.backend?.methods.greet;
+    if (typeof greet !== "function") throw new Error("Template backend method is not a handler");
+    const emitted: unknown[] = [];
+    const greeting = await greet({ name: "FIA" }, {
+      dataDirectory: "/tmp/fia",
+      requestID: "template-rpc-1",
+      signal: new AbortController().signal,
+      emit: async (name, payload) => { emitted.push({ name, payload }); },
+    });
+    expect(greeting).toMatchObject({ message: "Hello, FIA!" });
+    expect(emitted).toEqual([{ name: "greet.completed", payload: { name: "FIA" } }]);
+
+    const health = module.default.routes?.["/api/health"];
+    if (typeof health !== "function") throw new Error("Template HTTP route is not a handler");
+    const response = await health(
+      new Request("http://127.0.0.1/api/health") as Bun.BunRequest<string>,
       {} as Bun.Server<undefined>,
     );
     expect(response).toBeInstanceOf(Response);
-    expect(await (response as Response).json()).toMatchObject({ message: "Hello from template-app" });
+    expect(await (response as Response).json()).toEqual({ application: "template-app", status: "ok" });
 
     const sent: string[] = [];
     module.default.websocket?.message({

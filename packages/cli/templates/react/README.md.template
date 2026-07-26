@@ -23,5 +23,7 @@ opened outside the FIA Host.
 
 ## Runtime boundary
 
-The server entry exports `defineApp({ routes, websocket })`. FIA owns the loopback listener,
-bootstrap session, Host protocol, and process lifecycle; application code owns its route behavior.
+The server entry exports `defineApp({ backend, routes, websocket })`. Ordinary commands and events use
+the same `backend.invoke()` / `backend.onEvent()` bridge as Swift projects. HTTP routes and WebSockets
+remain available for streaming, files, and long-lived bidirectional channels. FIA owns the loopback
+listener, bootstrap session, Host protocol, and process lifecycle.

@@ -38,7 +38,7 @@ Host 独占 Bun stdin pipe 写端。父进程消失会产生 EOF，Bun 进入 sh
 
 ## ADR-007：UI 业务通信绕过 Swift
 
-**状态：已接受**
+**状态：已被 ADR-018 取代**
 
 UI 通过 HTTP/WebSocket 直接连接 Bun。Swift bridge 只处理必须原生实现的能力，避免 Swift 成为高频应用数据的中转瓶颈。
 
@@ -112,12 +112,21 @@ Host 生命周期。旧式直接 `Bun.serve` 入口明确报迁移错误，不�
 
 ## ADR-017：应用数据通道与框架控制通道分离
 
-**状态：已接受**
+**状态：已被 ADR-018 取代**
 
 普通查询、命令调用、下载和可用 `Response` 表达的流式响应使用 HTTP `routes/fetch`；需要
 服务端主动推送或持续双向交互的应用事件使用应用 WebSocket。Host/Runtime initialize、ready、
 shutdown、health、bootstrap 和 HMR 控制属于 FIA 内部通道，不复用应用业务协议。阶段 2 的
 native bridge 使用独立的 schema、origin 校验和授权边界，也不通过应用 WebSocket 暴露 Swift。
+
+## ADR-018：Bun 与 Swift 统一 backend bridge，Web 通道作为扩展
+
+**状态：已接受**
+
+普通查询、命令和应用事件统一使用 `backend.invoke()` / `backend.onEvent()`。Bun 复用 Host 已有
+的 stdin/stdout 生命周期管道承载 request/response/event，Swift 继续使用独立 backend 子进程；
+两者共享 Bridge、错误模型、消息与并发限制。Bun 的 HTTP route、streaming 和 WebSocket 保留为
+文件传输、流式响应和持续双向高频通道，不作为默认 RPC。纯 UI runtime 不安装 backend bridge。
 
 ## 待决策事项
 

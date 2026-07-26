@@ -32,7 +32,7 @@ function install(responder: (message: unknown) => unknown | Promise<unknown>): u
   return messages;
 }
 
-describe("public FIA Swift backend API", () => {
+describe("public FIA backend API", () => {
   test("reports unavailable environments and invalid methods", async () => {
     expect(backend.isAvailable()).toBe(false);
     await expect(backend.invoke("hello", {})).rejects.toMatchObject({ code: "BACKEND_UNAVAILABLE" });

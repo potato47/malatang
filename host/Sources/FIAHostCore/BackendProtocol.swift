@@ -89,6 +89,15 @@ public enum BackendProcessProtocol {
         ])
     }
 
+    public static func encodeCancel(id: String) throws -> Data {
+        guard BackendBridgeProtocol.validName(id) else { throw BackendProtocolError.invalidMessage }
+        return try encode([
+            "protocol": FIABackendProtocolVersion,
+            "type": "cancel",
+            "id": id,
+        ])
+    }
+
     public static func decodeLine(_ data: Data, expectedPID: Int32) throws -> BackendProcessMessage {
         guard data.count <= FIABackendMaximumMessageBytes else { throw BackendProtocolError.messageTooLarge }
         let object: Any

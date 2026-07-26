@@ -69,7 +69,7 @@ function messageHandler(): BackendMessageHandler | undefined {
 
 function parseResponse(value: unknown): BackendResponse {
   if (!isObject(value) || typeof value.ok !== "boolean") {
-    throw new FIABackendError("PROTOCOL_ERROR", "The Swift backend bridge returned an invalid response");
+    throw new FIABackendError("PROTOCOL_ERROR", "The backend bridge returned an invalid response");
   }
   if (value.ok === true) return { ok: true, value: value.value };
   if (!isObject(value.error)
@@ -77,7 +77,7 @@ function parseResponse(value: unknown): BackendResponse {
     || !ERROR_CODES.has(value.error.code as FIABackendErrorCode)
     || typeof value.error.message !== "string"
     || (value.error.applicationCode !== undefined && typeof value.error.applicationCode !== "string")) {
-    throw new FIABackendError("PROTOCOL_ERROR", "The Swift backend bridge returned an invalid error");
+    throw new FIABackendError("PROTOCOL_ERROR", "The backend bridge returned an invalid error");
   }
   return {
     ok: false,
@@ -97,11 +97,11 @@ export const backend = {
 
   async invoke<Input = undefined, Output = unknown>(method: string, input?: Input): Promise<Output> {
     if (typeof method !== "string" || method.length === 0) {
-      throw new FIABackendError("INVALID_REQUEST", "The Swift backend method must not be empty");
+      throw new FIABackendError("INVALID_REQUEST", "The backend method must not be empty");
     }
     const handler = messageHandler();
     if (handler === undefined) {
-      throw new FIABackendError("BACKEND_UNAVAILABLE", "The FIA Swift backend is unavailable in this environment");
+      throw new FIABackendError("BACKEND_UNAVAILABLE", "The FIA backend is unavailable in this environment");
     }
     let raw: unknown;
     try {
@@ -112,7 +112,7 @@ export const backend = {
       });
     } catch (error) {
       if (error instanceof FIABackendError) throw error;
-      throw new FIABackendError("BACKEND_UNAVAILABLE", "The Swift backend request failed", { cause: error });
+      throw new FIABackendError("BACKEND_UNAVAILABLE", "The backend request failed", { cause: error });
     }
     const response = parseResponse(raw);
     if (!response.ok) {

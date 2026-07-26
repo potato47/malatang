@@ -5,12 +5,24 @@ interface EchoRequest {
   message: string;
 }
 
+interface GreetRequest {
+  name: string;
+}
+
 export default defineApp({
+  backend: {
+    methods: {
+      async greet(input: GreetRequest, context) {
+        await context.emit("greet.completed", { name: input.name });
+        return {
+          message: `Hello, ${input.name}!`,
+          timestamp: new Date().toISOString(),
+        };
+      },
+    },
+  },
   routes: {
-    "/api/hello": () => Response.json({
-      message: "Hello from __FIA_PACKAGE_NAME__",
-      timestamp: new Date().toISOString(),
-    }),
+    "/api/health": () => Response.json({ application: "__FIA_PACKAGE_NAME__", status: "ok" }),
     "/ws": (request, bunServer) => {
       if (bunServer.upgrade(request)) return;
       return new Response("WebSocket upgrade required", { status: 426 });

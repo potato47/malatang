@@ -3,6 +3,8 @@ import { isAbsolute } from "node:path";
 export const PROTOCOL_VERSION = 1 as const;
 export const MAX_CONTROL_LINE_BYTES = 16 * 1024;
 export const MAXIMUM_CONTROL_LINE_BYTES = MAX_CONTROL_LINE_BYTES;
+export const MAX_BACKEND_MESSAGE_BYTES = 1024 * 1024;
+export const MAX_BACKEND_CONCURRENT_REQUESTS = 128;
 export const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export interface InitializeMessage {
@@ -26,6 +28,22 @@ export interface ReadyMessage {
   port: number;
   pid: number;
 }
+
+export interface BackendRequestMessage {
+  protocol: typeof PROTOCOL_VERSION;
+  type: "request";
+  id: string;
+  method: string;
+  input: unknown;
+}
+
+export interface BackendCancelMessage {
+  protocol: typeof PROTOCOL_VERSION;
+  type: "cancel";
+  id: string;
+}
+
+export type BackendHostMessage = BackendRequestMessage | BackendCancelMessage;
 
 export type HostMessage = InitializeMessage | ShutdownMessage;
 
@@ -61,6 +79,13 @@ function parse(line: string): Record<string, unknown> {
   }
 }
 
+function validName(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && Buffer.byteLength(value) <= 256
+    && /^[\p{L}\p{N}._-]+$/u.test(value);
+}
+
 export function parseInitializeLine(line: string): InitializeMessage {
   const value = parse(line);
   exactKeys(value, ["protocol", "type", "bootstrapToken", "controlToken", "parentPid", "dataDirectory"]);
@@ -90,6 +115,32 @@ export function parseShutdownLine(line: string): ShutdownMessage {
     throw new ProtocolError("expected FIA shutdown protocol 1");
   }
   return value as unknown as ShutdownMessage;
+}
+
+export function parseBackendHostLine(line: string): BackendHostMessage {
+  if (Buffer.byteLength(line) + 1 > MAX_BACKEND_MESSAGE_BYTES) {
+    throw new ProtocolError("backend message exceeds 1 MiB");
+  }
+  let value: Record<string, unknown>;
+  try {
+    value = object(JSON.parse(line));
+  } catch (error) {
+    if (error instanceof ProtocolError) throw error;
+    throw new ProtocolError("backend message is not valid JSON");
+  }
+  if (value.protocol !== PROTOCOL_VERSION) {
+    throw new ProtocolError("expected FIA backend protocol 1");
+  }
+  if (value.type === "cancel") {
+    exactKeys(value, ["protocol", "type", "id"]);
+    if (!validName(value.id)) throw new ProtocolError("backend cancellation id is invalid");
+    return value as unknown as BackendCancelMessage;
+  }
+  exactKeys(value, ["protocol", "type", "id", "method", "input"]);
+  if (value.type !== "request" || !validName(value.id) || !validName(value.method)) {
+    throw new ProtocolError("backend request id or method is invalid");
+  }
+  return value as unknown as BackendRequestMessage;
 }
 
 export function serializeReady(port: number, pid: number): string {

@@ -265,7 +265,7 @@ async function validateApplication(context: BuildContext): Promise<void> {
     const marker = Symbol.for("dev.fia.application");
     if (applicationModule.default?.[marker] !== true) {
       process.stderr.write(
-        "src/server.ts must default-export defineApp({ routes, websocket }). " +
+        "src/server.ts must default-export defineApp({ backend, routes, websocket }). " +
         "Direct Bun.serve() entries are not supported; import defineApp from @semicoder/fia/runtime.\\n"
       );
       process.exit(65);
@@ -277,7 +277,7 @@ async function validateApplication(context: BuildContext): Promise<void> {
     const detail = result.stderr.trim() || result.stdout.trim();
     throw new Error(
       "application entry validation failed: src/server.ts must default-export "
-        + "defineApp({ routes, websocket }). Direct Bun.serve() entries are not supported."
+        + "defineApp({ backend, routes, websocket }). Direct Bun.serve() entries are not supported."
         + (detail.length > 0 ? `\n${detail}` : ""),
     );
   }
@@ -427,7 +427,10 @@ function hostConfiguration(
     executable: string;
     arguments: string[];
   },
-  backend: { mode: "none" } | { mode: "production" } | { mode: "development"; executable: string },
+  backend: { mode: "none" } | { mode: "runtime" } | { mode: "production" } | {
+    mode: "development";
+    executable: string;
+  },
 ): Record<string, unknown> {
   return {
     schemaVersion: 4,
@@ -458,7 +461,7 @@ async function assembleApp(
   backend: { mode: "none" } | { mode: "production"; executable: string } | {
     mode: "development";
     executable: string;
-  } = { mode: "none" },
+  } | { mode: "runtime" } = { mode: "none" },
 ): Promise<void> {
   const contents = resolve(context.appPath, "Contents");
   const macOS = resolve(contents, "MacOS");
@@ -500,7 +503,9 @@ async function assembleApp(
           : runtime.mode === "bundled"
           ? { mode: "bundled", entry: runtime.entry }
           : { mode: "development", executable: runtime.executable, arguments: runtime.arguments },
-        backend.mode === "production"
+        backend.mode === "runtime"
+          ? { mode: "runtime" }
+          : backend.mode === "production"
           ? { mode: "production" }
           : backend.mode === "development"
           ? { mode: "development", executable: backend.executable }
@@ -533,7 +538,7 @@ async function plistValue(plist: string, key: string, context: BuildContext): Pr
 async function verifyApp(
   context: BuildContext,
   mode: "development" | "production" | "bundled",
-  backendMode: "none" | "production" | "development" = "none",
+  backendMode: "none" | "runtime" | "production" | "development" = "none",
 ): Promise<void> {
   const contents = resolve(context.appPath, "Contents");
   const host = resolve(contents, "MacOS", HOST_EXECUTABLE);
@@ -624,7 +629,7 @@ async function productionApp(context: BuildContext): Promise<void> {
     context.debug,
     context.io,
   );
-  await assembleApp(context, { mode: "production", executable: runtime });
+  await assembleApp(context, { mode: "production", executable: runtime }, { mode: "runtime" });
 }
 
 async function developmentApp(context: BuildContext): Promise<SwiftBackendBuild | undefined> {
@@ -642,7 +647,11 @@ async function developmentApp(context: BuildContext): Promise<SwiftBackendBuild 
     mode: "development",
     executable: process.execPath,
     arguments: ["--hot", "--no-clear-screen", entry],
-  }, backend === undefined ? { mode: "none" } : { mode: "development", executable: backend.executable });
+  }, backend !== undefined
+    ? { mode: "development", executable: backend.executable }
+    : context.config.runtime === "bun"
+    ? { mode: "runtime" }
+    : { mode: "none" });
   return backend;
 }
 

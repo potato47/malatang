@@ -82,15 +82,25 @@ const state = await native.getState();
 await native.window.setAlwaysOnTop(!state.window.alwaysOnTop);
 ```
 
-The server entry exports declarative application routes:
+The Bun server entry exposes ordinary commands through the same backend bridge used by Swift.
+HTTP routes and WebSockets remain optional for streaming, file transfer, and long-lived channels:
 
 ```ts
 import { defineApp } from "@semicoder/fia/runtime";
 
 export default defineApp({
-  routes: { "/api/hello": () => Response.json({ message: "Hello" }) },
+  backend: {
+    methods: {
+      greet: ({ name }: { name: string }) => ({ message: `Hello, ${name}` }),
+    },
+  },
+  routes: { "/api/health": () => Response.json({ status: "ok" }) },
 });
 ```
+
+The Web UI calls either Bun or Swift with `backend.invoke()` and receives application events with
+`backend.onEvent()`. Bun RPC travels through the Host-owned stdin/stdout NDJSON channel; it does not
+use the loopback HTTP session.
 
 `fia create hello` generates the default React/Bun template; `fia create hello --runtime swift` generates
 React UI, a SwiftPM backend, and an example RPC. Both normally run `bun install`;

@@ -110,7 +110,7 @@ describe("FIA application commands", () => {
       window: { closeBehavior: "quit", restoreState: true },
       statusBar: { symbol: "circle.grid.2x2.fill" },
       runtime: { mode: "production" },
-      backend: { mode: "none" },
+      backend: { mode: "runtime" },
     });
 
     const second = output();

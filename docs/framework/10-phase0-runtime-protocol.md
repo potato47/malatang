@@ -2,7 +2,7 @@
 
 > 状态：Experimental  
 > 协议版本：1  
-> 最大单行长度：16 KiB（包含换行符）
+> 控制消息最大单行长度：16 KiB；backend 消息：1 MiB（均包含换行符）
 
 本协议只用于阶段 0 Host 与 Bun runtime 风险原型，不承诺跨版本兼容。
 
@@ -46,6 +46,11 @@ Host 在 10 秒内只接受一条合法 ready，并验证：
 - `pid` 等于 Host 创建的子进程 PID
 
 失败或超时后 Host 终止 Runtime，不加载 WebView。
+
+ready 后同一 stdin/stdout 管道承载 `request`、`cancel`、`response` 和 `event` NDJSON。
+最多 128 个并发请求，Host 默认超时 30 秒；超时会发送 `cancel` 并触发 Bun handler 的
+`context.signal`。RPC 用于普通查询、命令和应用事件；
+HTTP streaming、文件传输和应用 WebSocket 仍走下述认证后的本机服务。
 
 ## 3. HTTP 会话
 

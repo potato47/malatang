@@ -27,8 +27,9 @@ Contents/MacOS/                Contents/MacOS/
 Swift/AppKit Host
 ├── WKWebView
 ├── optional Bun UI/application runtime
+│   └── NDJSON RPC/event pipe for ordinary application calls
 └── optional Swift application backend
-    └── NDJSON RPC/event pipe
+    └── the same NDJSON RPC/event contract
 ```
 
 ## 文档索引
@@ -51,7 +52,8 @@ Swift/AppKit Host
 ## 第一阶段结论
 
 - 使用系统 `WKWebView`，不携带 Chromium。
-- Bun 负责 UI 资源、HTTP/WebSocket、应用后端和业务状态。
+- Bun 负责 UI 资源、应用后端和业务状态；普通调用走统一 backend bridge，HTTP/WebSocket
+  保留用于流式、文件和长连接能力。
 - Swift 宿主保持通用，不为每个普通项目重复编译。
 - 开发和本地构建全部通过 `fia` CLI 完成，不生成或启动 Xcode 工程；正式分发命令属于阶段 3。
 - 首版输出 Apple Silicon 应用；Universal Binary 和 Intel 支持后置。

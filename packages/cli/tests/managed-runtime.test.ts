@@ -11,21 +11,30 @@ interface Ready {
   pid: number;
 }
 
-async function readyLine(stream: ReadableStream<Uint8Array>): Promise<Ready> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let value = "";
-  const timeout = setTimeout(() => void reader.cancel("ready timeout"), 5_000);
-  try {
-    while (!value.includes("\n")) {
-      const result = await reader.read();
-      if (result.done) throw new Error("managed runtime exited before ready");
-      value += decoder.decode(result.value, { stream: true });
+class JSONLineReader {
+  private readonly reader: ReadableStreamDefaultReader<Uint8Array>;
+  private readonly decoder = new TextDecoder();
+  private buffer = "";
+
+  constructor(stream: ReadableStream<Uint8Array>) {
+    this.reader = stream.getReader();
+  }
+
+  async next<T>(): Promise<T> {
+    const timeout = setTimeout(() => void this.reader.cancel("line timeout"), 5_000);
+    try {
+      while (!this.buffer.includes("\n")) {
+        const result = await this.reader.read();
+        if (result.done) throw new Error("managed runtime exited before protocol message");
+        this.buffer += this.decoder.decode(result.value, { stream: true });
+      }
+      const newline = this.buffer.indexOf("\n");
+      const line = this.buffer.slice(0, newline);
+      this.buffer = this.buffer.slice(newline + 1);
+      return JSON.parse(line) as T;
+    } finally {
+      clearTimeout(timeout);
     }
-    return JSON.parse(value.slice(0, value.indexOf("\n"))) as Ready;
-  } finally {
-    clearTimeout(timeout);
-    reader.releaseLock();
   }
 }
 
@@ -81,6 +90,8 @@ describe("managed FIA runtime", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
+    const output = new JSONLineReader(child.stdout);
+    const stderr = new Response(child.stderr).text();
     try {
       child.stdin.write(`${JSON.stringify({
         protocol: 1,
@@ -93,10 +104,9 @@ describe("managed FIA runtime", () => {
       child.stdin.flush();
       let ready: Ready;
       try {
-        ready = await readyLine(child.stdout);
+        ready = await output.next<Ready>();
       } catch (error) {
-        const stderr = await new Response(child.stderr).text();
-        throw new Error(`${error instanceof Error ? error.message : error}\n${stderr}`);
+        throw new Error(`${error instanceof Error ? error.message : error}\n${await stderr}`);
       }
       expect(ready).toMatchObject({ protocol: 1, type: "ready", pid: child.pid });
       const origin = `http://127.0.0.1:${ready.port}`;
@@ -115,6 +125,43 @@ describe("managed FIA runtime", () => {
       expect(await page.text()).not.toContain("__FIA_CSP_NONCE__");
       const application = await fetch(`${origin}/api/test`, { headers: { Cookie: session } });
       expect(await application.json()).toEqual({ managed: true });
+
+      child.stdin.write(`${JSON.stringify({
+        protocol: 1,
+        type: "request",
+        id: "rpc-1",
+        method: "greet",
+        input: { name: "FIA" },
+      })}\n`);
+      child.stdin.flush();
+      expect(await output.next<Record<string, unknown>>()).toEqual({
+        protocol: 1,
+        type: "event",
+        name: "greet.completed",
+        payload: { name: "FIA" },
+      });
+      expect(await output.next<Record<string, unknown>>()).toEqual({
+        protocol: 1,
+        type: "response",
+        id: "rpc-1",
+        ok: true,
+        value: { message: "Hello, FIA" },
+      });
+      child.stdin.write(`${JSON.stringify({
+        protocol: 1,
+        type: "request",
+        id: "rpc-cancel",
+        method: "hold",
+        input: null,
+      })}\n`);
+      child.stdin.write(`${JSON.stringify({ protocol: 1, type: "cancel", id: "rpc-cancel" })}\n`);
+      child.stdin.flush();
+      expect(await output.next<Record<string, unknown>>()).toEqual({
+        protocol: 1,
+        type: "event",
+        name: "hold.cancelled",
+        payload: { requestID: "rpc-cancel" },
+      });
       expect(await websocketMessage(
         `${origin.replace("http:", "ws:")}/ws`,
         origin,
@@ -146,8 +193,7 @@ describe("managed FIA runtime", () => {
     } catch (error) {
       if (child.exitCode === null) child.kill("SIGKILL");
       await child.exited;
-      const stderr = await new Response(child.stderr).text();
-      throw new Error(`${error instanceof Error ? error.message : error}\n${stderr}`);
+      throw new Error(`${error instanceof Error ? error.message : error}\n${await stderr}`);
     } finally {
       if (child.exitCode === null) child.kill("SIGKILL");
       await child.exited;
@@ -163,9 +209,12 @@ describe("managed FIA runtime", () => {
     const entryPath = resolve(dataDirectory, "entry.ts");
     const bootstrapToken = randomToken();
     const controlToken = randomToken();
-    const applicationSource = (version: number): string => `
+      const applicationSource = (version: number): string => `
       import { defineApp } from ${JSON.stringify(runtimeAPI)};
-      export default defineApp({ routes: { "/api/version": () => Response.json({ version: ${version} }) } });
+      export default defineApp({
+        backend: { methods: { version: () => ({ version: ${version} }) } },
+        routes: { "/api/version": () => Response.json({ version: ${version} }) },
+      });
     `;
     await mkdir(resolve(dataDirectory, "ui"));
     await Promise.all([
@@ -186,6 +235,8 @@ describe("managed FIA runtime", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
+    const output = new JSONLineReader(child.stdout);
+    const stderr = new Response(child.stderr).text();
     try {
       child.stdin.write(`${JSON.stringify({
         protocol: 1,
@@ -196,7 +247,7 @@ describe("managed FIA runtime", () => {
         dataDirectory,
       })}\n`);
       child.stdin.flush();
-      const ready = await readyLine(child.stdout);
+      const ready = await output.next<Ready>();
       const origin = `http://127.0.0.1:${ready.port}`;
       const bootstrap = await fetch(`${origin}/__fia/bootstrap/${bootstrapToken}`, { redirect: "manual" });
       const session = cookie(bootstrap);
@@ -220,8 +271,7 @@ describe("managed FIA runtime", () => {
     } catch (error) {
       if (child.exitCode === null) child.kill("SIGKILL");
       await child.exited;
-      const stderr = await new Response(child.stderr).text();
-      throw new Error(`${error instanceof Error ? error.message : error}\n${stderr}`);
+      throw new Error(`${error instanceof Error ? error.message : error}\n${await stderr}`);
     } finally {
       if (child.exitCode === null) child.kill("SIGKILL");
       await child.exited;
