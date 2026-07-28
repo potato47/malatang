@@ -37,14 +37,16 @@ await chmod(destination, 0o755);
 const hasher = new Bun.CryptoHasher("sha256");
 hasher.update(await Bun.file(destination).arrayBuffer());
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   cliVersion: cliPackage.version,
   hostVersion: cliPackage.version,
   sha256: hasher.digest("hex"),
   architecture: "arm64",
   minimumSystemVersion: "14.0",
-  configurationSchemas: [1, 2, 3, 4],
-  runtimeProtocol: 1,
+  configurationSchema: 5,
+  mcpBridge: 1,
+  mcpProtocol: "2026-07-28",
+  nativeCapabilities: ["tools", "resources", "subscriptions"],
 };
 await Bun.write(resolve(destinationDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`Packaged Host ${cliPackage.version} at ${destination}`);

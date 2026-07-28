@@ -1,98 +1,34 @@
-# 实施路线图
+# 路线图
 
-## 阶段 0：风险原型
+## 0.5 MCP 单后端基线
 
-目标：验证技术闭环，不追求公共 API 稳定。
+- config v3 / Host schema 5 / MCP bridge 1。
+- 静态 Web UI + Swift Host。
+- `fia.native` 进程内 MCP Server。
+- `app` Bun standalone MCP Server。
+- 项目内预构建 stdio MCP Server。
+- dev watch、按需启动、失败后按需重启和 facade 恢复。
+- inside-out 签名、哈希和 modern discover 冒烟门禁。
 
-- Swift Host 创建 `NSWindow` 和 `WKWebView`
-- Host 启动 Bun runtime
-- Bun 随机端口与 ready handshake
-- WebView 加载 Bun 页面
-- stdin 生命周期管道
-- HTTP health 与 WebSocket echo
-- 手工组装和 ad-hoc 签名 `.app`
+## Native MCP 扩展
 
-退出标准：Finder 双击可启动；关闭应用后无残留 Bun 进程。
+- 文件、目录与保存面板。
+- 通知和外部打开。
+- Keychain namespace 与脱敏错误。
+- 全局快捷键、登录启动和应用数据迁移。
 
-阶段 0 只提供仓库内部 `prototype:*` 构建与验证脚本，不实现公共
-`fia create/dev/run/build`、HMR、状态栏或 native bridge。实验配置和协议不承诺兼容。
+## 发布工程
 
-## 阶段 1：CLI MVP
+- Developer ID 与 hardened runtime。
+- ZIP/DMG、公证、staple 和 Gatekeeper。
+- CI 产物清单和可复现构建元数据。
+- 发布失败回滚与更新器信任模型。
 
-状态：实现与本地主流程验收完成；待 npm 首次公开发布后的仓库外安装验收。
+## 平台化
 
-- `fia create`
-- `fia dev`
-- `fia run`
-- `fia build`
-- `fia doctor`
-- 配置 schema
-- 预编译 arm64 Host
-- Bun full-stack executable
-- HMR
-- 基础日志聚合
+- Universal Binary。
+- Server 权限声明与可视化诊断。
+- App Sandbox/XPC 隔离模型。
+- 可选远程 MCP transport 与大数据旁路协议。
 
-退出标准：一个从公开 npm 包创建的新项目无需 Xcode 工程完成创建、调试、临时生产运行和
-`.app` 构建。本地包路径已经通过，公开包路径尚待首次发布后验收。
-
-## 阶段 2：原生桌面能力
-
-- [x] Dock / status bar / hybrid
-- [x] Host 管理的状态栏菜单与 SF Symbol 状态
-- [x] 关闭即隐藏
-- [x] always-on-top
-- [x] Spaces/full-screen 辅助行为
-- [x] 窗口 frame 恢复与桌面设置持久化
-- [x] 安全 native bridge schema、origin/main-frame 校验和前端状态事件
-- 文件和目录选择器
-- 通知、外部链接和 Keychain
-
-当前首个垂直切片已经支持普通窗口、状态栏常驻和运行时桌面切换；完成文件面板、通知、
-外部打开和 Keychain 后达到阶段 2 完整退出标准。
-
-## 阶段 3：发布链路
-
-- Developer ID 签名
-- hardened runtime entitlement 验证
-- ZIP/DMG
-- `notarytool` 公证与 staple
-- Gatekeeper 验证
-- build manifest
-- CI 构建示例
-
-退出标准：产物可在另一台干净 Mac 上正常安装和启动。
-
-## 阶段 4：扩展性和稳定性
-
-- SwiftPM native plugin SDK
-- 多窗口
-- Universal Binary
-- watchdog 严格模式
-- 自动更新协议
-- 全局快捷键与登录启动
-- CLI/Host/project migration
-
-## 优先级原则
-
-1. 先验证进程、WebView 和签名风险。
-2. 再设计公共 API，避免为不可行链路过早抽象。
-3. 原生 bridge 默认最小化。
-4. 安全边界和生命周期正确性优先于能力数量。
-5. 每个阶段都必须生成可运行 `.app`，不长期停留在库层。
-
-## 阶段 1 CLI MVP 验收切片
-
-本地包引用已完成以下垂直切片：
-
-```text
-fia create hello
-cd hello
-fia dev
-fia run
-fia build
-open dist/Hello.app
-```
-
-Hello 应用包含一个 WebView 页面、一个 Bun `/api/hello` 接口和一个 WebSocket 流；
-退出后用自动化检查确认无残留 runtime。公开发布后需要从 npm 在仓库外重复同一切片，才能
-关闭阶段 1。状态栏图标属于阶段 2，不作为 CLI MVP 的前置条件。
+Windows/Linux Host、Mac App Store 兼容和多 WebView 浏览器产品能力没有承诺时间表。

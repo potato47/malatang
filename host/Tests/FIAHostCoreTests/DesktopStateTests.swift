@@ -6,8 +6,6 @@ import Testing
 struct DesktopStateTests {
     private func configuration(mode: HostConfiguration.App.Mode = .dock) -> HostConfiguration {
         HostConfiguration(
-            schemaVersion: 3,
-            protocolVersion: 1,
             app: .init(name: "Desktop", identifier: "com.example.desktop", mode: mode),
             window: .init(
                 width: 1000,
@@ -20,7 +18,8 @@ struct DesktopStateTests {
                 visibleOnAllSpaces: false,
                 visibleOverFullScreen: false
             ),
-            statusBar: .init(symbol: "bolt.fill", tooltip: "Desktop")
+            statusBar: .init(symbol: "bolt.fill", tooltip: "Desktop"),
+            ui: .init(mode: .bundled, entry: "UI/index.html")
         )
     }
 

@@ -56,7 +56,7 @@ final class DesktopController {
         persist()
     }
 
-    func execute(_ command: NativeBridgeCommand) throws -> DesktopState {
+    func execute(_ command: NativeMCPCommand) throws -> DesktopState {
         switch command {
         case .getState:
             synchronizeWindowState(emit: false)

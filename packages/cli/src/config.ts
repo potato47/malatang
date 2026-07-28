@@ -1,13 +1,7 @@
-export const FIA_CONFIG_VERSION = 2 as const;
+export const FIA_CONFIG_VERSION = 3 as const;
 
 export type FIAApplicationMode = "dock" | "statusBar" | "hybrid";
 export type FIAWindowCloseBehavior = "quit" | "hide";
-export type FIARuntimeMode = "bun" | "none" | "swift";
-
-export interface FIASwiftConfig {
-  package: string;
-  product: string;
-}
 
 export interface FIAAppConfig {
   name: string;
@@ -34,15 +28,28 @@ export interface FIAStatusBarConfig {
   tooltip?: string;
 }
 
+export interface FIAMcpAppConfig {
+  entry: string;
+  watch?: readonly string[];
+}
+
+export interface FIAMcpExecutableConfig {
+  executable: string;
+  args?: readonly string[];
+}
+
+export interface FIAMcpConfig {
+  app?: FIAMcpAppConfig;
+  servers?: Readonly<Record<string, FIAMcpExecutableConfig>>;
+}
+
 export interface FIAConfig {
   configVersion: typeof FIA_CONFIG_VERSION;
   app: FIAAppConfig;
-  runtime?: FIARuntimeMode;
-  swift?: FIASwiftConfig;
-  entry?: string;
   ui?: string;
   window?: FIAWindowConfig;
   statusBar?: FIAStatusBarConfig;
+  mcp?: FIAMcpConfig;
 }
 
 export function defineConfig<const Configuration extends FIAConfig>(

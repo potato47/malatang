@@ -2,7 +2,6 @@ import { renderDoctorText, runDoctor } from "./doctor.ts";
 import { createProject, type CreateProjectDependencies } from "./create.ts";
 import { CLI_VERSION } from "./metadata.ts";
 import { SystemDoctorProbe, type DoctorProbe } from "./system-probe.ts";
-import { loadProjectConfig } from "./project-config.ts";
 import {
   executeApplicationCommand,
   type ApplicationCommand,
@@ -32,14 +31,14 @@ const rootHelp = `FIA command-line interface
 Usage:
   fia [--help]
   fia [--version]
-  fia [--debug] create <name> [--runtime <bun|swift>] [--no-install] [--git]
+  fia [--debug] create <name> [--no-mcp] [--no-install] [--git]
   fia [--debug] dev
   fia [--debug] build
   fia [--debug] run
   fia [--debug] doctor [--json]
 
 Commands:
-  create       Create a React FIA project with a Bun or Swift backend
+  create       Create a React FIA project with an optional Bun MCP server
   dev          Launch the application with React HMR
   build        Build and ad-hoc sign a production .app
   run          Build and launch the current source in production mode
@@ -52,16 +51,16 @@ Global options:
   --debug      Include diagnostic command details
 `;
 
-const createHelp = `Create a React FIA project with a Bun or Swift backend
+const createHelp = `Create a React FIA project with an optional Bun MCP server
 
 Usage:
-  fia [--debug] create <name> [--runtime <bun|swift>] [--no-install] [--git]
+  fia [--debug] create <name> [--no-mcp] [--no-install] [--git]
 
 Options:
   -h, --help   Show help for create
+  --no-mcp     Generate a UI-only application
   --no-install Generate files without running bun install
   --git        Initialize a Git repository
-  --runtime    Select the application backend (default: bun)
   --debug      Include diagnostic error details
 `;
 
@@ -156,17 +155,9 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
     const name = createArguments[0];
     if (name === undefined || name.startsWith("-")) return usageError(io, "create requires a project name");
     const flags = createArguments.slice(1);
-    let runtime: "bun" | "swift" = "bun";
-    const runtimeIndex = flags.indexOf("--runtime");
-    if (runtimeIndex >= 0) {
-      const value = flags[runtimeIndex + 1];
-      if (value !== "bun" && value !== "swift") return usageError(io, "create --runtime expects bun or swift");
-      runtime = value;
-      flags.splice(runtimeIndex, 2);
-    }
-    const unknown = flags.find((flag) => flag !== "--no-install" && flag !== "--git");
+    const unknown = flags.find((flag) => flag !== "--no-mcp" && flag !== "--no-install" && flag !== "--git");
     if (unknown !== undefined) return usageError(io, `unknown create option: ${unknown}`);
-    for (const flag of ["--no-install", "--git"] as const) {
+    for (const flag of ["--no-mcp", "--no-install", "--git"] as const) {
       if (flags.filter((value) => value === flag).length > 1) {
         return usageError(io, `create ${flag} may only be specified once`);
       }
@@ -176,7 +167,7 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
       await createProject({
         name,
         cwd: dependencies.workingDirectory ?? process.cwd(),
-        runtime,
+        mcp: !flags.includes("--no-mcp"),
         install: !flags.includes("--no-install"),
         initializeGit: flags.includes("--git"),
         io,
@@ -228,14 +219,7 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
 
   try {
     const probe = dependencies.doctorProbe ?? new SystemDoctorProbe();
-    let requiresSwift = false;
-    try {
-      const config = await loadProjectConfig(dependencies.workingDirectory ?? probe.cwd);
-      requiresSwift = config.runtime === "swift";
-    } catch {
-      // Doctor remains usable outside an FIA project and reports generic environment health.
-    }
-    const report = await runDoctor(probe, { debug, requiresSwift });
+    const report = await runDoctor(probe, { debug });
     io.stdout(flags.includes("--json") ? `${JSON.stringify(report, null, 2)}\n` : renderDoctorText(report));
     return report.ok ? 0 : 1;
   } catch (error) {

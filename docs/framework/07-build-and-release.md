@@ -1,165 +1,91 @@
 # 构建、签名与发布
 
-## 1. 构建输入
-
-- `fia.config.ts`
-- Bun server entry
-- Web UI 和静态资源
-- CLI 内嵌的预编译 arm64 Swift Host
-- 应用名称、bundle identifier、版本与窗口配置
-
-自定义图标、entitlements 和 `native/` SwiftPM package 是后续阶段输入，不属于阶段 1
-`fia build` 的公共能力。
-
-## 2. 构建阶段
+## 构建流水线
 
 ```text
-validate
-  ▼
-typecheck
-  ▼
-build UI + bun build --compile
-  ▼
-validate and copy embedded Host
-  ▼
-assemble .app in staging
-  ▼
-ad-hoc sign nested code inside-out
-  ▼
-strict verify
-  ▼
-atomically replace dist artifact
+严格解析 config v3
+  → 构建静态 UI
+  → 生成/编译 app MCP Server
+  → 校验外部 arm64 Mach-O
+  → modern discover + tools/list 冒烟
+  → 复制到 staging .app
+  → Server → Host → App 签名
+  → 严格签名、布局与哈希验证
+  → 原子替换 dist 产物
 ```
 
-所有构建都在 `.fia/build/<build-id>/` staging 目录中进行，成功后原子移动到 `dist/`，避免留下
-半成品。`fia build` 运行项目本地 TypeScript typecheck，但不运行用户测试。Developer ID、
-ZIP/DMG、公证和 staple 在阶段 3 扩展到严格验证之后。
-
-## 3. Bun 构建
-
-首期：
+UI 使用 Bun HTML bundler。生产文件放入 `Contents/Resources/UI`，Host 不启动 UI Runtime。
+默认应用 Server 使用：
 
 ```bash
 bun build --compile \
   --target=bun-darwin-arm64 \
-  src/server.ts \
-  --outfile .fia/build/app-runtime
+  --minify \
+  --no-compile-autoload-dotenv \
+  --no-compile-autoload-bunfig
 ```
 
-生产 runtime 包含：
+## 固定应用布局
 
-- Bun runtime
-- server code
-- HTML/JS/CSS
-- npm dependencies
-- 被显式 import 的静态资源
-
-构建前运行独立 TypeScript typecheck，因为 bundler 不替代完整类型检查。
-
-## 4. Swift Host
-
-默认从 CLI 的版本化内嵌资源提取预编译 Host。阶段 2/4 若启用 native plugin，才会增加类似：
-
-```bash
-swift build -c release
+```text
+Contents/
+├── MacOS/FIAHost
+├── Helpers/MCPServers/
+│   ├── app
+│   └── <server-id>
+├── Resources/
+│   ├── UI/
+│   └── fia-config.json
+├── Info.plist
+└── PkgInfo
 ```
 
-内嵌 Host 附带 manifest，记录 CLI/Host 版本、arm64、macOS 14、内部配置 schema 和 Runtime
-protocol，并在复制前校验 SHA-256 与 Mach-O 架构。`bun run host:package` 用当前 Host 源码
-重新生成该资产。
+产物不得包含旧 `fia-runtime`、`fia-backend`、Swift SDK 或外部 Bun 依赖。
 
-## 5. npm 发布
+## Host manifest
 
-npm 版本与发布流程只从仓库根目录进入。先从干净工作树准备下一个严格递增的 SemVer：
+随 npm 包发布的 Host manifest 声明：
+
+- manifest schema 2；
+- CLI/Host 版本 0.5.0；
+- arm64、macOS 14；
+- Host config schema 5；
+- bridge 1；
+- MCP `2026-07-28`；
+- Native MCP tools/resources/subscriptions；
+- Host 二进制 SHA-256。
+
+CLI 在复制 Host 前校验全部字段、架构、执行权限和 SHA-256。
+
+## 签名
+
+当前本地构建使用 ad-hoc 签名。顺序固定为：
+
+1. 每个 MCP Server；
+2. Swift Host；
+3. 外层 `.app`；
+4. `codesign --verify --strict --deep`。
+
+Server 的配置 SHA-256 在 Server 签名后计算，签名后不得再修改包内容。
+
+## npm 发布文件清单
+
+`@semicoder/fia` 0.5.0 只发布：
+
+- `bin/`
+- `dist/`
+- `templates/`
+- `assets/`
+- `README.md`
+- npm 自动包含的 `package.json`
+
+`dist` 必须只含 CLI、config、MCP client/server 与 native facade 的 JS/types。包内不得包含
+旧 runtime/backend 模块、Swift Backend SDK、prototype 或仓库文档。
 
 ```bash
-bun run version:npm -- 0.3.0
-```
-
-该命令同步 `packages/cli/package.json`、CLI metadata 和 `bun.lock`，重新构建内嵌 arm64 Host，
-校验 manifest/checksum；任何步骤失败都会回滚这些版本化文件。随后执行发布预演，避免误发布
-私有的 workspace 根包：
-
-```bash
+bun run version:npm -- 0.5.1
 bun run release:npm --dry-run
-git add packages/cli/package.json packages/cli/src/metadata.ts bun.lock packages/cli/assets/host
-git commit -m "release: v0.3.0"
 bun run release:npm
 ```
 
-首次公开发布前必须选择并加入许可证，补齐 `repository`、`homepage`、`bugs` 等 npm 元数据，
-并确认当前账号拥有 `@semicoder` scope 发布权限且已经启用发布 2FA。
-
-预演和正式发布都会校验 CLI、包版本、arm64 Host manifest 与 SHA-256，并执行完整的
-`bun run check`。正式发布还要求干净的 Git 工作树、有效的 npm 登录以及未使用过的版本，
-最终通过 npm workspace 将 `@semicoder/fia` 公开发布到官方 registry。
-
-## 6. `.app` 组装
-
-必须生成或复制：
-
-- `Contents/MacOS/FIAHost`
-- `Contents/MacOS/fia-runtime`
-- `Contents/Resources/fia-config.json`
-- `Contents/Info.plist`
-
-`Info.plist` 至少包含 bundle identifier、executable、display name、short version、build version
-和 minimum system version。阶段 1 使用系统默认应用图标，自定义图标随后增加。
-
-## 7. 架构
-
-MVP 只输出 arm64。阶段 4 计划支持：
-
-- 单独 arm64/x64 应用
-- 将两个 Host 和 Bun Mach-O slice 合并为 Universal Binary
-- 对合并后的最终二进制重新签名
-
-架构扩展前必须验证 Bun embedded assets 在 universal 合并后的完整性和启动行为。
-
-## 8. 签名
-
-本地开发使用 ad-hoc signing。正式发布使用 Developer ID Application。
-
-签名顺序：
-
-1. Bun runtime
-2. native plugins/frameworks/helpers
-3. Swift Host
-4. 外层 `.app`
-
-签名后执行严格验证。Bun/JSC 所需 hardened runtime entitlements 必须通过实际签名与公证原型确认，不在验证前扩大 entitlement。
-
-## 9. 公证
-
-阶段 3 计划提供以下接口；当前 CLI 尚未实现 `fia package`：
-
-```bash
-fia package \
-  --identity "Developer ID Application: Example (TEAMID)" \
-  --notary-profile fia-notary \
-  --format dmg
-```
-
-内部调用 `notarytool submit --wait`，成功后执行 `stapler`，最后用 Gatekeeper 评估产物。
-
-## 10. 可复现性
-
-- 锁定 Bun、CLI 和 Host SDK 版本。
-- 保存 build manifest 和输入摘要。
-- 禁止在签名后修改包内容。
-- 产物记录架构、版本、源码修订版本和签名身份，不记录密钥。
-
-## 11. 分发渠道
-
-阶段 1 当前支持：
-
-- 本地 `.app`
-
-阶段 3 目标支持：
-
-- ZIP
-- DMG
-- Developer ID 公证下载
-
-阶段 3 完成 Developer ID 站外分发闭环。Mac App Store 需要单独验证 App Sandbox、
-entitlement 和商店审核约束，不在首期提供兼容保证。
+正式 Developer ID、hardened runtime、公证、DMG/ZIP 和 Gatekeeper 验证属于下一发布阶段。

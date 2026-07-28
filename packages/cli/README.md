@@ -1,89 +1,61 @@
 # `@semicoder/fia`
 
-The command-line interface for FIA, a macOS desktop UI framework built around Bun, AppKit, and
-`WKWebView`.
-
-The public surface provides project creation, native development, production execution, signed
-local builds, typed desktop configuration, a secure native bridge, and environment diagnostics:
+FIA 的 CLI、配置类型、浏览器 MCP Client、MCP Server 工厂与原生能力 facade。
 
 ```bash
-fia --version
 fia create hello
-fia create hello --runtime swift
+fia create hello --no-mcp
 fia create hello --no-install --git
 fia dev
 fia run
 fia build
-fia doctor
 fia doctor --json
 ```
 
-Projects import `defineConfig` from the package subpath:
+FIA 0.5 使用 `configVersion: 3` 和 MCP `2026-07-28`，不兼容旧 Runtime、Swift Backend
+或 UI-only Runtime 配置：
 
 ```ts
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 2,
-  app: { name: "Hello", identifier: "com.example.hello", mode: "hybrid" },
-  ui: "src/ui/index.html",
-  window: { closeBehavior: "hide", restoreState: true },
-  statusBar: { symbol: "circle.grid.2x2.fill" },
-});
-```
-
-`runtime: "none"` creates a UI-only production app without `fia-runtime`; omit `entry` in this mode.
-Bun remains a development/build dependency for browser bundling and HMR. Omit `runtime` (or use
-`runtime: "bun"`) when the application has FIA HTTP or WebSocket routes.
-
-`runtime: "swift"` selects an exclusive Swift backend. It requires Swift 6, a project-local SwiftPM
-package, an executable product, and no `entry`:
-
-```ts
-export default defineConfig({
-  configVersion: 2,
-  runtime: "swift",
+  configVersion: 3,
   app: { name: "Hello", identifier: "com.example.hello" },
   ui: "src/ui/index.html",
-  swift: { package: "Backend", product: "HelloBackend" },
+  mcp: {
+    app: { entry: "src/mcp/server.ts" },
+    servers: {
+      search: { executable: "mcp/search-server", args: ["--stdio"] },
+    },
+  },
 });
 ```
 
-UI code uses the independent asynchronous bridge:
+`mcp` 可省略以创建纯 UI 应用。`app` 与 `fia.native` 是保留 ID；外部 ID 只允许小写字母、
+数字、点和连字符，且不能使用 `fia.*`。额外 Server 必须是项目内、不可越过符号链接边界、
+具有执行权限的 arm64 Mach-O。
 
 ```ts
-import { backend } from "@semicoder/fia/backend";
+import { McpServer, defineMcpServer } from "@semicoder/fia/mcp/server";
 
-const result = await backend.invoke<{ name: string }, { message: string }>("greet", { name: "FIA" });
-const unsubscribe = backend.onEvent("greet.completed", payload => console.log(payload));
+export default defineMcpServer(() => {
+  return new McpServer({ name: "app", version: "0.1.0" });
+});
 ```
 
-The npm package also contains the local SwiftPM SDK under `swift/`. Production packages static UI and
-`fia-backend` without Bun; development keeps Bun only for browser HMR and restarts the Swift child after
-successful source builds.
+FIA 生成最终 stdio 入口，并拒绝 legacy MCP。开发时 Bun 直接执行入口；生产时使用
+`bun build --compile --target=bun-darwin-arm64` 生成 standalone Server，最终用户无需 Bun。
 
-Web UI code imports the typed Host bridge from the native subpath:
+浏览器端：
 
 ```ts
+import { mcp } from "@semicoder/fia/mcp";
 import { native } from "@semicoder/fia/native";
 
-const state = await native.getState();
-await native.statusBar.setVisible(!state.statusBarVisible);
+await mcp.server("app").callTool({ name: "greet", arguments: { name: "FIA" } });
+const client = await mcp.server("app").client();
+await native.window.show();
 ```
 
-Projects import `defineApp` from the runtime subpath instead of calling `Bun.serve` directly:
-
-```ts
-import { defineApp } from "@semicoder/fia/runtime";
-
-export default defineApp({
-  routes: { "/api/hello": () => Response.json({ message: "Hello" }) },
-});
-```
-
-`fia dev` uses the embedded arm64 Host and Bun HMR, `fia run` launches a temporary production
-build, and `fia build` atomically writes an ad-hoc signed `.app` under `dist/`.
-
-FIA currently requires macOS 14 or newer, Apple Silicon, and Bun 1.3.14 or newer. Swift backend projects
-also require Swift 6 at development/build time. The package is prepared for publication but is not
-published by this repository workflow yet.
+FIA 当前要求 macOS 14+、Apple Silicon 和 Bun 1.3.14+。Swift/Xcode 只在开发 FIA Host
+本身时需要。

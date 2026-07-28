@@ -1,78 +1,29 @@
 # 产品定位与边界
 
-## 1. 产品定位
+FIA 是 macOS-only 的桌面 UI 框架，适合使用 TypeScript/Web 技术开发、本地运行并以原生
+`.app` 分发的工具、控制面板和状态栏应用。
 
-FIA Framework 是一个 macOS-only 的桌面 UI 框架，重点优化以下应用形态：
+## 核心价值
 
-- 使用 Web 技术构建的本地桌面工具
-- 本地优先的数据应用和控制面板
-- 后台常驻的状态栏工具
-- 需要调用 macOS 原生窗口和系统能力的 Web UI
-- 由 TypeScript 团队开发并以原生 `.app` 分发的应用
+- 使用系统 `WKWebView`，不分发 Chromium。
+- UI 可选择 React 等任意 Bun 能打包的前端框架。
+- 应用能力、扩展能力和原生能力统一使用 MCP `2026-07-28`。
+- Swift Host 是可复用预编译资产；普通应用不维护 Swift/Xcode 工程。
+- 默认 TypeScript MCP Server 由 Bun 编译为 standalone Mach-O，生产不依赖系统 Bun。
+- 额外扩展通过独立 stdio MCP Server 接入，不扩大 Host 的公共 ABI。
 
-它不是通用跨平台 GUI 工具包，也不是特定业务领域的应用运行时。框架只负责桌面 UI、
-Host/Runtime 生命周期、安全通信、原生能力接入和构建发布。
+## 首版边界
 
-## 2. 核心价值
+- macOS 14+、Apple Silicon arm64。
+- 单主 WebView、最多 64 个配置 Server。
+- 所有打包 Server 都视为项目内可信代码。
+- MCP 用于控制和结构化数据；单消息上限 1 MiB，不承担大文件、媒体或高频流。
+- 不支持 PATH 搜索、shell 启动、运行时下载或动态安装 Server。
+- 不兼容旧 `runtime`、`swift`、`entry`、Backend RPC 或旧 MCP 协议。
+- 首版不提供 App Sandbox/XPC 恶意代码隔离、Mac App Store 保证、自动更新或跨平台 Host。
 
-### TypeScript 全栈
+## 职责边界
 
-前端组件、应用后端、通信类型和大部分测试共用 TypeScript 类型系统。
-
-### 系统 WebView
-
-使用 macOS 自带的 WebKit 渲染 HTML/CSS，不捆绑 Chromium。框架接受 WebView UI 的
-性能边界，并提供与原生窗口和系统服务之间的窄接口。
-
-### 极薄原生层
-
-Swift 仅负责必须由 macOS 原生 API 实现的功能。默认宿主是可复用预编译二进制，项目无需生成 Xcode 工程。
-
-### UI 框架优先
-
-框架只提供能够跨应用复用的 UI 基础设施。业务编排、第三方服务和领域协议由
-应用自行选择依赖和实现，不进入 FIA Host、Runtime 协议或公共 API。
-
-## 3. 目标
-
-- 五分钟内创建并运行一个 macOS 桌面应用。
-- 单个命令启动 Swift 宿主、Bun 服务和前端热更新。
-- 单个命令生成可双击运行的 `.app`。
-- 提供 Dock、状态栏、窗口置顶、通知、快捷键和文件选择器。
-- Swift 和 Bun 具备可预测的同步退出、异常检测和恢复机制。
-- 为 UI、Bun 后端和原生能力提供有边界的通信协议。
-- 支持 Developer ID 签名、公证和 ZIP/DMG 分发。
-
-## 4. 非目标
-
-首期不包含：
-
-- Windows 或 Linux 支持
-- iOS/iPadOS 支持
-- 完全原生控件渲染
-- 替代浏览器布局引擎
-- Mac App Store 发布保证
-- 无限制地向网页暴露 Bun、Swift 或系统 API
-- 完整自动更新服务端；首期只预留更新接口
-- 多 WebView 浏览器产品能力
-- 特定业务领域的编排引擎、服务端 SDK 或数据层
-- 内置终端、进程管理器、源码管理或开发工具服务
-
-## 5. 目标用户
-
-主要用户是熟悉 Bun、TypeScript、React/Solid/Svelte 等 Web 技术，但不希望维护完整
-Swift/AppKit 工程的开发者。
-
-Swift 开发者可以通过可选原生插件扩展框架，但这不是普通应用的必经路径。
-
-## 6. 首期技术约束
-
-- macOS 14+
-- Apple Silicon
-- Bun full-stack standalone executable
-- Swift/AppKit + `WKWebView`
-- localhost HTTP + WebSocket
-- 站外 Developer ID 分发
-- 单实例应用优先
-
-这些约束用于快速完成闭环，不代表长期能力上限。
+Host 只负责窗口/WebView、原生系统能力、安全桥接、子进程监督和应用生命周期。业务领域、
+第三方服务、数据存储和非原生扩展属于应用 MCP Server；可复用的原生能力按 tools/resources
+逐步加入 `fia.native`。

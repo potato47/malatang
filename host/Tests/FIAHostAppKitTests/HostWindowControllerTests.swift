@@ -9,8 +9,6 @@ import Testing
 struct HostWindowControllerTests {
     private func configuration(closeBehavior: HostConfiguration.Window.CloseBehavior) -> HostConfiguration {
         HostConfiguration(
-            schemaVersion: 3,
-            protocolVersion: 1,
             app: .init(name: "Desktop", identifier: "com.example.desktop", mode: .hybrid),
             window: .init(
                 width: 900,
@@ -23,7 +21,8 @@ struct HostWindowControllerTests {
                 visibleOnAllSpaces: false,
                 visibleOverFullScreen: false
             ),
-            statusBar: .init(symbol: "bolt.fill", tooltip: "Desktop")
+            statusBar: .init(symbol: "bolt.fill", tooltip: "Desktop"),
+            ui: .init(mode: .bundled, entry: "UI/index.html")
         )
     }
 
@@ -81,24 +80,6 @@ struct HostWindowControllerTests {
         controller.hide()
         #expect(terminationRequests == 0)
         #expect(controller.window?.isVisible == false)
-    }
-
-    @Test func stateEventPayloadIncludesEffectiveMode() throws {
-        let state = try DesktopState(
-            dockVisible: true,
-            statusBarVisible: true,
-            statusBarSymbol: "bolt.fill",
-            window: .init(
-                visible: true,
-                focused: false,
-                alwaysOnTop: false,
-                visibleOnAllSpaces: false,
-                visibleOverFullScreen: false
-            )
-        )
-        let event = try NativeBridgeHandler.stateChangedEvent(state)
-        let encodedState = try #require(event["state"] as? [String: Any])
-        #expect(encodedState["mode"] as? String == "hybrid")
     }
 
     @Test func appliesWindowFlagsIndependently() throws {

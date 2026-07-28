@@ -9,15 +9,16 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     private let closeBehavior: HostConfiguration.Window.CloseBehavior
     private var retryAction: (() -> Void)?
     private var quitAction: (() -> Void)?
-    private var bridgeHandler: NativeBridgeHandler?
-    private var backendBridgeHandler: BackendBridgeHandler?
+    private var bridgeHandler: MCPBridgeHandler?
     private var bundledResourceHandler: BundledResourceSchemeHandler?
     private weak var webView: WKWebView?
+    private var completedInitialNavigation = false
     private let terminateApplication: @MainActor () -> Void
 
     var onWebFailure: ((String) -> Void)?
     var onWindowStateChanged: (() -> Void)?
     var onWindowFrameChanged: (() -> Void)?
+    var onMainDocumentReload: (() -> Void)?
 
     var isWindowVisible: Bool { window?.isVisible == true && window?.isMiniaturized == false }
     var isWindowFocused: Bool { window?.isKeyWindow == true }
@@ -36,21 +37,25 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         restoredFrame: DesktopWindowFrame? = nil,
         terminateApplication: @escaping @MainActor () -> Void = { NSApp.terminate(nil) }
     ) {
-        developmentMode = configuration?.runtime.isDevelopment ?? false
+        developmentMode = configuration?.ui.isDevelopment ?? false
         closeBehavior = configuration?.window.closeBehavior ?? .quit
         self.terminateApplication = terminateApplication
-        let width = configuration?.window.width ?? 900
-        let height = configuration?.window.height ?? 620
-        let minimumWidth = configuration?.window.minWidth ?? 640
-        let minimumHeight = configuration?.window.minHeight ?? 440
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: configuration?.window.width ?? 900,
+                height: configuration?.window.height ?? 620
+            ),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = configuration?.app.name ?? "FIA Prototype"
-        window.minSize = NSSize(width: minimumWidth, height: minimumHeight)
+        window.title = configuration?.app.name ?? "FIA Host"
+        window.minSize = NSSize(
+            width: configuration?.window.minWidth ?? 640,
+            height: configuration?.window.minHeight ?? 440
+        )
         if configuration?.window.restoreState == true,
            let restoredFrame,
            let constrained = Self.constrainedFrame(
@@ -64,7 +69,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         }
         super.init(window: window)
         window.delegate = self
-        showLoading("Starting FIA runtime…")
+        showLoading("Starting FIA Host…")
     }
 
     @available(*, unavailable)
@@ -93,18 +98,14 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         retryAction = nil
         quitAction = nil
         navigationPolicy = nil
-
         let indicator = NSProgressIndicator()
         indicator.style = .spinning
-        indicator.controlSize = .regular
         indicator.startAnimation(nil)
         indicator.translatesAutoresizingMaskIntoConstraints = false
-
         let label = NSTextField(labelWithString: message)
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textColor = .secondaryLabelColor
         label.translatesAutoresizingMaskIntoConstraints = false
-
         let view = NSView()
         view.addSubview(indicator)
         view.addSubview(label)
@@ -118,18 +119,16 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     }
 
     func showWebView(
-        bootstrapURL: URL,
-        backendInvoke: ((BackendBridgeRequest) async throws -> Data)? = nil,
-        execute: @escaping (NativeBridgeCommand) throws -> DesktopState
+        url: URL,
+        route: @escaping (MCPBridgeEnvelope) throws -> Void
     ) {
-        installWebView(url: bootstrapURL, schemeHandler: nil, backendInvoke: backendInvoke, execute: execute)
+        installWebView(url: url, schemeHandler: nil, route: route)
     }
 
     func showBundledWebView(
         rootDirectory: URL,
         entry: String,
-        backendInvoke: ((BackendBridgeRequest) async throws -> Data)? = nil,
-        execute: @escaping (NativeBridgeCommand) throws -> DesktopState
+        route: @escaping (MCPBridgeEnvelope) throws -> Void
     ) {
         let handler = BundledResourceSchemeHandler(rootDirectory: rootDirectory)
         let encodedEntry = entry.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? entry
@@ -137,29 +136,28 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
             showFailure(title: "Invalid bundled UI entry", detail: entry, onRetry: nil, onQuit: nil)
             return
         }
-        installWebView(url: url, schemeHandler: handler, backendInvoke: backendInvoke, execute: execute)
+        installWebView(url: url, schemeHandler: handler, route: route)
     }
 
     private func installWebView(
         url: URL,
         schemeHandler: WKURLSchemeHandler?,
-        backendInvoke: ((BackendBridgeRequest) async throws -> Data)?,
-        execute: @escaping (NativeBridgeCommand) throws -> DesktopState
+        route: @escaping (MCPBridgeEnvelope) throws -> Void
     ) {
         uninstallBridge()
+        completedInitialNavigation = false
         bundledResourceHandler = schemeHandler as? BundledResourceSchemeHandler
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         components?.path = ""
         components?.query = nil
         components?.fragment = nil
         guard let origin = components?.url,
-              let bridgeOrigin = NativeBridgeOriginPolicy(origin: origin)
+              let bridgeOrigin = MCPBridgeOriginPolicy(origin: origin)
         else {
             showFailure(title: "Invalid application URL", detail: url.absoluteString, onRetry: nil, onQuit: nil)
             return
         }
         navigationPolicy = NavigationPolicy(origin: origin)
-
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -167,28 +165,14 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         if let schemeHandler {
             configuration.setURLSchemeHandler(schemeHandler, forURLScheme: BundledResourceSchemeHandler.scheme)
         }
-
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        let handler = NativeBridgeHandler(webView: webView, originPolicy: bridgeOrigin, execute: execute)
+        let bridge = MCPBridgeHandler(webView: webView, originPolicy: bridgeOrigin, route: route)
         configuration.userContentController.addScriptMessageHandler(
-            handler,
+            bridge,
             contentWorld: .page,
-            name: NativeBridgeHandler.name
+            name: MCPBridgeHandler.name
         )
-        bridgeHandler = handler
-        if let backendInvoke {
-            let backendHandler = BackendBridgeHandler(
-                webView: webView,
-                originPolicy: bridgeOrigin,
-                invoke: backendInvoke
-            )
-            configuration.userContentController.addScriptMessageHandler(
-                backendHandler,
-                contentWorld: .page,
-                name: BackendBridgeHandler.name
-            )
-            backendBridgeHandler = backendHandler
-        }
+        bridgeHandler = bridge
         self.webView = webView
         webView.navigationDelegate = self
         webView.isInspectable = developmentMode
@@ -200,21 +184,35 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         ))
     }
 
-    func emitNativeEvent(_ payload: [String: Any]) {
-        webView?.callAsyncJavaScript(
-            "globalThis.dispatchEvent(new CustomEvent('fia:native-event', { detail: event }))",
-            arguments: ["event": payload],
-            in: nil,
-            in: .page,
-            completionHandler: nil
+    func emitMCPMessage(serverID: String, message: [String: Any]) {
+        emit(
+            event: "fia:mcp-message",
+            detail: [
+                "bridgeVersion": FIAMCPBridgeVersion,
+                "serverId": serverID,
+                "message": message,
+            ]
         )
     }
 
-    func emitBackendEvent(name: String, payload: Data) {
-        guard let value = try? JSONSerialization.jsonObject(with: payload, options: [.fragmentsAllowed]) else { return }
+    func emitMCPState(serverID: String, state: String, reason: String?) {
+        var detail: [String: Any] = [
+            "bridgeVersion": FIAMCPBridgeVersion,
+            "serverId": serverID,
+            "state": state,
+        ]
+        if let reason { detail["reason"] = reason }
+        emit(event: "fia:mcp-state", detail: detail)
+    }
+
+    func emitNativeEvent(_ payload: [String: Any]) {
+        emit(event: "fia:native-event", detail: payload)
+    }
+
+    private func emit(event: String, detail: [String: Any]) {
         webView?.callAsyncJavaScript(
-            "globalThis.dispatchEvent(new CustomEvent('fia:backend-event', { detail: { name, payload } }))",
-            arguments: ["name": name, "payload": value],
+            "globalThis.dispatchEvent(new CustomEvent(eventName, { detail }))",
+            arguments: ["eventName": event, "detail": detail],
             in: nil,
             in: .page,
             completionHandler: nil
@@ -231,34 +229,24 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         retryAction = onRetry
         quitAction = onQuit
         navigationPolicy = nil
-
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
-        titleLabel.maximumNumberOfLines = 2
-
         let detailLabel = NSTextField(wrappingLabelWithString: detail)
         detailLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         detailLabel.textColor = .secondaryLabelColor
         detailLabel.maximumNumberOfLines = 12
-
         let retryButton = NSButton(title: "Retry", target: self, action: #selector(retryPressed))
-        retryButton.bezelStyle = .rounded
         retryButton.isHidden = onRetry == nil
-
         let quitButton = NSButton(title: "Quit", target: self, action: #selector(quitPressed))
-        quitButton.bezelStyle = .rounded
         quitButton.isHidden = onQuit == nil
-
         let buttons = NSStackView(views: [retryButton, quitButton])
         buttons.orientation = .horizontal
         buttons.spacing = 10
-
         let stack = NSStackView(views: [titleLabel, detailLabel, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
-
         let view = NSView()
         view.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -299,21 +287,28 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
             decisionHandler(.cancel)
             return
         }
-        let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
         let decision = navigationPolicy.decide(
             url: navigationAction.request.url,
-            isMainFrame: isMainFrame,
+            isMainFrame: navigationAction.targetFrame?.isMainFrame ?? true,
             isUserActivatedLink: navigationAction.navigationType == .linkActivated
         )
         switch decision {
-        case .allow:
-            decisionHandler(.allow)
-        case .cancel:
-            decisionHandler(.cancel)
+        case .allow: decisionHandler(.allow)
+        case .cancel: decisionHandler(.cancel)
         case let .openExternal(url):
             decisionHandler(.cancel)
             NSWorkspace.shared.open(url)
         }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if completedInitialNavigation { onMainDocumentReload?() }
+        completedInitialNavigation = true
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        onMainDocumentReload?()
+        webView.reload()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -330,16 +325,11 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
 
     private func uninstallBridge() {
         webView?.configuration.userContentController.removeScriptMessageHandler(
-            forName: NativeBridgeHandler.name,
-            contentWorld: .page
-        )
-        webView?.configuration.userContentController.removeScriptMessageHandler(
-            forName: BackendBridgeHandler.name,
+            forName: MCPBridgeHandler.name,
             contentWorld: .page
         )
         webView?.navigationDelegate = nil
         bridgeHandler = nil
-        backendBridgeHandler = nil
         bundledResourceHandler = nil
         webView = nil
     }
@@ -359,11 +349,6 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         let x = min(max(requested.minX, target.minX), target.maxX - width)
         let y = min(max(requested.minY, target.minY), target.maxY - height)
         return NSRect(x: x, y: y, width: width, height: height)
-    }
-
-    private func diagnostic(_ message: String) {
-        guard ProcessInfo.processInfo.environment["FIA_INTERNAL_DIAGNOSTICS"] == "1" else { return }
-        try? FileHandle.standardError.write(contentsOf: Data("FIAHost: \(message)\n".utf8))
     }
 }
 

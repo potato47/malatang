@@ -1,0 +1,28 @@
+import { McpServer, defineMcpServer } from "@semicoder/fia/mcp/server";
+import { z } from "zod";
+
+export default defineMcpServer(() => {
+  const server = new McpServer({ name: "app", version: "0.1.0" });
+
+  server.registerTool(
+    "greet",
+    {
+      title: "Greet",
+      description: "Return a greeting from the application MCP server",
+      inputSchema: z.object({ name: z.string().min(1) }),
+      outputSchema: z.object({ message: z.string(), timestamp: z.string() }),
+    },
+    async ({ name }) => {
+      const output = {
+        message: `Hello, ${name}!`,
+        timestamp: new Date().toISOString(),
+      };
+      return {
+        content: [{ type: "text", text: output.message }],
+        structuredContent: output,
+      };
+    },
+  );
+
+  return server;
+});

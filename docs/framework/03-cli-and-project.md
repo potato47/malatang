@@ -1,61 +1,36 @@
 # 项目结构、配置与 CLI
 
-## 1. 阶段 1 项目结构
-
-`fia create hello` 当前生成以下 React/Bun 项目：
+## 默认项目
 
 ```text
-hello/
-├── fia.config.ts
-├── package.json
-├── tsconfig.json
-├── .gitignore
-├── README.md
-└── src/
-    ├── server.ts
-    └── ui/
-        ├── index.html
-        ├── main.tsx
-        ├── App.tsx
-        └── style.css
+fia.config.ts
+src/
+├── ui/
+│   ├── index.html
+│   └── App.tsx
+├── mcp/
+│   └── server.ts
+└── shared/
+    └── types.ts
 ```
 
-`fia create hello --runtime swift` 将 `src/server.ts` 替换为 SwiftPM 后端：
+`fia create <name>` 默认生成 React UI 和 Bun MCP Server；`--no-mcp` 生成纯 UI 项目。
+`--no-install` 跳过依赖安装，`--git` 初始化仓库。已删除 `--runtime`。
 
-```text
-hello/
-├── fia.config.ts
-├── package.json
-├── Backend/
-│   ├── Package.swift
-│   └── Sources/AppBackend/main.swift
-└── src/ui/
-    ├── index.html
-    ├── main.tsx
-    ├── App.tsx
-    └── style.css
-```
-
-后续 `fia dev/run/build` 产生的文件统一放在 `.fia/`，正式应用产物放在 `dist/`；两者默认
-加入 `.gitignore`。图标、状态栏资源和 `native/` 属于后续增量，不在首版模板中公开。
-
-## 2. 公共配置模型（schema 2）
-
-项目从 `@semicoder/fia/config` 导入类型安全入口：
+## 公共配置
 
 ```ts
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 2,
+  configVersion: 3,
   app: {
-    name: "My App",
-    identifier: "com.example.my-app",
+    name: "Hello",
+    identifier: "com.example.hello",
     version: "0.1.0",
     mode: "hybrid",
+    icon: "assets/AppIcon.icns",
   },
-  runtime: "bun",
-  entry: "src/server.ts",
   ui: "src/ui/index.html",
   window: {
     width: 1024,
@@ -70,112 +45,42 @@ export default defineConfig({
   },
   statusBar: {
     symbol: "circle.grid.2x2.fill",
-    tooltip: "My App",
+    tooltip: "Hello",
+  },
+  mcp: {
+    app: {
+      entry: "src/mcp/server.ts",
+      watch: ["src/mcp", "src/shared"],
+    },
+    servers: {
+      search: {
+        executable: "mcp/search-server",
+        args: ["--stdio"],
+      },
+    },
   },
 });
 ```
 
-只有 `configVersion`、`app.name` 和 `app.identifier` 必填。schema 2 默认值为：
+`mcp`、`mcp.app` 和 `mcp.servers` 都可省略。未指定 `watch` 时默认监听 entry 所在目录。
 
-- `app.version`: `0.1.0`
-- `app.mode`: `dock`
-- `runtime`: `bun`
-- `entry`: `src/server.ts`
-- `ui`: `src/ui/index.html`
-- 窗口：`1024 × 700`，最小 `720 × 480`
-- `window.closeBehavior`: Dock 模式为 `quit`，状态栏/混合模式为 `hide`
-- `window.restoreState`: `true`
-- `alwaysOnTop`、`visibleOnAllSpaces`、`visibleOverFullScreen`: `false`
-- 状态栏 symbol：`circle.grid.2x2.fill`；tooltip：应用名
+## Server ID 与路径
 
-CLI 只读取当前目录的 `fia.config.ts`。配置必须默认导出普通对象，未知字段在每一层都报错；
-bundle identifier 使用 reverse-DNS 格式，版本使用数字 `X.Y.Z`。应用名必须可安全用作 `.app`
-目录名。Bun 模式的服务入口与 UI HTML 必须是配置目录内的相对路径并指向可读文件。配置版本不兼容时
-MVP 直接失败，不自动迁移。
+- `app`：默认应用 Server 保留 ID。
+- `fia.native`：Host 内置 Server 保留 ID。
+- 其他 ID：`[a-z0-9.-]`，首尾必须为字母或数字，不允许 `..` 或 `fia.*`。
+- 所有 UI、icon、entry、watch 和 executable 都按配置文件所在项目根解析。
+- 绝对路径、目录穿越、物理路径越界和符号链接越界直接拒绝。
+- 外部 executable 必须存在、可读、可执行；build 阶段还必须验证 arm64 Mach-O。
+- 配置采用严格未知字段策略，旧字段不会被忽略。
 
-纯前端应用可设置 `runtime: "none"` 并省略 `entry`。`fia dev` 仍使用 Bun 完成浏览器构建和
-HMR，但框架会生成空后端；`fia run` 与 `fia build` 将 UI 写入
-`Contents/Resources/UI`，由 Host 通过受限的 `fia-app://app` scheme 加载，不生成或打包
-`Contents/MacOS/fia-runtime`。该模式保留 Native Bridge 和 HTTPS/WSS 远程请求，但不提供
-FIA HTTP 路由、应用 WebSocket 或其他 Bun 服务端能力。
+## 命令
 
-Swift 应用使用独占的 `runtime: "swift"`，必须提供项目内的 SwiftPM package 和安全的可执行
-product 名，并省略 `entry`：
+- `fia dev`：创建临时开发 `.app`，启动 UI HMR 与 Host；MCP 源码变更只重启对应 Server。
+- `fia run`：创建并运行临时生产 `.app`。
+- `fia build`：原子写入 `dist/<name>.app`。
+- `fia doctor`：检查 macOS、arm64、Bun、codesign 和工作目录；Host 开发/发布工具为可选项。
 
-```ts
-export default defineConfig({
-  configVersion: 2,
-  runtime: "swift",
-  app: { name: "My App", identifier: "com.example.my-app" },
-  ui: "src/ui/index.html",
-  swift: { package: "Backend", product: "MyAppBackend" },
-});
-```
-
-`swift.package` 必须是配置目录内包含 `Package.swift` 的真实目录，不能经符号链接越出项目；
-`swift.product` 只接受安全的可执行文件名。Swift 与 Bun 应用后端互斥。开发环境仍需要 Bun
-构建 UI 和提供 HMR，同时以 debug 模式构建 Swift；生产以 release/arm64 构建并只打包
-`fia-backend` 和静态 UI。
-
-公共 `configVersion` 与应用包内 `fia-config.json.schemaVersion` 是不同边界。阶段 2 CLI
-只接受公共 schema 2，旧项目需要显式迁移；Host 内部 schema 4 把 UI Runtime 与可选 Backend
-分开，同时继续读取历史内部 schema 1–3。三种置顶/Spaces 行为相互独立，不做隐式绑定。
-
-## 3. `fia create`
-
-```bash
-fia create hello
-fia create hello --runtime swift
-fia create hello --no-install
-fia create hello --git
-```
-
-名称必须是单段小写 kebab-case。CLI 在当前目录生成同名项目，将 `hello-world` 转换为显示名
-`Hello World` 和占位 bundle identifier `com.example.hello-world`。已有目标一律拒绝，不提供
-覆盖选项。
-
-生成过程在目标旁的临时目录完成。默认先写入模板并运行 `bun install`；`--git` 额外执行
-`git init`。所有步骤成功后才原子移动到目标位置，失败会清理临时目录。`--no-install`
-用于离线、测试或当前仓库内尚未发布 `@semicoder/fia` 的开发场景。
-
-## 4. React 模板与托管 Runtime
-
-模板使用 React 19 和 Bun 1.3.14+ full-stack HTML route：
-
-- `/` 提供 React 页面与 HMR 资源。
-- `/api/hello` 展示普通 HTTP JSON 请求。
-- `/ws` 展示应用级 WebSocket Echo。
-- `bun run dev` 组装临时 Host 应用并通过 Bun HMR 更新 UI 和服务路由。
-- `bun run run` 使用生产协议运行当前源码，不修改 `dist/`。
-- `bun run build` 输出 ad-hoc 签名的 arm64 `.app`。
-- `bun run typecheck` 执行严格 TypeScript 检查。
-
-`src/server.ts` 默认导出 `defineApp({ routes, fetch, websocket })`。FIA 独占 `Bun.serve`、
-监听地址、随机端口、`/__fia/*`、bootstrap/session/control token 和 stdin/stdout 生命周期；
-旧式直接 `Bun.serve` 入口会得到迁移错误。普通 HTTP 和应用 WebSocket 仍由项目代码定义。
-
-模板 UI 还从 `@semicoder/fia/native` 导入类型化桌面 API，展示当前 Dock/状态栏模式并切换
-状态栏与窗口浮动级别。该模块在普通浏览器中返回 `isAvailable() === false`，不会伪造原生能力。
-
-Swift 模板另从 `@semicoder/fia/backend` 调用示例 `greet` RPC 并订阅
-`greet.completed` 事件。Swift 侧导入 `FIABackend`，以 `BackendApplication.handle` 注册 Codable
-模型。首版由调用端泛型维护 TypeScript 类型，不生成跨语言模型代码。
-
-## 5. CLI 构建闭环
-
-阶段 1 已实现：
-
-- `fia dev`：组装临时 `.app`，由 Host 启动带 HMR 的 FIA Runtime 并聚合日志。
-- `fia run`：从当前源码构建临时生产 `.app` 并使用生产启动协议运行，不修改 `dist/`。
-- `fia build`：编译 runtime、校验内嵌预编译 Host、组装、ad-hoc 签名并严格验证 `.app`。
-
-Swift 模式下，CLI 使用 `swift build --product` 串行构建后端并验证 product、可执行权限和 arm64
-架构。`fia dev` 监听 `Package.swift`、`Package.resolved` 与 `Sources/`，防抖后重建；失败保留旧
-后端，成功后通过内部 `SIGUSR1` 让 Host 只替换 Backend PID，不重载窗口或前端。
-
-`fia build` 在 `.fia/build/<build-id>/` staging 中完成全部工作，验证通过后原子替换
-`dist/<app.name>.app`。`fia run` 使用 `.fia/run/` 临时产物，`fia dev` 使用 `.fia/dev/`
-临时 Host 和外部 Bun 入口；两者退出后清理本次 staging。
-
-目标进程所有权保持不变：生产和 FIA 开发模式均由 Swift Host 拥有全部 Bun runtime 与 Swift
-backend 子进程，CLI 退出后通过 Host 生命周期链路回收，不允许残留后台进程。
+`dev` 中 UI HMR 不重启 MCP Server。`mcp.app.watch` 发生变化时，CLI 先验证生成 runner，
+再通过 Host stdin 的 dev-only 控制消息重启 `app`；失败时保留当前进程。预构建 executable
+被替换时重启对应 Server。

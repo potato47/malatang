@@ -29,13 +29,11 @@ export interface DoctorReport {
 
 export interface DoctorOptions {
   debug?: boolean;
-  requiresSwift?: boolean;
 }
 
 interface CheckContext {
   probe: DoctorProbe;
   debug: boolean;
-  requiresSwift: boolean;
 }
 
 function firstLine(value: string): string | undefined {
@@ -192,13 +190,13 @@ async function swiftCheck(context: CheckContext): Promise<DoctorCheckResult> {
   return result(
     "swift",
     "Swift",
-    context.requiresSwift,
-    supported ? "pass" : failureStatus(context.requiresSwift),
+    false,
+    supported ? "pass" : "warn",
     supported
-      ? line ?? "Swift 6 is available"
+      ? line ?? "Swift 6 is available for FIA Host development"
       : available
-      ? `Swift ${major} is unsupported; Swift backend projects require Swift 6 or newer`
-      : `Swift is not available${context.requiresSwift ? "" : " (optional)"}`,
+      ? `Swift ${major} is unsupported for FIA Host development; Swift 6 or newer is optional`
+      : "Swift is not available (optional; only needed for FIA Host development)",
     context.debug ? commandDetails(command, commandResult) : undefined,
   );
 }
@@ -245,7 +243,7 @@ async function developerIDCheck(context: CheckContext): Promise<DoctorCheckResul
 }
 
 export async function runDoctor(probe: DoctorProbe, options: DoctorOptions = {}): Promise<DoctorReport> {
-  const context = { probe, debug: options.debug === true, requiresSwift: options.requiresSwift === true };
+  const context = { probe, debug: options.debug === true };
   const checks: DoctorCheckResult[] = [];
   for (const check of [
     platformCheck,

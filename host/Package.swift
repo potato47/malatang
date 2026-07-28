@@ -20,6 +20,7 @@ let package = Package(
             dependencies: ["FIAHostCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("Security"),
                 .linkedFramework("WebKit"),
             ]
         ),

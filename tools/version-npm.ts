@@ -17,7 +17,7 @@ Usage:
   bun run version:npm -- <version>
 
 Example:
-  bun run version:npm -- 0.3.0
+  bun run version:npm -- 0.5.1
 
 The command requires a clean Git working tree, updates package and CLI metadata, refreshes bun.lock,
 rebuilds the embedded arm64 Host, and rolls back all versioned files if any step fails.

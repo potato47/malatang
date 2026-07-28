@@ -38,8 +38,10 @@ interface HostManifest {
   readonly sha256: string;
   readonly architecture: string;
   readonly minimumSystemVersion: string;
-  readonly configurationSchemas: readonly number[];
-  readonly runtimeProtocol: number;
+  readonly configurationSchema: number;
+  readonly mcpBridge: number;
+  readonly mcpProtocol: string;
+  readonly nativeCapabilities: readonly string[];
 }
 
 export function parseReleaseArguments(arguments_: readonly string[]): ReleaseArguments {
@@ -104,6 +106,17 @@ export async function validateReleaseMetadata(): Promise<void> {
   if (cliPackage.publishConfig.access !== "public") {
     throw new Error("package publishConfig.access must be public");
   }
+  if (JSON.stringify(cliPackage.files) !== JSON.stringify(["bin", "dist", "templates", "assets", "README.md"])) {
+    throw new Error("package files must be exactly bin, dist, templates, assets, and README.md");
+  }
+  if (JSON.stringify(Object.keys(cliPackage.exports)) !== JSON.stringify([
+    "./config",
+    "./mcp",
+    "./mcp/server",
+    "./native",
+  ])) {
+    throw new Error("package exports must contain only the FIA 0.5 MCP public surface");
+  }
 
   const manifestPath = resolve(HOST_DIRECTORY, "manifest.json");
   const hostPath = resolve(HOST_DIRECTORY, "FIAHost");
@@ -115,13 +128,15 @@ export async function validateReleaseMetadata(): Promise<void> {
     throw new Error("the release Host asset or manifest is missing", { cause: error });
   }
   if (
-    manifest.schemaVersion !== 1
+    manifest.schemaVersion !== 2
     || manifest.cliVersion !== CLI_VERSION
     || manifest.hostVersion !== CLI_VERSION
     || manifest.architecture !== "arm64"
     || manifest.minimumSystemVersion !== "14.0"
-    || manifest.runtimeProtocol !== 1
-    || JSON.stringify(manifest.configurationSchemas) !== "[1,2,3,4]"
+    || manifest.configurationSchema !== 5
+    || manifest.mcpBridge !== 1
+    || manifest.mcpProtocol !== "2026-07-28"
+    || JSON.stringify(manifest.nativeCapabilities) !== "[\"tools\",\"resources\",\"subscriptions\"]"
   ) {
     throw new Error(`Host manifest is not release-compatible with ${CLI_PACKAGE_NAME}@${CLI_VERSION}`);
   }

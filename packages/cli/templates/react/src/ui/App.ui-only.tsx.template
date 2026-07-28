@@ -1,0 +1,56 @@
+import { useCallback, useEffect, useState } from "react";
+import { native, type FIANativeState } from "@semicoder/fia/native";
+
+type Status = "idle" | "working" | "success" | "error";
+
+export function App() {
+  const [status, setStatus] = useState<Status>("idle");
+  const [message, setMessage] = useState("Checking the FIA native MCP server …");
+  const [desktopState, setDesktopState] = useState<FIANativeState | null>(null);
+
+  const update = useCallback(async (action: () => Promise<FIANativeState>) => {
+    setStatus("working");
+    try {
+      const state = await action();
+      setDesktopState(state);
+      setStatus("success");
+      setMessage(`${state.mode} mode · native MCP ready`);
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "Native MCP command failed");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!native.isAvailable()) {
+      setMessage("Native MCP bridge unavailable outside the FIA Host.");
+      return;
+    }
+    void update(() => native.getState());
+  }, [update]);
+
+  return (
+    <main>
+      <header className="hero">
+        <div className="eyebrow">FIA Framework · UI only</div>
+        <h1>__FIA_DISPLAY_NAME__</h1>
+        <p>A static React UI backed only by the built-in native MCP server.</p>
+      </header>
+      <section className="grid">
+        <article className={`card ${status}`}>
+          <span className="badge">fia.native</span>
+          <h2>Desktop shell</h2>
+          <p>{message}</p>
+          <button
+            type="button"
+            disabled={status === "working" || desktopState === null}
+            onClick={() => void update(() => native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop))}
+          >
+            Toggle floating
+          </button>
+        </article>
+      </section>
+      <footer>Static UI · built-in native MCP · no application server</footer>
+    </main>
+  );
+}

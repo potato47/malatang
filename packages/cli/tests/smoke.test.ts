@@ -14,12 +14,12 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-async function run(arguments_: readonly string[], cwd = packageRoot): Promise<{
+async function run(args: readonly string[], cwd = packageRoot): Promise<{
   exitCode: number;
   stdout: string;
   stderr: string;
 }> {
-  const child = Bun.spawn([process.execPath, executable, ...arguments_], {
+  const child = Bun.spawn([process.execPath, executable, ...args], {
     cwd,
     stdin: "ignore",
     stdout: "pipe",
@@ -33,100 +33,67 @@ async function run(arguments_: readonly string[], cwd = packageRoot): Promise<{
   return { stdout, stderr, exitCode };
 }
 
-describe("published CLI shape", () => {
-  test("keeps package metadata and runtime version aligned", () => {
-    expect(packageMetadata.name).toBe("@semicoder/fia");
+describe("published FIA 0.5 shape", () => {
+  test("exports only config, MCP, MCP server, and native facades", () => {
     expect(packageMetadata.version).toBe(CLI_VERSION);
-    expect(packageMetadata.bin).toEqual({ fia: "bin/fia" });
-    expect(packageMetadata.exports).toEqual({
-      "./config": {
-        types: "./dist/config.d.ts",
-        import: "./dist/config.js",
-        default: "./dist/config.js",
-      },
-      "./runtime": {
-        types: "./dist/runtime.d.ts",
-        import: "./dist/runtime.js",
-        default: "./dist/runtime.js",
-      },
-      "./native": {
-        types: "./dist/native.d.ts",
-        import: "./dist/native.js",
-        default: "./dist/native.js",
-      },
-      "./backend": {
-        types: "./dist/backend.d.ts",
-        import: "./dist/backend.js",
-        default: "./dist/backend.js",
-      },
-    });
-    expect(packageMetadata.files).toContain("templates");
-    expect(packageMetadata.files).toContain("assets");
-    expect(packageMetadata.files).toEqual(expect.arrayContaining([
-      "swift/Package.swift",
-      "swift/Sources",
-      "swift/Tests",
-    ]));
-    expect(packageMetadata.publishConfig).toEqual({ access: "public" });
+    expect(Object.keys(packageMetadata.exports)).toEqual([
+      "./config",
+      "./mcp",
+      "./mcp/server",
+      "./native",
+    ]);
+    expect(packageMetadata.exports).not.toHaveProperty("./runtime");
+    expect(packageMetadata.exports).not.toHaveProperty("./backend");
+    expect(packageMetadata.files).not.toContain("swift");
   });
 
-  test("runs the built bin for version and JSON diagnostics", async () => {
-    expect(await Bun.file(resolve(packageRoot, "dist/index.js")).exists()).toBe(true);
-
-    const version = await run(["--version"]);
-    const doctor = await run(["doctor", "--json"]);
-
-    expect(version).toEqual({ exitCode: 0, stdout: `fia ${CLI_VERSION}\n`, stderr: "" });
-    expect(doctor.exitCode).toBe(0);
-    expect(doctor.stderr).toBe("");
-    expect(JSON.parse(doctor.stdout)).toMatchObject({
-      schemaVersion: 1,
-      cli: { name: "@semicoder/fia", version: CLI_VERSION },
-      ok: true,
-    });
+  test("build output excludes old runtime and backend modules", async () => {
+    for (const file of [
+      "dist/config.js",
+      "dist/config.d.ts",
+      "dist/mcp.js",
+      "dist/mcp.d.ts",
+      "dist/mcp-server.js",
+      "dist/mcp-server.d.ts",
+      "dist/native.js",
+      "dist/native.d.ts",
+    ]) {
+      expect(await Bun.file(resolve(packageRoot, file)).exists()).toBe(true);
+    }
+    for (const removed of ["dist/runtime.js", "dist/backend.js", "dist/managed-runtime.js"]) {
+      expect(await Bun.file(resolve(packageRoot, removed)).exists()).toBe(false);
+    }
   });
 
-  test("publishes the config entry and templates used by the built CLI", async () => {
-    expect(await Bun.file(resolve(packageRoot, "dist/config.js")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "dist/config.d.ts")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "dist/runtime.js")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "dist/runtime.d.ts")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "dist/native.js")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "dist/native.d.ts")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "dist/backend.js")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "dist/backend.d.ts")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "dist/managed-runtime.js")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "assets/host/darwin-arm64/FIAHost")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "assets/host/darwin-arm64/manifest.json")).exists()).toBe(true);
+  test("packages a schema-5 Host manifest with MCP bridge metadata", async () => {
     const host = resolve(packageRoot, "assets/host/darwin-arm64/FIAHost");
     await access(host, constants.X_OK);
     const manifest = JSON.parse(await readFile(
       resolve(packageRoot, "assets/host/darwin-arm64/manifest.json"),
       "utf8",
-    )) as { sha256: string; configurationSchemas: number[]; runtimeProtocol: number };
+    )) as Record<string, unknown>;
     const hasher = new Bun.CryptoHasher("sha256");
     hasher.update(await Bun.file(host).arrayBuffer());
-    expect(manifest).toMatchObject({ configurationSchemas: [1, 2, 3, 4], runtimeProtocol: 1 });
-    expect(hasher.digest("hex")).toBe(manifest.sha256);
-    expect(await Bun.file(resolve(packageRoot, "templates/react/src/server.ts.template")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "templates/react/assets/icon.png")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "templates/react/assets/icon.icns")).exists()).toBe(true);
-    expect(await Bun.file(resolve(packageRoot, "swift/Package.swift")).exists()).toBe(true);
+    expect(manifest).toMatchObject({
+      schemaVersion: 2,
+      cliVersion: "0.5.0",
+      hostVersion: "0.5.0",
+      configurationSchema: 5,
+      mcpBridge: 1,
+      mcpProtocol: "2026-07-28",
+      nativeCapabilities: ["tools", "resources", "subscriptions"],
+      sha256: hasher.digest("hex"),
+    });
+  });
 
-    const configModule = await import(`../dist/config.js?test=${crypto.randomUUID()}`) as {
-      FIA_CONFIG_VERSION: number;
-      defineConfig<T>(value: T): T;
-    };
-    expect(configModule.FIA_CONFIG_VERSION).toBe(2);
-    expect(configModule.defineConfig({ configVersion: 2 })).toEqual({ configVersion: 2 });
-
-    const cwd = await mkdtemp(resolve(tmpdir(), "fia-built-cli-"));
+  test("built CLI creates MCP and --no-mcp projects", async () => {
+    const cwd = await mkdtemp(resolve(tmpdir(), "fia-built-v3-"));
     temporaryDirectories.push(cwd);
-    const result = await run(["create", "built-project", "--no-install"], cwd);
-    expect(result.exitCode).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(await Bun.file(resolve(cwd, "built-project/src/ui/App.tsx")).exists()).toBe(true);
-    expect(await Bun.file(resolve(cwd, "built-project/assets/icon.png")).exists()).toBe(true);
-    expect(await Bun.file(resolve(cwd, "built-project/assets/icon.icns")).exists()).toBe(true);
+    const normal = await run(["create", "mcp-app", "--no-install"], cwd);
+    const uiOnly = await run(["create", "ui-only", "--no-install", "--no-mcp"], cwd);
+    expect(normal.exitCode).toBe(0);
+    expect(uiOnly.exitCode).toBe(0);
+    expect(await Bun.file(resolve(cwd, "mcp-app/src/mcp/server.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(cwd, "ui-only/src/mcp/server.ts")).exists()).toBe(false);
   });
 });

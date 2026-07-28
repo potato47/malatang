@@ -1,60 +1,31 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { backend } from "@semicoder/fia/backend";
+import { useCallback, useEffect, useState } from "react";
+import { mcp } from "@semicoder/fia/mcp";
 import { native, type FIANativeState } from "@semicoder/fia/native";
+import type { Greeting } from "../shared/types";
 
 type Status = "idle" | "working" | "success" | "error";
 
-interface HelloResponse {
-  message: string;
-  timestamp: string;
-}
-
 export function App() {
-  const [backendStatus, setBackendStatus] = useState<Status>("idle");
-  const [backendMessage, setBackendMessage] = useState("Ready to call the Bun backend over RPC.");
-  const [socketStatus, setSocketStatus] = useState<Status>("idle");
-  const [socketMessage, setSocketMessage] = useState("Ready to open an application WebSocket.");
+  const [mcpStatus, setMcpStatus] = useState<Status>("idle");
+  const [mcpMessage, setMcpMessage] = useState("Ready to call the bundled application MCP server.");
   const [nativeStatus, setNativeStatus] = useState<Status>("idle");
-  const [nativeMessage, setNativeMessage] = useState("Checking the FIA native bridge …");
+  const [nativeMessage, setNativeMessage] = useState("Checking the FIA native MCP server …");
   const [desktopState, setDesktopState] = useState<FIANativeState | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
 
-  const callBackend = useCallback(async () => {
-    setBackendStatus("working");
+  const callApp = useCallback(async () => {
+    setMcpStatus("working");
     try {
-      const result = await backend.invoke<{ name: string }, HelloResponse>("greet", { name: "FIA" });
-      setBackendStatus("success");
-      setBackendMessage(`${result.message} · ${new Date(result.timestamp).toLocaleTimeString()}`);
+      const result = await mcp.server("app").callTool({
+        name: "greet",
+        arguments: { name: "FIA" },
+      });
+      const greeting = result.structuredContent as Greeting;
+      setMcpStatus("success");
+      setMcpMessage(`${greeting.message} · ${new Date(greeting.timestamp).toLocaleTimeString()}`);
     } catch (error) {
-      setBackendStatus("error");
-      setBackendMessage(error instanceof Error ? error.message : "Backend request failed");
+      setMcpStatus("error");
+      setMcpMessage(error instanceof Error ? error.message : "MCP request failed");
     }
-  }, []);
-
-  useEffect(() => backend.onEvent<{ name: string }>("greet.completed", ({ name }) => {
-    setBackendMessage(`Bun emitted greet.completed for ${name}`);
-  }), []);
-
-  const sendEcho = useCallback(() => {
-    socketRef.current?.close();
-    setSocketStatus("working");
-    setSocketMessage("Connecting to /ws …");
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${location.host}/ws`);
-    socketRef.current = socket;
-    socket.addEventListener("open", () => {
-      socket.send(JSON.stringify({ id: crypto.randomUUID(), message: "Hello over WebSocket" }));
-    });
-    socket.addEventListener("message", (event) => {
-      const response = JSON.parse(String(event.data)) as { echo: string };
-      setSocketStatus("success");
-      setSocketMessage(response.echo);
-      socket.close();
-    });
-    socket.addEventListener("error", () => {
-      setSocketStatus("error");
-      setSocketMessage("WebSocket connection failed");
-    });
   }, []);
 
   const runNative = useCallback(async (action: () => Promise<FIANativeState>) => {
@@ -66,68 +37,45 @@ export function App() {
       setNativeMessage(`${state.mode} mode · ${state.window.alwaysOnTop ? "floating" : "normal"} window`);
     } catch (error) {
       setNativeStatus("error");
-      setNativeMessage(error instanceof Error ? error.message : "Native command failed");
+      setNativeMessage(error instanceof Error ? error.message : "Native MCP command failed");
     }
   }, []);
 
   useEffect(() => {
     if (!native.isAvailable()) {
-      setNativeMessage("Native bridge unavailable outside the FIA Host.");
+      setNativeMessage("Native MCP bridge unavailable outside the FIA Host.");
       return;
     }
-    let active = true;
-    const update = (state: FIANativeState) => {
-      if (!active) return;
+    void native.getState().then((state) => {
       setDesktopState(state);
       setNativeStatus("success");
-      setNativeMessage(`${state.mode} mode · secure native bridge ready`);
-    };
-    const unsubscribe = native.onEvent((event) => {
-      if (event.type === "stateChanged") update(event.state);
-    });
-    void native.getState().then(update).catch((error: unknown) => {
-      if (!active) return;
+      setNativeMessage(`${state.mode} mode · native MCP ready`);
+    }).catch((error: unknown) => {
       setNativeStatus("error");
-      setNativeMessage(error instanceof Error ? error.message : "Native bridge failed");
+      setNativeMessage(error instanceof Error ? error.message : "Native MCP failed");
     });
-    return () => {
-      active = false;
-      unsubscribe();
-    };
   }, []);
-
-  useEffect(() => () => socketRef.current?.close(), []);
 
   return (
     <main>
       <header className="hero">
-        <div className="eyebrow">FIA Framework · React</div>
+        <div className="eyebrow">FIA Framework · MCP 2026-07-28</div>
         <h1>__FIA_DISPLAY_NAME__</h1>
-        <p>A minimal Bun full-stack scaffold, ready for your desktop UI.</p>
+        <p>A static React UI with Bun-powered MCP extensions and a native Swift host.</p>
       </header>
 
-      <section className="grid" aria-label="Runtime checks">
-        <article className={`card ${backendStatus}`}>
-          <span className="badge">Bun RPC</span>
+      <section className="grid" aria-label="MCP checks">
+        <article className={`card ${mcpStatus}`}>
+          <span className="badge">App MCP</span>
           <h2>Typed greeting</h2>
-          <p>{backendMessage}</p>
-          <button type="button" onClick={callBackend} disabled={backendStatus === "working"}>
-            Call Bun
+          <p>{mcpMessage}</p>
+          <button type="button" onClick={callApp} disabled={mcpStatus === "working"}>
+            Call greet
           </button>
         </article>
-
-        <article className={`card ${socketStatus}`}>
-          <span className="badge">WebSocket</span>
-          <h2>Echo channel</h2>
-          <p>{socketMessage}</p>
-          <button type="button" onClick={sendEcho} disabled={socketStatus === "working"}>
-            Send echo
-          </button>
-        </article>
-
 
         <article className={`card ${nativeStatus}`}>
-          <span className="badge">Native</span>
+          <span className="badge">fia.native</span>
           <h2>Desktop shell</h2>
           <p>{nativeMessage}</p>
           <div className="actions">
@@ -149,7 +97,7 @@ export function App() {
         </article>
       </section>
 
-      <footer>FIA managed runtime · secure local session · React hot reload</footer>
+      <footer>Static UI · MCP stdio extensions · no production Bun dependency</footer>
     </main>
   );
 }

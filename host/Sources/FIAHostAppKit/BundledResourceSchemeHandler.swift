@@ -1,5 +1,6 @@
 import FIAHostCore
 import Foundation
+import Security
 import WebKit
 
 final class BundledResourceSchemeHandler: NSObject, WKURLSchemeHandler {
@@ -26,7 +27,7 @@ final class BundledResourceSchemeHandler: NSObject, WKURLSchemeHandler {
                 "X-Content-Type-Options": "nosniff",
             ]
             if contentType.hasPrefix("text/html") {
-                let nonce = try RuntimeProtocol.secureToken()
+                let nonce = try Self.secureNonce()
                 guard let html = String(data: data, encoding: .utf8) else {
                     throw BundledResourceError.invalidHTML
                 }
@@ -99,6 +100,14 @@ final class BundledResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         default: "application/octet-stream"
         }
     }
+
+    private static func secureNonce() throws -> String {
+        var bytes = [UInt8](repeating: 0, count: 24)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw BundledResourceError.randomFailure
+        }
+        return Data(bytes).base64EncodedString()
+    }
 }
 
 private enum BundledResourceError: Error {
@@ -106,4 +115,5 @@ private enum BundledResourceError: Error {
     case notFound
     case invalidHTML
     case invalidResponse
+    case randomFailure
 }

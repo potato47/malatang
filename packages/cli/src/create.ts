@@ -17,7 +17,7 @@ export interface CreateProjectDependencies {
 export interface CreateProjectOptions {
   name: string;
   cwd: string;
-  runtime?: "bun" | "swift";
+  mcp?: boolean;
   install: boolean;
   initializeGit: boolean;
   io: CreateIO;
@@ -32,6 +32,9 @@ export class CreateProjectError extends Error {
 }
 
 const COMMON_TEMPLATE_FILES = [
+  ["AGENTS.md.template", "AGENTS.md"],
+  ["fia.config.ts.template", "fia.config.ts"],
+  ["README.md.template", "README.md"],
   ["tsconfig.json", "tsconfig.json"],
   ["gitignore", ".gitignore"],
   ["src/ui/index.html", "src/ui/index.html"],
@@ -39,21 +42,14 @@ const COMMON_TEMPLATE_FILES = [
   ["src/ui/style.css", "src/ui/style.css"],
 ] as const;
 
-const BUN_TEMPLATE_FILES = [
-  ["AGENTS.md.template", "AGENTS.md"],
-  ["fia.config.ts.template", "fia.config.ts"],
-  ["README.md.template", "README.md"],
-  ["src/server.ts.template", "src/server.ts"],
+const MCP_TEMPLATE_FILES = [
+  ["src/mcp/server.ts.template", "src/mcp/server.ts"],
+  ["src/shared/types.ts.template", "src/shared/types.ts"],
   ["src/ui/App.tsx.template", "src/ui/App.tsx"],
 ] as const;
 
-const SWIFT_TEMPLATE_FILES = [
-  ["AGENTS.swift.md.template", "AGENTS.md"],
-  ["fia.config.swift.ts.template", "fia.config.ts"],
-  ["README.swift.md.template", "README.md"],
-  ["src/ui/App.swift.tsx.template", "src/ui/App.tsx"],
-  ["Backend/Package.swift.template", "Backend/Package.swift"],
-  ["Backend/Sources/AppBackend/main.swift.template", "Backend/Sources/AppBackend/main.swift"],
+const UI_ONLY_TEMPLATE_FILES = [
+  ["src/ui/App.ui-only.tsx.template", "src/ui/App.tsx"],
 ] as const;
 
 const TEMPLATE_ASSETS = [
@@ -107,6 +103,7 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
     dependencies: {
       react: "^19.2.7",
       "react-dom": "^19.2.7",
+      zod: "^4.2.0",
     },
     devDependencies: {
       "@semicoder/fia": cliPackageSpec,
@@ -121,11 +118,11 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
 async function renderTemplate(
   templateDirectory: string,
   destination: string,
-  runtime: "bun" | "swift",
+  withMcp: boolean,
   replacements: Readonly<Record<string, string>>,
 ): Promise<void> {
-  const runtimeFiles = runtime === "swift" ? SWIFT_TEMPLATE_FILES : BUN_TEMPLATE_FILES;
-  for (const [sourceName, destinationName] of [...COMMON_TEMPLATE_FILES, ...runtimeFiles]) {
+  const projectFiles = withMcp ? MCP_TEMPLATE_FILES : UI_ONLY_TEMPLATE_FILES;
+  for (const [sourceName, destinationName] of [...COMMON_TEMPLATE_FILES, ...projectFiles]) {
     const source = resolve(templateDirectory, sourceName);
     const target = resolve(destination, destinationName);
     let contents = await readFile(source, "utf8");
@@ -156,20 +153,20 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
   const templateDirectory = dependencies.templateDirectory ?? resolve(import.meta.dir, "../templates/react");
   const cliPackageSpec = dependencies.cliPackageSpec ?? `^${CLI_VERSION}`;
   const appName = titleFromName(options.name);
-  const runtime = options.runtime ?? "bun";
-  const swiftBaseName = appName.replaceAll(" ", "");
-  const swiftProduct = `${/^\d/.test(swiftBaseName) ? "App" : ""}${swiftBaseName}Backend`;
+  const withMcp = options.mcp ?? true;
   const identifier = `com.example.${options.name}`;
 
   options.io.stdout(`Creating ${appName} in ${projectRoot}\n`);
   try {
     await mkdir(temporaryRoot);
-    await renderTemplate(templateDirectory, temporaryRoot, runtime, {
+    await renderTemplate(templateDirectory, temporaryRoot, withMcp, {
       __FIA_APP_NAME_JSON__: JSON.stringify(appName),
       __FIA_APP_IDENTIFIER_JSON__: JSON.stringify(identifier),
       __FIA_DISPLAY_NAME__: appName,
       __FIA_PACKAGE_NAME__: options.name,
-      __FIA_SWIFT_PRODUCT__: swiftProduct,
+      __FIA_MCP_CONFIG__: withMcp
+        ? `\n  mcp: {\n    app: {\n      entry: "src/mcp/server.ts",\n      watch: ["src/mcp", "src/shared"],\n    },\n  },`
+        : "",
     });
     await writeFile(
       resolve(temporaryRoot, "package.json"),
@@ -207,7 +204,7 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
 
   const installStep = options.install ? "" : "  bun install\n";
   options.io.stdout(
-    `\nCreated ${appName} (${runtime}). Next steps:\n  cd ${options.name}\n${installStep}  bun run dev\n`,
+    `\nCreated ${appName}${withMcp ? " with an application MCP server" : " as a UI-only app"}. Next steps:\n  cd ${options.name}\n${installStep}  bun run dev\n`,
   );
   return projectRoot;
 }

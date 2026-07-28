@@ -1,5 +1,9 @@
 import Foundation
 
+public let FIAHostSchemaVersion = 5
+public let FIAMCPBridgeVersion = 1
+public let FIAMCPProtocolVersion = "2026-07-28"
+
 public struct HostConfiguration: Codable, Equatable, Sendable {
     public struct App: Codable, Equatable, Sendable {
         public enum Mode: String, Codable, Equatable, Sendable {
@@ -68,143 +72,75 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         }
     }
 
-    public struct Runtime: Codable, Equatable, Sendable {
+    public struct UI: Codable, Equatable, Sendable {
         public enum Mode: String, Codable, Equatable, Sendable {
-            case production
-            case development
             case bundled
+            case development
         }
 
         public let mode: Mode
-        public let executable: String?
-        public let arguments: [String]?
         public let entry: String?
+        public let url: String?
 
-        public init(
-            mode: Mode,
-            executable: String? = nil,
-            arguments: [String]? = nil,
-            entry: String? = nil
-        ) {
+        public init(mode: Mode, entry: String? = nil, url: String? = nil) {
             self.mode = mode
+            self.entry = entry
+            self.url = url
+        }
+
+        public var isDevelopment: Bool { mode == .development }
+    }
+
+    public struct MCPServer: Codable, Equatable, Sendable {
+        public let id: String
+        public let executable: String
+        public let arguments: [String]
+        public let sha256: String
+
+        public init(id: String, executable: String, arguments: [String] = [], sha256: String) {
+            self.id = id
             self.executable = executable
             self.arguments = arguments
-            self.entry = entry
+            self.sha256 = sha256
         }
-
-        public static let production = Runtime(mode: .production)
-        public var isDevelopment: Bool { mode == .development }
-        public var isBundled: Bool { mode == .bundled }
-    }
-
-    public struct Backend: Codable, Equatable, Sendable {
-        public enum Mode: String, Codable, Equatable, Sendable {
-            case none
-            case runtime
-            case production
-            case development
-        }
-
-        public let mode: Mode
-        public let executable: String?
-
-        public init(mode: Mode, executable: String? = nil) {
-            self.mode = mode
-            self.executable = executable
-        }
-
-        public static let none = Backend(mode: .none)
-        public var isEnabled: Bool { mode == .production || mode == .development }
-        public var usesRuntime: Bool { mode == .runtime }
-        public var isDevelopment: Bool { mode == .development }
-    }
-
-    private struct LegacyApp: Codable {
-        let name: String
-        let identifier: String
-        let quitOnLastWindowClosed: Bool
-    }
-
-    private struct LegacyWindow: Codable {
-        let width: Double
-        let height: Double
-        let minWidth: Double
-        let minHeight: Double
-    }
-
-    private struct LegacyConfiguration: Codable {
-        let schemaVersion: Int
-        let protocolVersion: Int
-        let app: LegacyApp
-        let window: LegacyWindow
-        let runtime: Runtime?
     }
 
     public let schemaVersion: Int
-    public let protocolVersion: Int
+    public let bridgeVersion: Int
+    public let mcpProtocolVersion: String
     public let app: App
     public let window: Window
     public let statusBar: StatusBar
-    public let runtime: Runtime
-    public let backend: Backend
+    public let ui: UI
+    public let mcpServers: [MCPServer]
+    public let nativeCapabilities: [String]
 
     public init(
-        schemaVersion: Int,
-        protocolVersion: Int,
+        schemaVersion: Int = FIAHostSchemaVersion,
+        bridgeVersion: Int = FIAMCPBridgeVersion,
+        mcpProtocolVersion: String = FIAMCPProtocolVersion,
         app: App,
         window: Window,
         statusBar: StatusBar,
-        runtime: Runtime = .production,
-        backend: Backend = .none
+        ui: UI,
+        mcpServers: [MCPServer] = [],
+        nativeCapabilities: [String] = NativeMCPManifest.capabilities
     ) {
         self.schemaVersion = schemaVersion
-        self.protocolVersion = protocolVersion
+        self.bridgeVersion = bridgeVersion
+        self.mcpProtocolVersion = mcpProtocolVersion
         self.app = app
         self.window = window
         self.statusBar = statusBar
-        self.runtime = runtime
-        self.backend = backend
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case schemaVersion
-        case protocolVersion
-        case app
-        case window
-        case statusBar
-        case runtime
-        case backend
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
-        protocolVersion = try container.decode(Int.self, forKey: .protocolVersion)
-        app = try container.decode(App.self, forKey: .app)
-        window = try container.decode(Window.self, forKey: .window)
-        statusBar = try container.decode(StatusBar.self, forKey: .statusBar)
-        runtime = try container.decode(Runtime.self, forKey: .runtime)
-        backend = try container.decodeIfPresent(Backend.self, forKey: .backend) ?? .none
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(schemaVersion, forKey: .schemaVersion)
-        try container.encode(protocolVersion, forKey: .protocolVersion)
-        try container.encode(app, forKey: .app)
-        try container.encode(window, forKey: .window)
-        try container.encode(statusBar, forKey: .statusBar)
-        try container.encode(runtime, forKey: .runtime)
-        if schemaVersion >= 4 { try container.encode(backend, forKey: .backend) }
+        self.ui = ui
+        self.mcpServers = mcpServers
+        self.nativeCapabilities = nativeCapabilities
     }
 
     public static func load(from url: URL, maximumBytes: Int = 64 * 1024) throws -> HostConfiguration {
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
-        if let size = values.fileSize, size > maximumBytes {
-            throw HostConfigurationError.fileTooLarge
-        }
-        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-        return try decode(data, maximumBytes: maximumBytes)
+        if let size = values.fileSize, size > maximumBytes { throw HostConfigurationError.fileTooLarge }
+        return try decode(Data(contentsOf: url, options: [.mappedIfSafe]), maximumBytes: maximumBytes)
     }
 
     public static func decode(_ data: Data, maximumBytes: Int = 64 * 1024) throws -> HostConfiguration {
@@ -215,263 +151,144 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
         } catch {
             throw HostConfigurationError.invalidJSON
         }
-        guard let root = object as? [String: Any], let schemaVersion = root["schemaVersion"] as? Int else {
-            throw HostConfigurationError.invalidShape
+        guard let root = object as? [String: Any],
+              let schemaVersion = root["schemaVersion"] as? Int
+        else { throw HostConfigurationError.invalidShape }
+        guard schemaVersion == FIAHostSchemaVersion else {
+            throw HostConfigurationError.unsupportedSchema(schemaVersion)
         }
-
-        let configuration: HostConfiguration
         do {
-            switch schemaVersion {
-            case 1, 2:
-                configuration = try decodeLegacy(data, root: root, schemaVersion: schemaVersion)
-            case 3:
-                configuration = try decodeCurrent(data, root: root)
-            case 4:
-                configuration = try decodeSchemaFour(data, root: root)
-            default:
-                throw HostConfigurationError.unsupportedSchema(schemaVersion)
+            try requireExactKeys(
+                root,
+                expected: [
+                    "schemaVersion", "bridgeVersion", "mcpProtocolVersion", "app", "window",
+                    "statusBar", "ui", "mcpServers", "nativeCapabilities",
+                ],
+                at: "root"
+            )
+            try requireExactKeys(root["app"], expected: ["name", "identifier", "mode"], at: "app")
+            try requireExactKeys(
+                root["window"],
+                expected: [
+                    "width", "height", "minWidth", "minHeight", "closeBehavior", "restoreState",
+                    "alwaysOnTop", "visibleOnAllSpaces", "visibleOverFullScreen",
+                ],
+                at: "window"
+            )
+            try requireExactKeys(root["statusBar"], expected: ["symbol", "tooltip"], at: "statusBar")
+            try requireExactKeys(root["ui"], expected: ["mode", "entry", "url"], at: "ui")
+            guard let serverValues = root["mcpServers"] as? [Any] else {
+                throw HostConfigurationError.invalidShape
             }
+            for (index, value) in serverValues.enumerated() {
+                try requireExactKeys(
+                    value,
+                    expected: ["id", "executable", "arguments", "sha256"],
+                    at: "mcpServers.\(index)"
+                )
+            }
+            let configuration = try JSONDecoder().decode(HostConfiguration.self, from: data)
+            try configuration.validate()
+            return configuration
         } catch let error as HostConfigurationError {
             throw error
         } catch {
             throw HostConfigurationError.invalidShape
         }
-        try configuration.validate()
-        return configuration
-    }
-
-    private static func decodeLegacy(
-        _ data: Data,
-        root: [String: Any],
-        schemaVersion: Int
-    ) throws -> HostConfiguration {
-        let expectedRoot = schemaVersion == 1
-            ? Set(["schemaVersion", "protocolVersion", "app", "window"])
-            : Set(["schemaVersion", "protocolVersion", "app", "window", "runtime"])
-        try requireExactKeys(root, expected: expectedRoot, at: "root")
-        guard let appObject = root["app"] as? [String: Any],
-              let windowObject = root["window"] as? [String: Any]
-        else { throw HostConfigurationError.invalidShape }
-        try requireExactKeys(appObject, expected: ["name", "identifier", "quitOnLastWindowClosed"], at: "app")
-        try requireExactKeys(windowObject, expected: ["width", "height", "minWidth", "minHeight"], at: "window")
-        if schemaVersion == 2 {
-            try validateRuntimeShape(root["runtime"])
-        }
-        let legacy = try JSONDecoder().decode(LegacyConfiguration.self, from: data)
-        let closeBehavior: Window.CloseBehavior = legacy.app.quitOnLastWindowClosed ? .quit : .hide
-        return HostConfiguration(
-            schemaVersion: schemaVersion,
-            protocolVersion: legacy.protocolVersion,
-            app: App(name: legacy.app.name, identifier: legacy.app.identifier, mode: .dock),
-            window: Window(
-                width: legacy.window.width,
-                height: legacy.window.height,
-                minWidth: legacy.window.minWidth,
-                minHeight: legacy.window.minHeight,
-                closeBehavior: closeBehavior,
-                restoreState: false,
-                alwaysOnTop: false,
-                visibleOnAllSpaces: false,
-                visibleOverFullScreen: false
-            ),
-            statusBar: StatusBar(symbol: "circle.grid.2x2.fill", tooltip: legacy.app.name),
-            runtime: legacy.runtime ?? .production
-        )
-    }
-
-    private static func decodeCurrent(_ data: Data, root: [String: Any]) throws -> HostConfiguration {
-        try requireExactKeys(
-            root,
-            expected: ["schemaVersion", "protocolVersion", "app", "window", "statusBar", "runtime"],
-            at: "root"
-        )
-        guard let appObject = root["app"] as? [String: Any],
-              let windowObject = root["window"] as? [String: Any],
-              let statusBarObject = root["statusBar"] as? [String: Any]
-        else { throw HostConfigurationError.invalidShape }
-        try requireExactKeys(appObject, expected: ["name", "identifier", "mode"], at: "app")
-        try requireExactKeys(
-            windowObject,
-            expected: [
-                "width", "height", "minWidth", "minHeight", "closeBehavior", "restoreState",
-                "alwaysOnTop", "visibleOnAllSpaces", "visibleOverFullScreen",
-            ],
-            at: "window"
-        )
-        try requireExactKeys(statusBarObject, expected: ["symbol", "tooltip"], at: "statusBar")
-        try validateRuntimeShape(root["runtime"])
-        return try JSONDecoder().decode(HostConfiguration.self, from: data)
-    }
-
-    private static func decodeSchemaFour(_ data: Data, root: [String: Any]) throws -> HostConfiguration {
-        try requireExactKeys(
-            root,
-            expected: ["schemaVersion", "protocolVersion", "app", "window", "statusBar", "runtime", "backend"],
-            at: "root"
-        )
-        guard let appObject = root["app"] as? [String: Any],
-              let windowObject = root["window"] as? [String: Any],
-              let statusBarObject = root["statusBar"] as? [String: Any]
-        else { throw HostConfigurationError.invalidShape }
-        try requireExactKeys(appObject, expected: ["name", "identifier", "mode"], at: "app")
-        try requireExactKeys(
-            windowObject,
-            expected: [
-                "width", "height", "minWidth", "minHeight", "closeBehavior", "restoreState",
-                "alwaysOnTop", "visibleOnAllSpaces", "visibleOverFullScreen",
-            ],
-            at: "window"
-        )
-        try requireExactKeys(statusBarObject, expected: ["symbol", "tooltip"], at: "statusBar")
-        try validateRuntimeShape(root["runtime"])
-        try validateBackendShape(root["backend"])
-        return try JSONDecoder().decode(HostConfiguration.self, from: data)
-    }
-
-    private static func validateBackendShape(_ value: Any?) throws {
-        guard let object = value as? [String: Any], let mode = object["mode"] as? String else {
-            throw HostConfigurationError.invalidBackend
-        }
-        switch mode {
-        case Backend.Mode.none.rawValue, Backend.Mode.runtime.rawValue, Backend.Mode.production.rawValue:
-            try requireExactKeys(object, expected: ["mode"], at: "backend")
-        case Backend.Mode.development.rawValue:
-            try requireExactKeys(object, expected: ["mode", "executable"], at: "backend")
-        default:
-            throw HostConfigurationError.invalidBackend
-        }
-    }
-
-    private static func validateRuntimeShape(_ value: Any?) throws {
-        guard let runtimeObject = value as? [String: Any], let mode = runtimeObject["mode"] as? String else {
-            throw HostConfigurationError.invalidShape
-        }
-        switch mode {
-        case Runtime.Mode.production.rawValue:
-            try requireExactKeys(runtimeObject, expected: ["mode"], at: "runtime")
-        case Runtime.Mode.bundled.rawValue:
-            try requireExactKeys(runtimeObject, expected: ["mode", "entry"], at: "runtime")
-        case Runtime.Mode.development.rawValue:
-            try requireExactKeys(runtimeObject, expected: ["mode", "executable", "arguments"], at: "runtime")
-        default:
-            throw HostConfigurationError.invalidRuntime
-        }
     }
 
     private func validate() throws {
-        guard (1...4).contains(schemaVersion) else {
-            throw HostConfigurationError.unsupportedSchema(schemaVersion)
+        guard bridgeVersion == FIAMCPBridgeVersion else {
+            throw HostConfigurationError.unsupportedBridge(bridgeVersion)
         }
-        guard protocolVersion == 1 else { throw HostConfigurationError.unsupportedProtocol(protocolVersion) }
-        guard !app.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw HostConfigurationError.invalidApplicationName
+        guard mcpProtocolVersion == FIAMCPProtocolVersion else {
+            throw HostConfigurationError.unsupportedMCPProtocol(mcpProtocolVersion)
         }
-        let identifierPattern = #"^[A-Za-z0-9][A-Za-z0-9-]*(\.[A-Za-z0-9][A-Za-z0-9-]*)+$"#
-        guard app.identifier.range(of: identifierPattern, options: .regularExpression) != nil else {
-            throw HostConfigurationError.invalidBundleIdentifier
-        }
-        let dimensions = [window.width, window.height, window.minWidth, window.minHeight]
-        guard dimensions.allSatisfy({ $0.isFinite && $0 > 0 }),
-              window.width >= window.minWidth,
-              window.height >= window.minHeight
-        else { throw HostConfigurationError.invalidWindowDimensions }
-        guard !statusBar.symbol.isEmpty,
-              statusBar.symbol == statusBar.symbol.trimmingCharacters(in: .whitespacesAndNewlines),
-              statusBar.symbol.count <= 128,
-              !statusBar.symbol.contains("\0"),
-              !statusBar.tooltip.isEmpty,
-              statusBar.tooltip == statusBar.tooltip.trimmingCharacters(in: .whitespacesAndNewlines),
-              statusBar.tooltip.count <= 512,
-              !statusBar.tooltip.contains("\0")
-        else { throw HostConfigurationError.invalidStatusBar }
-        switch runtime.mode {
-        case .production:
-            guard runtime.executable == nil, runtime.arguments == nil, runtime.entry == nil else {
-                throw HostConfigurationError.invalidRuntime
-            }
+        guard !app.name.isEmpty, !app.identifier.isEmpty,
+              window.width >= window.minWidth, window.height >= window.minHeight,
+              window.minWidth > 0, window.minHeight > 0,
+              !statusBar.symbol.isEmpty, !statusBar.tooltip.isEmpty
+        else { throw HostConfigurationError.invalidShape }
+
+        switch ui.mode {
         case .bundled:
-            let entryComponents = runtime.entry?.split(separator: "/", omittingEmptySubsequences: false) ?? []
-            guard runtime.executable == nil,
-                  runtime.arguments == nil,
-                  let entry = runtime.entry,
-                  !entry.isEmpty,
-                  !entry.hasPrefix("/"),
-                  !entry.contains("\0"),
-                  entryComponents.count >= 2,
-                  entryComponents.first == "UI",
-                  !entryComponents.contains(""),
-                  !entryComponents.contains("."),
-                  !entryComponents.contains("..")
-            else {
-                throw HostConfigurationError.invalidRuntime
-            }
+            guard let entry = ui.entry,
+                  ui.url == nil,
+                  entry.hasPrefix("UI/"),
+                  !entry.contains(".."),
+                  !entry.contains("\0")
+            else { throw HostConfigurationError.invalidUI }
         case .development:
-            guard schemaVersion >= 2,
-                  let executable = runtime.executable,
-                  NSString(string: executable).isAbsolutePath,
-                  !executable.contains("\0"),
-                  let arguments = runtime.arguments,
-                  !arguments.isEmpty,
-                  arguments.count <= 128,
-                  arguments.allSatisfy({ !$0.isEmpty && !$0.contains("\0") }),
-                  runtime.entry == nil
-            else { throw HostConfigurationError.invalidRuntime }
+            guard ui.entry == nil,
+                  let value = ui.url,
+                  let url = URL(string: value),
+                  url.scheme == "http",
+                  url.host == "127.0.0.1",
+                  url.port != nil,
+                  url.user == nil,
+                  url.password == nil
+            else { throw HostConfigurationError.invalidUI }
         }
-        switch backend.mode {
-        case .none, .runtime, .production:
-            guard backend.executable == nil else { throw HostConfigurationError.invalidBackend }
-        case .development:
-            guard schemaVersion >= 4,
-                  let executable = backend.executable,
-                  NSString(string: executable).isAbsolutePath,
-                  !executable.contains("\0")
-            else { throw HostConfigurationError.invalidBackend }
+
+        guard mcpServers.count <= 64 else { throw HostConfigurationError.invalidMCPServer }
+        var ids = Set<String>()
+        for server in mcpServers {
+            let validID = server.id == "app"
+                || (server.id.range(of: #"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$"#, options: .regularExpression) != nil
+                    && !server.id.contains("..")
+                    && !server.id.hasPrefix("fia."))
+            let validExecutable = ui.isDevelopment
+                ? server.executable.hasPrefix("/")
+                : server.executable == "Helpers/MCPServers/\(server.id)"
+            guard validID,
+                  server.id != "fia.native",
+                  ids.insert(server.id).inserted,
+                  validExecutable,
+                  !server.executable.contains("\0"),
+                  server.sha256.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+                  server.arguments.allSatisfy({ !$0.contains("\0") })
+            else { throw HostConfigurationError.invalidMCPServer }
         }
-        if schemaVersion < 4, backend != .none { throw HostConfigurationError.invalidBackend }
-        if backend.mode == .production, runtime.mode != .bundled { throw HostConfigurationError.invalidBackend }
-        if backend.mode == .development, runtime.mode != .development { throw HostConfigurationError.invalidBackend }
-        if backend.mode == .runtime, runtime.mode == .bundled { throw HostConfigurationError.invalidBackend }
+        guard Set(nativeCapabilities) == Set(NativeMCPManifest.capabilities) else {
+            throw HostConfigurationError.invalidNativeCapabilities
+        }
     }
 
-    private static func requireExactKeys(
-        _ object: [String: Any],
-        expected: Set<String>,
-        at path: String
-    ) throws {
-        guard Set(object.keys) == expected else {
-            throw HostConfigurationError.unknownOrMissingFields(path: path)
+    private static func requireExactKeys(_ value: Any?, expected: Set<String>, at path: String) throws {
+        guard let object = value as? [String: Any], Set(object.keys) == expected else {
+            throw HostConfigurationError.unknownFields(path)
         }
     }
+}
+
+public enum NativeMCPManifest {
+    public static let capabilities = ["tools", "resources", "subscriptions"]
 }
 
 public enum HostConfigurationError: Error, Equatable, LocalizedError, Sendable {
     case fileTooLarge
     case invalidJSON
     case invalidShape
-    case unknownOrMissingFields(path: String)
     case unsupportedSchema(Int)
-    case unsupportedProtocol(Int)
-    case invalidApplicationName
-    case invalidBundleIdentifier
-    case invalidWindowDimensions
-    case invalidStatusBar
-    case invalidRuntime
-    case invalidBackend
+    case unsupportedBridge(Int)
+    case unsupportedMCPProtocol(String)
+    case unknownFields(String)
+    case invalidUI
+    case invalidMCPServer
+    case invalidNativeCapabilities
 
     public var errorDescription: String? {
         switch self {
-        case .fileTooLarge: "fia-config.json exceeds 64 KiB"
-        case .invalidJSON: "fia-config.json is not valid JSON"
-        case .invalidShape: "fia-config.json contains invalid value types"
-        case let .unknownOrMissingFields(path): "fia-config.json has unknown or missing fields at \(path)"
-        case let .unsupportedSchema(version): "Unsupported configuration schema \(version)"
-        case let .unsupportedProtocol(version): "Unsupported runtime protocol \(version)"
-        case .invalidApplicationName: "Application name must not be empty"
-        case .invalidBundleIdentifier: "Application identifier is invalid"
-        case .invalidWindowDimensions: "Window dimensions are invalid"
-        case .invalidStatusBar: "Status bar configuration is invalid"
-        case .invalidRuntime: "Runtime launch configuration is invalid"
-        case .invalidBackend: "Swift backend launch configuration is invalid"
+        case .fileTooLarge: "Host configuration exceeds the size limit"
+        case .invalidJSON: "Host configuration is not valid JSON"
+        case .invalidShape: "Host configuration has an invalid shape"
+        case let .unsupportedSchema(version): "Unsupported Host configuration schema \(version)"
+        case let .unsupportedBridge(version): "Unsupported MCP bridge version \(version)"
+        case let .unsupportedMCPProtocol(version): "Unsupported MCP protocol \(version)"
+        case let .unknownFields(path): "Host configuration contains unknown or missing fields at \(path)"
+        case .invalidUI: "Host UI configuration is invalid"
+        case .invalidMCPServer: "Host MCP server configuration is invalid"
+        case .invalidNativeCapabilities: "Host native MCP capabilities are invalid"
         }
     }
 }

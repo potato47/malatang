@@ -1,7 +1,7 @@
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 2,
+  configVersion: 3,
   app: {
     name: __FIA_APP_NAME_JSON__,
     identifier: __FIA_APP_IDENTIFIER_JSON__,
@@ -9,7 +9,6 @@ export default defineConfig({
     mode: "dock",
     icon: "assets/icon.icns",
   },
-  entry: "src/server.ts",
   ui: "src/ui/index.html",
   window: {
     width: 1024,
@@ -24,5 +23,5 @@ export default defineConfig({
   statusBar: {
     symbol: "circle.grid.2x2.fill",
     tooltip: __FIA_APP_NAME_JSON__,
-  },
+  },__FIA_MCP_CONFIG__
 });

@@ -1,53 +1,18 @@
 # Agent guide for __FIA_DISPLAY_NAME__
 
-This is a FIA Framework desktop application. It uses a Bun application runtime, a React UI in the
-system `WKWebView`, and a Swift/AppKit Host supplied by `@semicoder/fia`.
+This is a FIA 0.5 desktop application: a static React UI in `WKWebView`, a Swift/AppKit Host, and
+optional MCP stdio extension servers.
 
 ## Project map
 
-- `fia.config.ts` defines the desktop application, window, Dock, and status bar configuration. Keep
-  `configVersion: 2` unless the installed FIA version documents a migration.
-- `src/server.ts` is the Bun entry point. Export the application with `defineApp` from
-  `@semicoder/fia/runtime`; put ordinary commands in `backend.methods`, and add HTTP routes or an
-  application WebSocket only for streaming, files, or long-lived bidirectional channels.
-- `src/ui/` contains the React application and browser assets.
-- `dist/` and `.fia/` are generated. Do not edit or commit them.
+- `fia.config.ts` uses `configVersion: 3` and declares UI, desktop, and MCP settings.
+- `src/mcp/server.ts` exports a synchronous factory with `defineMcpServer`.
+- `src/ui/` contains the React UI; `src/shared/` contains types shared with the MCP server.
+- `dist/` and `.fia/` are generated.
 
-## Development workflow
+Use `@semicoder/fia/mcp` for extension servers and `@semicoder/fia/native` for typed desktop tools.
+Do not use the removed runtime or backend modules. MCP is pinned to `2026-07-28`; do not add legacy
+initialization or compatibility shims.
 
-Use Bun and the checked-in package scripts:
-
-```bash
-bun install
-bun run dev
-bun run typecheck
-bun run build
-```
-
-- Run `bun run typecheck` after TypeScript or React changes.
-- Run `bun run build` after changing configuration, packaging behavior, or production UI loading.
-- Use `bun run dev` for UI and native desktop behavior checks. Quit the app normally when finished so
-  the managed Runtime can shut down cleanly.
-
-## FIA boundaries
-
-- Use `backend.invoke()` and `backend.onEvent()` for ordinary application work. Use relative `fetch`
-  for streaming or file transfers and the application WebSocket for long-lived bidirectional streams.
-- Import desktop capabilities from `@semicoder/fia/native`. Never access or introduce a public
-  `window.fia` global.
-- Always guard native behavior with `native.isAvailable()` and keep the React UI usable in a normal
-  browser where the bridge is unavailable.
-- Subscribe with `native.onEvent(...)` only inside a lifecycle-aware scope and call the returned
-  unsubscribe function during cleanup.
-- Treat `FIANativeError.code` as the stable failure contract. Do not infer behavior from native error
-  message text.
-- Do not weaken FIA's localhost origin, session, CSP, main-frame, or bridge command boundaries.
-
-## Change discipline
-
-- Inspect the relevant configuration, Runtime, and UI files before editing and preserve unrelated user
-  changes.
-- Keep desktop defaults declarative in `fia.config.ts`; use the native API only for runtime changes.
-- Validate untrusted HTTP, WebSocket, and persisted data at its boundary and avoid exposing secrets in
-  browser-visible responses or logs.
-- Prefer focused changes. If you add a reusable command or workflow, update this guide and `README.md`.
+Run `bun run typecheck` after TypeScript changes and `bun run build` after changing packaging or MCP
+configuration. Keep MCP stdout protocol-clean; write diagnostics to stderr.

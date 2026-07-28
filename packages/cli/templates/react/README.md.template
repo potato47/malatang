@@ -1,6 +1,6 @@
 # __FIA_DISPLAY_NAME__
 
-This project was created with FIA Framework.
+This project was created with FIA Framework 0.5.
 
 ```bash
 bun run dev
@@ -8,22 +8,18 @@ bun run build
 bun run run
 ```
 
-If the project was created with `--no-install`, run `bun install` first.
+`bun run dev` launches the Swift Host with React HMR. Changes under `mcp.app.watch` restart only the
+application MCP server. `bun run build` creates a signed macOS app containing a static UI and
+standalone MCP server binaries; the resulting application does not require Bun to be installed.
 
-`bun run dev` launches the native FIA window with React hot reload. The other commands create a
-signed local application or launch the current source through the production runtime protocol.
+The UI uses `@semicoder/fia/mcp` for application extensions and `@semicoder/fia/native` for typed
+desktop APIs. Both use MCP `2026-07-28` through the Host's WebKit transport.
 
-The default FIA app icon lives at `assets/icon.png`, with the packaged macOS resource at
-`assets/icon.icns`. Replace `icon.icns` and keep `app.icon` in `fia.config.ts` pointed at the new
-file to customize the Dock and Finder icon.
+## MCP boundary
 
-The React page also imports `@semicoder/fia/native` to inspect desktop state, toggle the status item,
-and change the main window's floating level. The module reports itself unavailable when the page is
-opened outside the FIA Host.
+`src/mcp/server.ts` exports a synchronous `defineMcpServer` factory. FIA generates the stdio entry and
+rejects legacy MCP clients. Keep structured control data under 1 MiB on MCP; use explicit file paths
+or another purpose-built channel for large media.
 
-## Runtime boundary
-
-The server entry exports `defineApp({ backend, routes, websocket })`. Ordinary commands and events use
-the same `backend.invoke()` / `backend.onEvent()` bridge as Swift projects. HTTP routes and WebSockets
-remain available for streaming, files, and long-lived bidirectional channels. FIA owns the loopback
-listener, bootstrap session, Host protocol, and process lifecycle.
+Additional servers may be configured in `mcp.servers`. They must be executable arm64 Mach-O files
+inside the project and are copied, verified, and signed into the application.
