@@ -26,6 +26,12 @@ struct HostWindowControllerTests {
         )
     }
 
+    @Test func bundledContentSecurityPolicyAllowsPackagedStylesheets() {
+        let policy = BundledResourceSchemeHandler.contentSecurityPolicy(nonce: "test-nonce")
+        #expect(policy.contains("style-src 'self' 'nonce-test-nonce'"))
+        #expect(!policy.contains("'unsafe-inline'"))
+    }
+
     @Test func constrainsRestoredFramesToAVisibleScreen() throws {
         let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
         let restored = DesktopWindowFrame(x: 1200, y: 700, width: 500, height: 400)

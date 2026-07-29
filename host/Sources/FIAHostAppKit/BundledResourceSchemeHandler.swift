@@ -32,17 +32,7 @@ final class BundledResourceSchemeHandler: NSObject, WKURLSchemeHandler {
                     throw BundledResourceError.invalidHTML
                 }
                 data = Data(html.replacingOccurrences(of: Self.noncePlaceholder, with: nonce).utf8)
-                headers["Content-Security-Policy"] = [
-                    "default-src 'none'",
-                    "base-uri 'none'",
-                    "object-src 'none'",
-                    "frame-ancestors 'none'",
-                    "script-src 'nonce-\(nonce)'",
-                    "style-src 'nonce-\(nonce)'",
-                    "img-src 'self' data: https:",
-                    "font-src 'self' data: https:",
-                    "connect-src 'self' https: wss:",
-                ].joined(separator: "; ")
+                headers["Content-Security-Policy"] = Self.contentSecurityPolicy(nonce: nonce)
             }
             guard let response = HTTPURLResponse(
                 url: urlSchemeTask.request.url!,
@@ -99,6 +89,20 @@ final class BundledResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         case "woff2": "font/woff2"
         default: "application/octet-stream"
         }
+    }
+
+    static func contentSecurityPolicy(nonce: String) -> String {
+        [
+            "default-src 'none'",
+            "base-uri 'none'",
+            "object-src 'none'",
+            "frame-ancestors 'none'",
+            "script-src 'nonce-\(nonce)'",
+            "style-src 'self' 'nonce-\(nonce)'",
+            "img-src 'self' data: https:",
+            "font-src 'self' data: https:",
+            "connect-src 'self' https: wss:",
+        ].joined(separator: "; ")
     }
 
     private static func secureNonce() throws -> String {
