@@ -44,12 +44,14 @@ async function generatedProject(mcp: boolean): Promise<string> {
     "dir",
   );
   for (const dependency of [
+    "bun-plugin-tailwind",
     "class-variance-authority",
     "clsx",
     "lucide-react",
     "react",
     "react-dom",
     "tailwind-merge",
+    "tailwindcss",
     "zod",
   ] as const) {
     await symlink(

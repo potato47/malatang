@@ -11,28 +11,43 @@ const TabsRoot = React.forwardRef<
   HTMLDivElement,
   React.ComponentPropsWithoutRef<typeof BaseTabs.Root>
 >(function TabsRoot({ className, ...props }, ref) {
-  return <BaseTabs.Root ref={ref} className={cn("ui-tabs", className)} {...props} />;
+  return <BaseTabs.Root ref={ref} className={cn("min-w-0", className)} {...props} />;
 });
 
 const TabsList = React.forwardRef<
   HTMLDivElement,
   React.ComponentPropsWithoutRef<typeof BaseTabs.List>
 >(function TabsList({ className, ...props }, ref) {
-  return <BaseTabs.List ref={ref} className={cn("ui-tabs__list", className)} {...props} />;
+  return (
+    <BaseTabs.List
+      ref={ref}
+      className={cn("flex gap-0.5 border-b border-ui-border", className)}
+      {...props}
+    />
+  );
 });
 
 const TabsTab = React.forwardRef<
   HTMLButtonElement,
   React.ComponentPropsWithoutRef<typeof BaseTabs.Tab>
 >(function TabsTab({ className, ...props }, ref) {
-  return <BaseTabs.Tab ref={ref} className={cn("ui-tabs__tab", className)} {...props} />;
+  return (
+    <BaseTabs.Tab
+      ref={ref}
+      className={cn(
+        "relative min-h-[34px] cursor-pointer border-0 bg-transparent px-2.5 text-xs font-[560] text-ui-text-muted after:absolute after:right-2 after:-bottom-px after:left-2 after:h-0.5 after:bg-ui-accent after:opacity-0 after:content-[''] data-selected:text-ui-text data-selected:after:opacity-100",
+        className,
+      )}
+      {...props}
+    />
+  );
 });
 
 const TabsPanel = React.forwardRef<
   HTMLDivElement,
   React.ComponentPropsWithoutRef<typeof BaseTabs.Panel>
 >(function TabsPanel({ className, ...props }, ref) {
-  return <BaseTabs.Panel ref={ref} className={cn("ui-tabs__panel", className)} {...props} />;
+  return <BaseTabs.Panel ref={ref} className={cn("pt-3.5 outline-none", className)} {...props} />;
 });
 
 export const Tabs = {
@@ -58,10 +73,16 @@ export interface ToggleGroupProps extends Omit<
 
 export function ToggleGroup({ options, className, ...props }: ToggleGroupProps) {
   return (
-    <BaseToggleGroup className={cn("ui-toggle-group", className)} {...props}>
+    <BaseToggleGroup
+      className={cn(
+        "inline-flex gap-0.5 rounded-ui-md border border-ui-border bg-ui-surface-subtle p-0.5",
+        className,
+      )}
+      {...props}
+    >
       {options.map((option) => (
         <BaseToggle
-          className="ui-toggle"
+          className="inline-flex min-h-7 cursor-pointer items-center justify-center gap-1.5 rounded-ui-sm border-0 bg-transparent px-[9px] text-xs text-ui-text-muted hover:text-ui-text data-pressed:bg-ui-surface data-pressed:text-ui-text"
           key={option.value}
           value={option.value}
           aria-label={option.ariaLabel}
@@ -99,38 +120,48 @@ export function Menu({ trigger, items, align = "end", ...props }: MenuProps) {
     <BaseMenu.Root {...props}>
       <BaseMenu.Trigger render={trigger} />
       <BaseMenu.Portal>
-        <BaseMenu.Positioner className="ui-positioner" sideOffset={6} align={align}>
-          <BaseMenu.Popup className="ui-popup ui-menu-popup">
+        <BaseMenu.Positioner className="z-50 outline-none" sideOffset={6} align={align}>
+          <BaseMenu.Popup className="min-w-52 origin-[var(--transform-origin)] rounded-ui-lg border border-ui-border bg-ui-surface p-1 text-ui-text shadow-ui-popup transition-[opacity,transform,translate,scale] duration-150 data-ending-style:scale-[0.98] data-ending-style:-translate-y-0.5 data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:-translate-y-0.5 data-starting-style:opacity-0">
             {items.map((item) =>
               typeof item.checked === "boolean" ? (
                 <BaseMenu.CheckboxItem
-                  className="ui-menu-item"
+                  className="flex min-h-8 cursor-default items-center gap-2 rounded-ui-sm px-2 text-xs text-ui-text outline-none data-disabled:opacity-45 data-highlighted:bg-ui-surface-hover"
                   key={item.id}
                   checked={item.checked}
                   disabled={item.disabled}
                   onClick={item.onSelect}
                 >
-                  <span className="ui-menu-item__icon">
+                  <span className="flex w-4 items-center justify-center text-ui-text-muted">
                     <BaseMenu.CheckboxItemIndicator>
                       <Check size={14} />
                     </BaseMenu.CheckboxItemIndicator>
                   </span>
-                  <span className="ui-menu-item__label">{item.label}</span>
+                  <span className="flex-1">{item.label}</span>
                   {item.shortcut ? (
-                    <span className="ui-menu-item__shortcut">{item.shortcut}</span>
+                    <span className="font-mono text-[10px] text-ui-text-faint">{item.shortcut}</span>
                   ) : null}
                 </BaseMenu.CheckboxItem>
               ) : (
                 <BaseMenu.Item
-                  className={cn("ui-menu-item", item.danger && "ui-menu-item--danger")}
+                  className={cn(
+                    "group/menu-item flex min-h-8 cursor-default items-center gap-2 rounded-ui-sm px-2 text-xs text-ui-text outline-none data-disabled:opacity-45 data-highlighted:bg-ui-surface-hover",
+                    item.danger && "text-ui-danger",
+                  )}
                   key={item.id}
                   disabled={item.disabled}
                   onClick={item.onSelect}
                 >
-                  <span className="ui-menu-item__icon">{item.icon}</span>
-                  <span className="ui-menu-item__label">{item.label}</span>
+                  <span
+                    className={cn(
+                      "flex w-4 items-center justify-center text-ui-text-muted",
+                      item.danger && "text-current",
+                    )}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="flex-1">{item.label}</span>
                   {item.shortcut ? (
-                    <span className="ui-menu-item__shortcut">{item.shortcut}</span>
+                    <span className="font-mono text-[10px] text-ui-text-faint">{item.shortcut}</span>
                   ) : null}
                   {item.id.endsWith("-more") ? <ChevronRight size={13} aria-hidden /> : null}
                 </BaseMenu.Item>

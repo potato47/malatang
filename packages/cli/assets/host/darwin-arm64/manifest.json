@@ -1,12 +1,16 @@
 {
   "schemaVersion": 2,
-  "cliVersion": "0.6.2",
-  "hostVersion": "0.6.2",
-  "sha256": "3ec176f9495c5a975052176d11e775bfe819c20c30be24556bb7d916643665c8",
+  "cliVersion": "0.6.3",
+  "hostVersion": "0.6.3",
+  "sha256": "a9788634afbbea40ab7c983d2ec9b4b5c7bb6f15df5bd6c3e8ada5c8d0077ceb",
   "architecture": "arm64",
   "minimumSystemVersion": "14.0",
   "configurationSchema": 5,
   "mcpBridge": 1,
   "mcpProtocol": "2026-07-28",
-  "nativeCapabilities": ["tools", "resources", "subscriptions"]
+  "nativeCapabilities": [
+    "tools",
+    "resources",
+    "subscriptions"
+  ]
 }

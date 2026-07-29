@@ -1,4 +1,5 @@
 import { constants, watch, type FSWatcher } from "node:fs";
+import { createRequire } from "node:module";
 import {
   access,
   chmod,
@@ -349,13 +350,37 @@ async function validateMcpFactory(context: BuildContext, runner: string): Promis
 async function buildProductionUI(context: BuildContext): Promise<UIArtifact> {
   const outputDirectory = resolve(context.stagingRoot, "ui");
   await mkdir(outputDirectory, { recursive: true });
-  await checked(
-    "UI build",
-    [process.execPath, "build", "--target=browser", context.config.ui, "--outdir", outputDirectory],
-    context.config.projectRoot,
-    context.debug,
-    context.io,
-  );
+  const projectRequire = createRequire(resolve(context.config.projectRoot, "package.json"));
+  let pluginEntry: string;
+  try {
+    pluginEntry = projectRequire.resolve("bun-plugin-tailwind");
+  } catch (error) {
+    throw new Error("UI build requires bun-plugin-tailwind; run bun install first", {
+      cause: error,
+    });
+  }
+  const pluginModule = (await import(pathToFileURL(pluginEntry).href)) as {
+    default?: Bun.BunPlugin;
+  };
+  if (pluginModule.default === undefined) {
+    throw new Error("UI build could not load bun-plugin-tailwind");
+  }
+  const result = await Bun.build({
+    entrypoints: [context.config.ui],
+    naming: "[name].[ext]",
+    outdir: outputDirectory,
+    plugins: [pluginModule.default],
+    root: context.config.projectRoot,
+    target: "browser",
+  });
+  if (!result.success) {
+    const detail =
+      result.logs
+        .map((log) => log.message)
+        .join("\n")
+        .trim() || "Tailwind CSS compilation failed";
+    throw new Error(`UI build failed: ${detail}`);
+  }
   const output = resolve(outputDirectory, basename(context.config.ui));
   let html = injectCSPNonce(await readFile(output, "utf8"));
   if (!html.includes(CSP_NONCE))

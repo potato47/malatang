@@ -134,10 +134,10 @@ export function App() {
   }, []);
 
   return (
-    <main className="app-shell">
-      <nav className="app-nav" aria-label="Application">
-        <div className="app-brand">
-          <span className="app-brand__mark">
+    <main className="mx-auto min-h-screen w-[min(1040px,calc(100%-48px))] pt-6 pb-8 max-[720px]:w-[min(calc(100%-28px),560px)] max-[720px]:pt-4">
+      <nav className="flex min-h-10 items-center justify-between gap-4" aria-label="Application">
+        <div className="flex items-center gap-[9px] text-[13px] font-[680] tracking-[-0.01em]">
+          <span className="inline-flex size-7 items-center justify-center rounded-ui-md bg-ui-accent text-ui-on-accent">
             <Sparkles size={15} />
           </span>
           <span>FIA</span>
@@ -145,53 +145,59 @@ export function App() {
         <ThemeMenu />
       </nav>
 
-      <header className="app-hero">
+      <header className="max-w-[760px] pt-[clamp(72px,12vh,120px)] pb-16 max-[720px]:pt-14 max-[720px]:pb-11">
         <Badge tone="accent">FIA Framework · MCP 2026-07-28</Badge>
-        <h1>__FIA_DISPLAY_NAME__</h1>
-        <p>
+        <h1 className="mt-[22px] mb-4 text-[clamp(44px,7vw,76px)] leading-[0.98] font-[680] tracking-[-0.055em] text-ui-text max-[720px]:text-5xl">
+          __FIA_DISPLAY_NAME__
+        </h1>
+        <p className="m-0 max-w-[680px] text-base leading-[1.7] text-ui-text-muted max-[720px]:text-sm">
           A static React interface with accessible preset components, Bun-powered MCP extensions,
           and a native Swift host.
         </p>
       </header>
 
-      <section className="app-grid" aria-label="Framework checks">
-        <article className="app-card">
-          <div className="app-card__heading">
-            <span className="app-card__icon">
+      <section
+        className="grid grid-cols-2 gap-4 max-[720px]:grid-cols-1"
+        aria-label="Framework checks"
+      >
+        <article className="flex min-h-[292px] min-w-0 flex-col items-start rounded-ui-lg border border-ui-border bg-ui-surface p-5">
+          <div className="flex w-full items-center justify-between gap-4">
+            <span className="inline-flex size-9 items-center justify-center rounded-ui-md bg-ui-accent-soft text-ui-accent-text">
               <Radio size={18} />
             </span>
             <Badge tone={statusTone[mcpStatus]} dot>
               {mcpStatus}
             </Badge>
           </div>
-          <div className="app-card__copy">
-            <span>Application MCP</span>
-            <h2>Typed greeting</h2>
-            <p>{mcpMessage}</p>
+          <div className="flex-1 py-6 pt-[30px]">
+            <span className="text-[10px] font-[680] tracking-[0.08em] text-ui-text-faint uppercase">
+              Application MCP
+            </span>
+            <h2 className="my-2 text-xl font-[680] tracking-[-0.025em]">Typed greeting</h2>
+            <p className="m-0 leading-relaxed text-ui-text-muted">{mcpMessage}</p>
           </div>
-          <Button
-            variant="primary"
-            onClick={callApp}
-          >
+          <Button variant="primary" onClick={callApp}>
             Call greet
           </Button>
         </article>
 
-        <article className="app-card">
-          <div className="app-card__heading">
-            <span className="app-card__icon">
+        <article className="flex min-h-[292px] min-w-0 flex-col items-start rounded-ui-lg border border-ui-border bg-ui-surface p-5">
+          <div className="flex w-full items-center justify-between gap-4">
+            <span className="inline-flex size-9 items-center justify-center rounded-ui-md bg-ui-accent-soft text-ui-accent-text">
               <AppWindow size={18} />
             </span>
             <Badge tone={statusTone[nativeStatus]} dot>
               {nativeStatus}
             </Badge>
           </div>
-          <div className="app-card__copy">
-            <span>fia.native</span>
-            <h2>Desktop shell</h2>
-            <p>{nativeMessage}</p>
+          <div className="flex-1 py-6 pt-[30px]">
+            <span className="text-[10px] font-[680] tracking-[0.08em] text-ui-text-faint uppercase">
+              fia.native
+            </span>
+            <h2 className="my-2 text-xl font-[680] tracking-[-0.025em]">Desktop shell</h2>
+            <p className="m-0 leading-relaxed text-ui-text-muted">{nativeMessage}</p>
           </div>
-          <div className="app-actions">
+          <div className="flex flex-wrap gap-2">
             <Button
               disabled={desktopState === null}
               onClick={() =>
@@ -219,10 +225,10 @@ export function App() {
         </article>
       </section>
 
-      <footer className="app-footer">
+      <footer className="mt-10 flex min-h-24 items-center justify-between gap-5 border-t border-ui-border text-[11px] text-ui-text-muted max-[720px]:flex-col max-[720px]:items-start max-[720px]:justify-center max-[720px]:gap-2.5">
         <span>Static UI · MCP stdio extensions · no production Bun dependency</span>
         <Tooltip content="Editable source in src/ui/components/ui">
-          <Badge>Preset UI library</Badge>
+          <Badge>Tailwind CSS v4 preset</Badge>
         </Tooltip>
       </footer>
     </main>

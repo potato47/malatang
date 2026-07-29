@@ -8,7 +8,7 @@ optional MCP stdio extension servers.
 - `fia.config.ts` uses `configVersion: 3` and declares UI, desktop, and MCP settings.
 - `src/mcp/server.ts` exports a synchronous factory with `defineMcpServer`.
 - `src/ui/` contains the React UI; `src/shared/` contains types shared with the MCP server.
-- `src/ui/components/ui/` is the editable preset component library and design-token stylesheet.
+- `src/ui/components/ui/` is the editable Tailwind CSS v4 preset component library.
 - `dist/` and `.fia/` are generated.
 
 Use `@semicoder/fia/mcp` for extension servers and `@semicoder/fia/native` for typed desktop tools.
@@ -17,8 +17,9 @@ initialization or compatibility shims.
 
 Import shared controls from `./components/ui` instead of recreating buttons, fields, dialogs, menus,
 or feedback patterns. Keep `ThemeProvider` and `ToastProvider` mounted in `src/ui/main.tsx`; the
-theme selection is persisted under `fia-ui-theme`. Component styles are native CSS imported through
-`src/ui/style.css` and do not require a Tailwind build step.
+theme selection is persisted under `fia-ui-theme`. Use Tailwind v4 utilities for component styling,
+and keep shared semantic theme tokens in `src/ui/style.css`. The Bun plugin is configured in
+`bunfig.toml` for development and is also applied by `fia build`.
 
 Run `bun run typecheck` after TypeScript changes and `bun run build` after changing packaging or MCP
 configuration. Keep MCP stdout protocol-clean; write diagnostics to stderr.

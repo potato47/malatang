@@ -17,17 +17,19 @@ desktop APIs. Both use MCP `2026-07-28` through the Host's WebKit transport.
 
 ## Preset UI library
 
-The editable component library lives in `src/ui/components/ui` and is exported from its `index.ts`.
-Import components from the local barrel:
+The editable Tailwind CSS v4 component library lives in `src/ui/components/ui` and is exported from
+its `index.ts`. Import components from the local barrel:
 
 ```tsx
 import { Button, Dialog, Field, Input, useToast } from "./components/ui";
 ```
 
 It includes primitives, form controls, navigation, overlays, notifications, and a light/dark/system
-theme. `src/ui/main.tsx` already installs `ThemeProvider` and `ToastProvider`, while
-`src/ui/style.css` imports the component design tokens and styles. Keep those providers mounted when
-using `useTheme` or `useToast`; edit the local components and CSS directly to adapt the design.
+theme. `src/ui/main.tsx` already installs `ThemeProvider` and `ToastProvider`.
+`src/ui/style.css` imports Tailwind CSS v4 and exposes the semantic `ui-*` color and radius tokens;
+the components themselves are styled with Tailwind utilities. Keep those providers mounted when
+using `useTheme` or `useToast`. `bunfig.toml` enables the Tailwind plugin for HMR, and FIA applies the
+same plugin during production builds.
 
 ## MCP boundary
 

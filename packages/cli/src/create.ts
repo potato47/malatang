@@ -36,6 +36,7 @@ const COMMON_TEMPLATE_FILES = [
   ["fia.config.ts.template", "fia.config.ts"],
   ["README.md.template", "README.md"],
   ["tsconfig.json", "tsconfig.json"],
+  ["bunfig.toml", "bunfig.toml"],
   ["gitignore", ".gitignore"],
   ["src/ui/index.html", "src/ui/index.html"],
   ["src/ui/main.tsx.template", "src/ui/main.tsx"],
@@ -46,7 +47,6 @@ const COMMON_TEMPLATE_FILES = [
   ["src/ui/components/ui/navigation.tsx.template", "src/ui/components/ui/navigation.tsx"],
   ["src/ui/components/ui/overlays.tsx.template", "src/ui/components/ui/overlays.tsx"],
   ["src/ui/components/ui/primitives.tsx.template", "src/ui/components/ui/primitives.tsx"],
-  ["src/ui/components/ui/styles.css", "src/ui/components/ui/styles.css"],
   ["src/ui/components/ui/theme.tsx.template", "src/ui/components/ui/theme.tsx"],
   ["src/ui/components/ui/toast.tsx.template", "src/ui/components/ui/toast.tsx"],
 ] as const;
@@ -112,12 +112,14 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
     },
     dependencies: {
       "@base-ui/react": "^1.6.0",
+      "bun-plugin-tailwind": "^0.1.2",
       "class-variance-authority": "^0.7.1",
       clsx: "^2.1.1",
       "lucide-react": "^0.468.0",
       react: "^19.2.7",
       "react-dom": "^19.2.7",
       "tailwind-merge": "^3.3.1",
+      tailwindcss: "^4.1.18",
       zod: "^4.2.0",
     },
     devDependencies: {

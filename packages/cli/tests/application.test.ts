@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/client";
@@ -45,12 +45,14 @@ async function project(name: string, mcp = true): Promise<string> {
   await symlink(packageRoot, resolve(modules, "@semicoder/fia"), "dir");
   for (const [name, source] of [
     ["typescript", resolve(repositoryRoot, "node_modules/typescript")],
+    ["bun-plugin-tailwind", resolve(packageRoot, "node_modules/bun-plugin-tailwind")],
     ["class-variance-authority", resolve(packageRoot, "node_modules/class-variance-authority")],
     ["clsx", resolve(packageRoot, "node_modules/clsx")],
     ["lucide-react", resolve(packageRoot, "node_modules/lucide-react")],
     ["react", resolve(packageRoot, "node_modules/react")],
     ["react-dom", resolve(packageRoot, "node_modules/react-dom")],
     ["tailwind-merge", resolve(packageRoot, "node_modules/tailwind-merge")],
+    ["tailwindcss", resolve(packageRoot, "node_modules/tailwindcss")],
     ["zod", resolve(packageRoot, "node_modules/zod")],
   ] as const) {
     await symlink(source, resolve(modules, name), "dir");
@@ -160,6 +162,12 @@ describe("FIA MCP application packaging", () => {
     const app = resolve(root, "dist/Ui Build.app");
     expect(await Bun.file(resolve(app, "Contents/Resources/UI/index.html")).exists()).toBe(true);
     expect(await Bun.file(resolve(app, "Contents/Helpers/MCPServers/app")).exists()).toBe(false);
+    const uiDirectory = resolve(app, "Contents/Resources/UI");
+    const stylesheet = (await readdir(uiDirectory)).find((name) => name.endsWith(".css"));
+    expect(stylesheet).toBeDefined();
+    const css = await readFile(resolve(uiDirectory, stylesheet!), "utf8");
+    expect(css).toContain(".rounded-ui-md");
+    expect(css).toContain(".data-checked");
     const config = JSON.parse(
       await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"),
     ) as { mcpServers: unknown[] };

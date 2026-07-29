@@ -13,6 +13,20 @@ import * as React from "react";
 
 import { cn } from "./cn";
 
+const inputClass =
+  "h-8 w-full rounded-ui-md border border-ui-border bg-ui-surface px-2.5 text-[13px] text-ui-text outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-ui-text-faint hover:not-disabled:border-ui-border-strong focus:border-ui-focus focus:shadow-[0_0_0_2px_color-mix(in_srgb,var(--ui-focus)_16%,transparent)] disabled:cursor-not-allowed disabled:bg-ui-surface-subtle disabled:text-ui-text-faint group-data-invalid/field:border-ui-danger group-data-invalid/field:shadow-[0_0_0_2px_color-mix(in_srgb,var(--ui-danger)_12%,transparent)]";
+
+const choiceRowClass = "flex min-w-0 cursor-pointer items-start gap-2.5 select-none";
+const choiceCopyClass = "flex min-w-0 flex-1 flex-col gap-0.5";
+const choiceLabelClass = "text-[13px] font-[540] text-ui-text";
+const choiceDescriptionClass = "text-[11px] leading-[1.45] text-ui-text-muted";
+const choiceControlClass =
+  "mt-0.5 inline-flex size-4 shrink-0 cursor-inherit items-center justify-center border border-ui-border-strong bg-ui-surface text-ui-on-accent transition-colors duration-150 data-checked:border-ui-accent data-checked:bg-ui-accent";
+const popupClass =
+  "origin-[var(--transform-origin)] rounded-ui-lg border border-ui-border bg-ui-surface text-ui-text shadow-ui-popup transition-[opacity,transform,translate,scale] duration-150 data-ending-style:scale-[0.98] data-ending-style:-translate-y-0.5 data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:-translate-y-0.5 data-starting-style:opacity-0";
+const listItemClass =
+  "grid min-h-[34px] cursor-default grid-cols-[18px_minmax(0,1fr)] items-center gap-1.5 rounded-ui-sm px-2 py-[5px] text-[13px] text-ui-text outline-none data-disabled:opacity-45 data-highlighted:bg-ui-surface-hover data-selected:text-ui-accent-text";
+
 export interface FieldProps extends Omit<
   React.ComponentPropsWithoutRef<typeof BaseField.Root>,
   "children"
@@ -36,24 +50,26 @@ export function Field({
 }: FieldProps) {
   return (
     <BaseField.Root
-      className={cn("ui-field", className)}
+      className={cn("group/field flex min-w-0 flex-col gap-1.5", className)}
       invalid={invalid ?? Boolean(error)}
       {...props}
     >
       {label ? (
-        <BaseField.Label className="ui-field__label">
+        <BaseField.Label className="flex items-center justify-between gap-2 text-xs font-semibold text-ui-text">
           <span>{label}</span>
-          {optional ? <span className="ui-field__optional">Optional</span> : null}
+          {optional ? (
+            <span className="text-[11px] font-normal text-ui-text-muted">Optional</span>
+          ) : null}
         </BaseField.Label>
       ) : null}
       {children}
       {description && !error ? (
-        <BaseField.Description className="ui-field__description">
+        <BaseField.Description className="text-[11px] font-normal text-ui-text-muted">
           {description}
         </BaseField.Description>
       ) : null}
       {error ? (
-        <BaseField.Error className="ui-field__error" match>
+        <BaseField.Error className="text-[11px] text-ui-danger" match>
           {error}
         </BaseField.Error>
       ) : null}
@@ -67,7 +83,7 @@ export const Input = React.forwardRef<HTMLElement, InputProps>(function Input(
   { className, ...props },
   ref,
 ) {
-  return <BaseInput ref={ref} className={cn("ui-input ui-control--md", className)} {...props} />;
+  return <BaseInput ref={ref} className={cn(inputClass, className)} {...props} />;
 });
 
 export type TextareaProps = React.ComponentPropsWithoutRef<"textarea">;
@@ -79,7 +95,13 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(fun
   return (
     <BaseField.Control
       ref={ref as React.Ref<HTMLElement>}
-      render={<textarea ref={ref} className={cn("ui-input ui-textarea", className)} {...props} />}
+      render={
+        <textarea
+          ref={ref}
+          className={cn(inputClass, "h-auto min-h-[76px] resize-y px-2.5 py-2", className)}
+          {...props}
+        />
+      }
     />
   );
 });
@@ -91,15 +113,18 @@ export interface CheckboxProps extends React.ComponentPropsWithoutRef<typeof Bas
 
 export function Checkbox({ label, description, className, ...props }: CheckboxProps) {
   return (
-    <label className={cn("ui-choice-row", props.disabled && "ui-choice-row--disabled")}>
-      <BaseCheckbox.Root className={cn("ui-checkbox", className)} {...props}>
-        <BaseCheckbox.Indicator className="ui-checkbox__indicator">
+    <label className={cn(choiceRowClass, props.disabled && "cursor-not-allowed opacity-50")}>
+      <BaseCheckbox.Root
+        className={cn(choiceControlClass, "rounded-ui-sm", className)}
+        {...props}
+      >
+        <BaseCheckbox.Indicator className="flex">
           <Check size={13} strokeWidth={2.5} />
         </BaseCheckbox.Indicator>
       </BaseCheckbox.Root>
-      <span className="ui-choice-copy">
-        <span className="ui-choice-label">{label}</span>
-        {description ? <span className="ui-choice-description">{description}</span> : null}
+      <span className={choiceCopyClass}>
+        <span className={choiceLabelClass}>{label}</span>
+        {description ? <span className={choiceDescriptionClass}>{description}</span> : null}
       </span>
     </label>
   );
@@ -121,19 +146,23 @@ export interface RadioGroupProps extends Omit<
 
 export function RadioGroup({ options, className, ...props }: RadioGroupProps) {
   return (
-    <BaseRadioGroup className={cn("ui-radio-group", className)} {...props}>
+    <BaseRadioGroup className={cn("flex flex-col gap-3", className)} {...props}>
       {options.map((option) => (
         <label
-          className={cn("ui-choice-row", option.disabled && "ui-choice-row--disabled")}
+          className={cn(choiceRowClass, option.disabled && "cursor-not-allowed opacity-50")}
           key={option.value}
         >
-          <BaseRadio.Root className="ui-radio" value={option.value} disabled={option.disabled}>
-            <BaseRadio.Indicator className="ui-radio__indicator" />
+          <BaseRadio.Root
+            className={cn(choiceControlClass, "rounded-full")}
+            value={option.value}
+            disabled={option.disabled}
+          >
+            <BaseRadio.Indicator className="size-1.5 rounded-full bg-ui-on-accent" />
           </BaseRadio.Root>
-          <span className="ui-choice-copy">
-            <span className="ui-choice-label">{option.label}</span>
+          <span className={choiceCopyClass}>
+            <span className={choiceLabelClass}>{option.label}</span>
             {option.description ? (
-              <span className="ui-choice-description">{option.description}</span>
+              <span className={choiceDescriptionClass}>{option.description}</span>
             ) : null}
           </span>
         </label>
@@ -149,13 +178,24 @@ export interface SwitchProps extends React.ComponentPropsWithoutRef<typeof BaseS
 
 export function Switch({ label, description, className, ...props }: SwitchProps) {
   return (
-    <label className={cn("ui-switch-row", props.disabled && "ui-choice-row--disabled")}>
-      <span className="ui-choice-copy">
-        <span className="ui-choice-label">{label}</span>
-        {description ? <span className="ui-choice-description">{description}</span> : null}
+    <label
+      className={cn(
+        "flex min-w-0 cursor-pointer items-center justify-between gap-2.5 select-none",
+        props.disabled && "cursor-not-allowed opacity-50",
+      )}
+    >
+      <span className={choiceCopyClass}>
+        <span className={choiceLabelClass}>{label}</span>
+        {description ? <span className={choiceDescriptionClass}>{description}</span> : null}
       </span>
-      <BaseSwitch.Root className={cn("ui-switch", className)} {...props}>
-        <BaseSwitch.Thumb className="ui-switch__thumb" />
+      <BaseSwitch.Root
+        className={cn(
+          "group/switch relative inline-flex h-[19px] w-[34px] shrink-0 cursor-inherit items-center rounded-full border border-ui-border-strong bg-ui-surface-subtle p-0.5 transition-colors duration-150 data-checked:border-ui-accent data-checked:bg-ui-accent",
+          className,
+        )}
+        {...props}
+      >
+        <BaseSwitch.Thumb className="size-[13px] translate-x-0 rounded-full bg-ui-text-muted transition-[transform,translate,background-color] duration-150 group-data-checked/switch:translate-x-[15px] group-data-checked/switch:bg-ui-on-accent" />
       </BaseSwitch.Root>
     </label>
   );
@@ -184,25 +224,39 @@ export function Select({
 }: SelectProps) {
   return (
     <BaseSelect.Root<string> items={options} {...props}>
-      <BaseSelect.Trigger className={cn("ui-select-trigger ui-control--md", className)}>
+      <BaseSelect.Trigger
+        className={cn(
+          "flex min-h-8 w-full min-w-[180px] cursor-pointer items-center justify-between gap-2 rounded-ui-md border border-ui-border bg-ui-surface px-[9px] text-[13px] text-ui-text transition-[border-color,background-color,box-shadow] duration-150 hover:not-data-disabled:border-ui-border-strong data-disabled:cursor-not-allowed data-disabled:bg-ui-surface-subtle data-disabled:text-ui-text-faint data-placeholder:text-ui-text-faint data-popup-open:border-ui-focus data-popup-open:shadow-[0_0_0_2px_color-mix(in_srgb,var(--ui-focus)_16%,transparent)]",
+          className,
+        )}
+      >
         <BaseSelect.Value placeholder={placeholder} />
-        <BaseSelect.Icon className="ui-select-icon">
+        <BaseSelect.Icon className="flex text-ui-text-muted">
           <ChevronDown size={15} />
         </BaseSelect.Icon>
       </BaseSelect.Trigger>
       <BaseSelect.Portal>
-        <BaseSelect.Positioner className="ui-positioner" sideOffset={6}>
-          <BaseSelect.Popup className="ui-popup ui-select-popup">
+        <BaseSelect.Positioner className="z-50 outline-none" sideOffset={6}>
+          <BaseSelect.Popup
+            className={cn(
+              popupClass,
+              "max-h-[min(320px,var(--available-height))] w-[var(--anchor-width)] max-w-[var(--available-width)] overflow-auto p-1",
+            )}
+          >
             <BaseSelect.List>
               {options.map((option) => (
-                <BaseSelect.Item className="ui-list-item" key={option.value} value={option.value}>
-                  <BaseSelect.ItemIndicator className="ui-list-item__indicator">
+                <BaseSelect.Item
+                  className={listItemClass}
+                  key={option.value}
+                  value={option.value}
+                >
+                  <BaseSelect.ItemIndicator className="flex text-ui-accent">
                     <Check size={14} />
                   </BaseSelect.ItemIndicator>
-                  <span className="ui-list-item__copy">
+                  <span className="flex min-w-0 flex-col">
                     <BaseSelect.ItemText>{option.label}</BaseSelect.ItemText>
                     {option.description ? (
-                      <span className="ui-list-item__description">{option.description}</span>
+                      <span className="text-[10px] text-ui-text-muted">{option.description}</span>
                     ) : null}
                   </span>
                 </BaseSelect.Item>
@@ -251,34 +305,52 @@ export function Combobox({
       isItemEqualToValue={(item, value) => item.value === value.value}
       {...props}
     >
-      <BaseCombobox.InputGroup className={cn("ui-combobox-group ui-control--md", className)}>
-        <Search className="ui-combobox-search" size={14} aria-hidden />
+      <BaseCombobox.InputGroup
+        className={cn(
+          "group/combobox flex min-h-8 w-full items-center rounded-ui-md border border-ui-border bg-ui-surface py-0 pr-1 pl-[9px] text-ui-text transition-[border-color,background-color,box-shadow] duration-150 hover:border-ui-border-strong focus-within:border-ui-focus focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--ui-focus)_16%,transparent)]",
+          className,
+        )}
+      >
+        <Search className="shrink-0 text-ui-text-muted" size={14} aria-hidden />
         <BaseCombobox.Input
           aria-label={ariaLabel}
-          className="ui-combobox-input"
+          className="h-[30px] w-full min-w-0 border-0 bg-transparent px-[7px] text-[13px] text-ui-text outline-none placeholder:text-ui-text-faint"
           placeholder={placeholder}
         />
-        <BaseCombobox.Clear className="ui-combobox-action" aria-label="Clear selection">
+        <BaseCombobox.Clear
+          className="hidden size-[25px] shrink-0 cursor-pointer items-center justify-center rounded-ui-sm border-0 bg-transparent text-ui-text-muted group-has-[input:not(:placeholder-shown)]/combobox:flex"
+          aria-label="Clear selection"
+        >
           <X size={13} />
         </BaseCombobox.Clear>
-        <BaseCombobox.Trigger className="ui-combobox-action" aria-label="Open options">
+        <BaseCombobox.Trigger
+          className="flex size-[25px] shrink-0 cursor-pointer items-center justify-center rounded-ui-sm border-0 bg-transparent text-ui-text-muted"
+          aria-label="Open options"
+        >
           <ChevronDown size={14} />
         </BaseCombobox.Trigger>
       </BaseCombobox.InputGroup>
       <BaseCombobox.Portal>
-        <BaseCombobox.Positioner className="ui-positioner" sideOffset={6}>
-          <BaseCombobox.Popup className="ui-popup ui-combobox-popup">
-            <BaseCombobox.Empty className="ui-empty">No matching options</BaseCombobox.Empty>
-            <BaseCombobox.List className="ui-combobox-list">
+        <BaseCombobox.Positioner className="z-50 outline-none" sideOffset={6}>
+          <BaseCombobox.Popup
+            className={cn(
+              popupClass,
+              "max-h-[min(320px,var(--available-height))] w-[var(--anchor-width)] max-w-[var(--available-width)] overflow-auto p-1",
+            )}
+          >
+            <BaseCombobox.Empty className="px-3 py-5 text-center text-xs text-ui-text-muted">
+              No matching options
+            </BaseCombobox.Empty>
+            <BaseCombobox.List className="max-h-[min(288px,var(--available-height))] overflow-auto">
               {(option: ComboboxOption) => (
-                <BaseCombobox.Item key={option.value} value={option} className="ui-list-item">
-                  <BaseCombobox.ItemIndicator className="ui-list-item__indicator">
+                <BaseCombobox.Item key={option.value} value={option} className={listItemClass}>
+                  <BaseCombobox.ItemIndicator className="flex text-ui-accent">
                     <Check size={14} />
                   </BaseCombobox.ItemIndicator>
-                  <span className="ui-list-item__copy">
+                  <span className="flex min-w-0 flex-col">
                     <span>{option.label}</span>
                     {option.meta ? (
-                      <span className="ui-list-item__description">{option.meta}</span>
+                      <span className="text-[10px] text-ui-text-muted">{option.meta}</span>
                     ) : null}
                   </span>
                 </BaseCombobox.Item>

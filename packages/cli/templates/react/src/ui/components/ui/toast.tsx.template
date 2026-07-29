@@ -30,6 +30,13 @@ const icons = {
   info: Info,
 };
 
+const iconTones = {
+  success: "text-ui-success",
+  error: "text-ui-danger",
+  warning: "text-ui-warning",
+  info: "text-ui-info",
+} as const;
+
 function ToastBridge({ children }: { children: React.ReactNode }) {
   const manager = BaseToast.useToastManager<ToastData>();
 
@@ -53,19 +60,27 @@ function ToastBridge({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <BaseToast.Portal>
-        <BaseToast.Viewport className="ui-toast-viewport">
+        <BaseToast.Viewport className="fixed right-5 bottom-5 z-[90] w-[min(360px,calc(100vw-32px))]">
           {manager.toasts.map((toast) => {
             const tone = toast.data?.tone ?? "info";
             const Icon = icons[tone];
             return (
-              <BaseToast.Root className="ui-toast" data-tone={tone} key={toast.id} toast={toast}>
-                <BaseToast.Content className="ui-toast__content">
-                  <Icon className="ui-toast__icon" size={17} aria-hidden />
-                  <div className="ui-toast__copy">
-                    <BaseToast.Title className="ui-toast__title" />
-                    <BaseToast.Description className="ui-toast__description" />
+              <BaseToast.Root
+                className="absolute right-0 bottom-0 w-full rounded-ui-lg border border-ui-border bg-ui-surface text-ui-text shadow-ui-popup transition-[opacity,transform,translate] duration-200 [--toast-gap:8px] [transform:translateX(var(--toast-swipe-movement-x))_translateY(calc(var(--toast-swipe-movement-y)-(var(--toast-index)*var(--toast-gap))))] data-ending-style:translate-y-3 data-ending-style:opacity-0 data-limited:opacity-0 data-starting-style:translate-y-3 data-starting-style:opacity-0"
+                data-tone={tone}
+                key={toast.id}
+                toast={toast}
+              >
+                <BaseToast.Content className="flex min-h-16 items-start gap-2.5 p-3">
+                  <Icon className={`mt-0.5 ${iconTones[tone]}`} size={17} aria-hidden />
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <BaseToast.Title className="text-[13px] font-semibold" />
+                    <BaseToast.Description className="text-[11px] text-ui-text-muted" />
                   </div>
-                  <BaseToast.Close className="ui-toast__close" aria-label="Close notification">
+                  <BaseToast.Close
+                    className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-ui-sm border-0 bg-transparent text-ui-text-muted hover:bg-ui-surface-hover hover:text-ui-text"
+                    aria-label="Close notification"
+                  >
                     <X size={14} />
                   </BaseToast.Close>
                 </BaseToast.Content>
