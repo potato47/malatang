@@ -44,10 +44,15 @@ export const Button = React.forwardRef<HTMLElement, ButtonProps>(function Button
       disabled={disabled || loading}
       focusableWhenDisabled={loading}
       aria-busy={loading || undefined}
+      data-loading={loading || undefined}
       {...props}
     >
-      {loading ? <LoaderCircle className="ui-spin" aria-hidden size={15} /> : null}
-      {children}
+      <span className="ui-button__content">{children}</span>
+      {loading ? (
+        <span className="ui-button__spinner" aria-hidden>
+          <LoaderCircle className="ui-spin" size={15} />
+        </span>
+      ) : null}
     </BaseButton>
   );
 });

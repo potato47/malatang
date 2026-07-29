@@ -93,6 +93,9 @@ describe("FIA project creation", () => {
     }
     const style = await readFile(resolve(root, "src/ui/style.css"), "utf8");
     expect(style).toContain('@import "./components/ui/styles.css"');
+    const primitives = await readFile(resolve(root, "src/ui/components/ui/primitives.tsx"), "utf8");
+    expect(primitives).toContain("data-loading={loading || undefined}");
+    expect(primitives).toContain('<span className="ui-button__content">{children}</span>');
     const metadata = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;

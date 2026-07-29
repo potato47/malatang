@@ -147,11 +147,11 @@ a {
 }
 
 .ui-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  gap: 7px;
   border: 1px solid transparent;
   border-radius: var(--ui-radius-md);
   padding: 0 11px;
@@ -168,6 +168,26 @@ a {
     border-color 120ms ease,
     color 120ms ease,
     opacity 120ms ease;
+}
+
+.ui-button__content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.ui-button__spinner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ui-button[data-loading] .ui-button__content {
+  visibility: hidden;
 }
 
 .ui-button--primary {
@@ -225,6 +245,11 @@ a {
 .ui-button:disabled {
   cursor: not-allowed;
   opacity: 0.46;
+}
+
+.ui-button[data-loading] {
+  cursor: wait;
+  opacity: 1;
 }
 
 .ui-spin {
