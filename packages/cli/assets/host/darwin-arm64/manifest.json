@@ -8,9 +8,5 @@
   "configurationSchema": 5,
   "mcpBridge": 1,
   "mcpProtocol": "2026-07-28",
-  "nativeCapabilities": [
-    "tools",
-    "resources",
-    "subscriptions"
-  ]
+  "nativeCapabilities": ["tools", "resources", "subscriptions"]
 }
