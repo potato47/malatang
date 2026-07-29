@@ -76,8 +76,8 @@ describe("published FIA 0.5 shape", () => {
     hasher.update(await Bun.file(host).arrayBuffer());
     expect(manifest).toMatchObject({
       schemaVersion: 2,
-      cliVersion: "0.5.0",
-      hostVersion: "0.5.0",
+      cliVersion: CLI_VERSION,
+      hostVersion: CLI_VERSION,
       configurationSchema: 5,
       mcpBridge: 1,
       mcpProtocol: "2026-07-28",

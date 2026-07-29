@@ -19,8 +19,8 @@ Usage:
 Example:
   bun run version:npm -- 0.5.1
 
-The command requires a clean Git working tree, updates package and CLI metadata, refreshes bun.lock,
-rebuilds the embedded arm64 Host, and rolls back all versioned files if any step fails.
+The command updates package and CLI metadata, refreshes bun.lock, rebuilds the embedded arm64 Host,
+and rolls back all versioned files if any step fails.
 `;
 
 export interface VersionArguments {
@@ -153,16 +153,6 @@ export function replaceLockVersion(source: string, current: string, target: stri
   return source.slice(0, start) + replaced + source.slice(end);
 }
 
-async function requireCleanWorkingTree(): Promise<void> {
-  const status = (await run(
-    ["git", "status", "--porcelain", "--untracked-files=all"],
-    { quiet: true },
-  )).trim();
-  if (status.length > 0) {
-    throw new Error(`version changes require a clean Git working tree:\n${status}`);
-  }
-}
-
 async function snapshotFiles(): Promise<Snapshot[]> {
   return await Promise.all(VERSIONED_PATHS.map(async (path) => ({ path, contents: await readFile(path) })));
 }
@@ -212,7 +202,6 @@ export async function updateNPMVersion(target: string): Promise<void> {
   if (metadataVersion !== current) {
     throw new Error(`package version ${current} does not match CLI metadata ${metadataVersion}`);
   }
-  await requireCleanWorkingTree();
   const snapshots = await snapshotFiles();
 
   try {

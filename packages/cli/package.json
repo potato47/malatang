@@ -1,6 +1,6 @@
 {
   "name": "@semicoder/fia",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Command-line tools for building FIA macOS applications",
   "type": "module",
   "bin": {

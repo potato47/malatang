@@ -11,6 +11,7 @@ import {
   type Transport,
   type TransportSendOptions,
 } from "@modelcontextprotocol/client";
+import { CLI_VERSION } from "./metadata.ts";
 
 export const FIA_MCP_BRIDGE_VERSION = 1 as const;
 export const FIA_MCP_PROTOCOL_VERSION = "2026-07-28" as const;
@@ -234,7 +235,7 @@ class ServerClient implements FIAServerClient {
 
   async #connect(): Promise<Client> {
     const client = new Client(
-      { name: "fia-ui", version: "0.5.0" },
+      { name: "fia-ui", version: CLI_VERSION },
       {
         versionNegotiation: {
           mode: { pin: FIA_MCP_PROTOCOL_VERSION },
