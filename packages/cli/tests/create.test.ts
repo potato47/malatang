@@ -61,6 +61,8 @@ describe("FIA project creation", () => {
     const app = await readFile(resolve(root, "src/ui/App.tsx"), "utf8");
     expect(app).toContain('mcp.server("app").callTool');
     expect(app).toContain("useToast");
+    expect(app).not.toContain("loading={");
+    expect(app).not.toContain('"working"');
     const main = await readFile(resolve(root, "src/ui/main.tsx"), "utf8");
     expect(main).toContain("<ThemeProvider>");
     expect(main).toContain("<ToastProvider>");
@@ -124,6 +126,8 @@ describe("FIA project creation", () => {
     const app = await readFile(resolve(root, "src/ui/App.tsx"), "utf8");
     expect(app).toContain("@semicoder/fia/native");
     expect(app).not.toContain('mcp.server("app")');
+    expect(app).not.toContain("loading={");
+    expect(app).not.toContain('"working"');
     expect(app).toContain('from "./components/ui"');
     expect(await Bun.file(resolve(root, "src/ui/components/ui/index.ts")).exists()).toBe(true);
   });

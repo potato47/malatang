@@ -22,11 +22,10 @@ import {
   type BadgeProps,
 } from "./components/ui";
 
-type Status = "idle" | "working" | "success" | "error";
+type Status = "idle" | "success" | "error";
 
 const statusTone: Record<Status, BadgeProps["tone"]> = {
   idle: "neutral",
-  working: "warning",
   success: "success",
   error: "danger",
 };
@@ -78,7 +77,6 @@ export function App() {
   const [desktopState, setDesktopState] = useState<FIANativeState | null>(null);
 
   const callApp = useCallback(async () => {
-    setMcpStatus("working");
     try {
       const result = await mcp.server("app").callTool({
         name: "greet",
@@ -99,7 +97,6 @@ export function App() {
 
   const runNative = useCallback(
     async (action: () => Promise<FIANativeState>, successTitle: string) => {
-      setNativeStatus("working");
       try {
         const state = await action();
         setDesktopState(state);
@@ -175,8 +172,6 @@ export function App() {
           <Button
             variant="primary"
             onClick={callApp}
-            loading={mcpStatus === "working"}
-            disabled={mcpStatus === "working"}
           >
             Call greet
           </Button>
@@ -198,8 +193,7 @@ export function App() {
           </div>
           <div className="app-actions">
             <Button
-              disabled={nativeStatus === "working" || desktopState === null}
-              loading={nativeStatus === "working"}
+              disabled={desktopState === null}
               onClick={() =>
                 void runNative(
                   () => native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop),
@@ -211,7 +205,7 @@ export function App() {
               Toggle floating
             </Button>
             <Button
-              disabled={nativeStatus === "working" || desktopState === null}
+              disabled={desktopState === null}
               onClick={() =>
                 void runNative(
                   () => native.statusBar.setVisible(!desktopState!.statusBarVisible),

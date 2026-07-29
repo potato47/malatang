@@ -12,11 +12,10 @@ import {
   type BadgeProps,
 } from "./components/ui";
 
-type Status = "idle" | "working" | "success" | "error";
+type Status = "idle" | "success" | "error";
 
 const statusTone: Record<Status, BadgeProps["tone"]> = {
   idle: "neutral",
-  working: "warning",
   success: "success",
   error: "danger",
 };
@@ -67,7 +66,6 @@ export function App() {
 
   const update = useCallback(
     async (action: () => Promise<FIANativeState>, notify = true) => {
-      setStatus("working");
       try {
         const state = await action();
         setDesktopState(state);
@@ -135,8 +133,7 @@ export function App() {
           </div>
           <Button
             variant="primary"
-            loading={status === "working"}
-            disabled={status === "working" || desktopState === null}
+            disabled={desktopState === null}
             onClick={() =>
               void update(() =>
                 native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop),
