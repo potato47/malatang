@@ -48,9 +48,7 @@ const MCP_TEMPLATE_FILES = [
   ["src/ui/App.tsx.template", "src/ui/App.tsx"],
 ] as const;
 
-const UI_ONLY_TEMPLATE_FILES = [
-  ["src/ui/App.ui-only.tsx.template", "src/ui/App.tsx"],
-] as const;
+const UI_ONLY_TEMPLATE_FILES = [["src/ui/App.ui-only.tsx.template", "src/ui/App.tsx"]] as const;
 
 const TEMPLATE_ASSETS = [
   ["assets/icon.png", "assets/icon.png"],
@@ -58,7 +56,10 @@ const TEMPLATE_ASSETS = [
 ] as const;
 
 function titleFromName(name: string): string {
-  return name.split("-").map((part) => `${part[0]!.toUpperCase()}${part.slice(1)}`).join(" ");
+  return name
+    .split("-")
+    .map((part) => `${part[0]!.toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function validateName(name: string): void {
@@ -150,7 +151,8 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
   const temporaryRoot = resolve(options.cwd, `.fia-create-${options.name}-${crypto.randomUUID()}`);
   const dependencies = options.dependencies ?? {};
   const runner = dependencies.runner ?? defaultRunner;
-  const templateDirectory = dependencies.templateDirectory ?? resolve(import.meta.dir, "../templates/react");
+  const templateDirectory =
+    dependencies.templateDirectory ?? resolve(import.meta.dir, "../templates/react");
   const cliPackageSpec = dependencies.cliPackageSpec ?? `^${CLI_VERSION}`;
   const appName = titleFromName(options.name);
   const withMcp = options.mcp ?? true;
@@ -182,7 +184,8 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
       } catch (error) {
         throw new CreateProjectError("bun install could not start", { cause: error });
       }
-      if (exitCode !== 0) throw new CreateProjectError(`bun install failed with exit code ${exitCode}`);
+      if (exitCode !== 0)
+        throw new CreateProjectError(`bun install failed with exit code ${exitCode}`);
     }
     if (options.initializeGit) {
       options.io.stdout("Initializing Git repository\n");
@@ -192,7 +195,8 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
       } catch (error) {
         throw new CreateProjectError("git init could not start", { cause: error });
       }
-      if (exitCode !== 0) throw new CreateProjectError(`git init failed with exit code ${exitCode}`);
+      if (exitCode !== 0)
+        throw new CreateProjectError(`git init failed with exit code ${exitCode}`);
     }
 
     await rename(temporaryRoot, projectRoot);

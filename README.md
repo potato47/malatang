@@ -62,11 +62,9 @@ import { z } from "zod";
 
 export default defineMcpServer(() => {
   const server = new McpServer({ name: "app", version: "0.1.0" });
-  server.registerTool(
-    "greet",
-    { inputSchema: { name: z.string() } },
-    ({ name }) => ({ content: [{ type: "text", text: `Hello, ${name}!` }] }),
-  );
+  server.registerTool("greet", { inputSchema: { name: z.string() } }, ({ name }) => ({
+    content: [{ type: "text", text: `Hello, ${name}!` }],
+  }));
   return server;
 });
 ```

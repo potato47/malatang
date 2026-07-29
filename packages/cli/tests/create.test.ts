@@ -7,7 +7,9 @@ import { createProject, CreateProjectError, type CreateProcessRunner } from "../
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 
 async function workspace(): Promise<string> {
@@ -90,34 +92,43 @@ describe("FIA project creation", () => {
       io,
       dependencies: { runner },
     });
-    expect(calls).toEqual([[process.execPath, "install"], ["git", "init"]]);
+    expect(calls).toEqual([
+      [process.execPath, "install"],
+      ["git", "init"],
+    ]);
   });
 
   test("rejects unsafe names, existing targets, and rolls back failures", async () => {
     const cwd = await workspace();
-    await expect(createProject({
-      name: "../unsafe",
-      cwd,
-      install: false,
-      initializeGit: false,
-      io,
-    })).rejects.toBeInstanceOf(CreateProjectError);
+    await expect(
+      createProject({
+        name: "../unsafe",
+        cwd,
+        install: false,
+        initializeGit: false,
+        io,
+      }),
+    ).rejects.toBeInstanceOf(CreateProjectError);
     await mkdir(resolve(cwd, "existing"));
-    await expect(createProject({
-      name: "existing",
-      cwd,
-      install: false,
-      initializeGit: false,
-      io,
-    })).rejects.toThrow("target already exists");
-    await expect(createProject({
-      name: "rollback",
-      cwd,
-      install: true,
-      initializeGit: false,
-      io,
-      dependencies: { runner: async () => 7 },
-    })).rejects.toThrow("bun install failed");
+    await expect(
+      createProject({
+        name: "existing",
+        cwd,
+        install: false,
+        initializeGit: false,
+        io,
+      }),
+    ).rejects.toThrow("target already exists");
+    await expect(
+      createProject({
+        name: "rollback",
+        cwd,
+        install: true,
+        initializeGit: false,
+        io,
+        dependencies: { runner: async () => 7 },
+      }),
+    ).rejects.toThrow("bun install failed");
     expect((await readdir(cwd)).some((name) => name.startsWith(".fia-create-"))).toBe(false);
   });
 });

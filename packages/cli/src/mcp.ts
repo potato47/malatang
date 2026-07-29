@@ -58,9 +58,11 @@ function byteLength(value: unknown): number {
 
 function validateServerId(serverId: string): void {
   if (serverId === "app" || serverId === "fia.native") return;
-  if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(serverId)
-    || serverId.includes("..")
-    || serverId.startsWith("fia.")) {
+  if (
+    !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(serverId) ||
+    serverId.includes("..") ||
+    serverId.startsWith("fia.")
+  ) {
     throw new TypeError(`Invalid MCP server ID: ${JSON.stringify(serverId)}`);
   }
 }
@@ -82,7 +84,8 @@ export class FIAWebKitTransport implements Transport {
 
   async start(): Promise<void> {
     if (this.#started) throw new Error("FIA MCP transport has already started");
-    if (handler() === undefined) throw new Error("The FIA MCP bridge is unavailable in this environment");
+    if (handler() === undefined)
+      throw new Error("The FIA MCP bridge is unavailable in this environment");
     this.#started = true;
     globalThis.addEventListener(MESSAGE_EVENT, this.#receiveMessage);
     globalThis.addEventListener(STATE_EVENT, this.#receiveState);
@@ -90,9 +93,11 @@ export class FIAWebKitTransport implements Transport {
 
   async send(message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {
     if (!this.#started || this.#closed) throw new Error("The FIA MCP transport is not connected");
-    if (this.#pendingSends >= 128) throw new Error("The FIA MCP transport concurrency limit was exceeded");
+    if (this.#pendingSends >= 128)
+      throw new Error("The FIA MCP transport concurrency limit was exceeded");
     const bridge = handler();
-    if (bridge === undefined) throw new Error("The FIA MCP bridge is unavailable in this environment");
+    if (bridge === undefined)
+      throw new Error("The FIA MCP bridge is unavailable in this environment");
     const envelope: BridgeEnvelope = {
       bridgeVersion: FIA_MCP_BRIDGE_VERSION,
       serverId: this.#serverId,
@@ -105,9 +110,12 @@ export class FIAWebKitTransport implements Transport {
     try {
       const response = await bridge.postMessage(envelope);
       if (!isObject(response) || response.ok !== true) {
-        const reason = isObject(response) && isObject(response.error) && typeof response.error.message === "string"
-          ? response.error.message
-          : "The FIA MCP bridge rejected the message";
+        const reason =
+          isObject(response) &&
+          isObject(response.error) &&
+          typeof response.error.message === "string"
+            ? response.error.message
+            : "The FIA MCP bridge rejected the message";
         throw new Error(reason);
       }
     } finally {
@@ -125,10 +133,13 @@ export class FIAWebKitTransport implements Transport {
 
   readonly #receiveMessage = (event: Event): void => {
     const detail = (event as CustomEvent<unknown>).detail;
-    if (!isObject(detail)
-      || detail.bridgeVersion !== FIA_MCP_BRIDGE_VERSION
-      || detail.serverId !== this.#serverId
-      || !isObject(detail.message)) return;
+    if (
+      !isObject(detail) ||
+      detail.bridgeVersion !== FIA_MCP_BRIDGE_VERSION ||
+      detail.serverId !== this.#serverId ||
+      !isObject(detail.message)
+    )
+      return;
     if (byteLength(detail) > FIA_MCP_MAX_MESSAGE_BYTES) {
       this.onerror?.(new Error("The FIA MCP server sent a message exceeding the 1 MiB limit"));
       void this.close();
@@ -139,10 +150,13 @@ export class FIAWebKitTransport implements Transport {
 
   readonly #receiveState = (event: Event): void => {
     const detail = (event as CustomEvent<unknown>).detail;
-    if (!isObject(detail)
-      || detail.bridgeVersion !== FIA_MCP_BRIDGE_VERSION
-      || detail.serverId !== this.#serverId
-      || typeof detail.state !== "string") return;
+    if (
+      !isObject(detail) ||
+      detail.bridgeVersion !== FIA_MCP_BRIDGE_VERSION ||
+      detail.serverId !== this.#serverId ||
+      typeof detail.state !== "string"
+    )
+      return;
     const state = detail as unknown as StateEnvelope;
     if (state.state === "failed") {
       this.onerror?.(new Error(state.reason ?? `MCP server ${this.#serverId} failed`));
@@ -161,7 +175,10 @@ export interface FIAServerClient {
   ): Promise<CallToolResult>;
   listTools(): Promise<ListToolsResult>;
   readResource(params: ReadResourceRequestParams): Promise<ReadResourceResult>;
-  subscribeResource(uri: string, listener: FIAResourceUpdatedListener): Promise<() => Promise<void>>;
+  subscribeResource(
+    uri: string,
+    listener: FIAResourceUpdatedListener,
+  ): Promise<() => Promise<void>>;
 }
 
 export type FIAResourceUpdatedListener = (update: { readonly uri: string }) => void;
@@ -264,7 +281,8 @@ class ServerClient implements FIAServerClient {
     if (this.#resourceSubscriptions.has(uri)) return;
     let pending = this.#pendingResourceSubscriptions.get(uri);
     if (pending === undefined) {
-      pending = client.listen({ resourceSubscriptions: [uri] }, { timeout: 30_000 })
+      pending = client
+        .listen({ resourceSubscriptions: [uri] }, { timeout: 30_000 })
         .then((subscription) => {
           this.#resourceSubscriptions.set(uri, subscription);
         })
@@ -278,11 +296,15 @@ class ServerClient implements FIAServerClient {
 
   readonly #receiveState = (event: Event): void => {
     const detail = (event as CustomEvent<unknown>).detail;
-    if (!isObject(detail)
-      || detail.bridgeVersion !== FIA_MCP_BRIDGE_VERSION
-      || detail.serverId !== this.#serverId
-      || (detail.state !== "restarting" && detail.state !== "stopped" && detail.state !== "failed")) return;
-    const shouldRestoreSubscriptions = detail.state === "restarting" && this.#resourceListeners.size > 0;
+    if (
+      !isObject(detail) ||
+      detail.bridgeVersion !== FIA_MCP_BRIDGE_VERSION ||
+      detail.serverId !== this.#serverId ||
+      (detail.state !== "restarting" && detail.state !== "stopped" && detail.state !== "failed")
+    )
+      return;
+    const shouldRestoreSubscriptions =
+      detail.state === "restarting" && this.#resourceListeners.size > 0;
     const old = this.#connection;
     this.#connection = undefined;
     this.#pendingResourceSubscriptions.clear();

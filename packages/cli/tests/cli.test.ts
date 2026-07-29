@@ -9,7 +9,9 @@ import { FakeDoctorProbe } from "./support.ts";
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 
 function capture(): { io: CLIIO; stdout: string[]; stderr: string[] } {
@@ -53,10 +55,12 @@ describe("fia command routing", () => {
     const json = capture();
 
     expect(await runCLI(["doctor"], { io: text.io, doctorProbe: new FakeDoctorProbe() })).toBe(0);
-    expect(await runCLI(["doctor", "--json"], {
-      io: json.io,
-      doctorProbe: new FakeDoctorProbe(),
-    })).toBe(0);
+    expect(
+      await runCLI(["doctor", "--json"], {
+        io: json.io,
+        doctorProbe: new FakeDoctorProbe(),
+      }),
+    ).toBe(0);
 
     expect(text.stdout.join("")).toContain("[pass] macOS:");
     const report = JSON.parse(json.stdout.join("")) as Record<string, unknown>;
@@ -66,10 +70,15 @@ describe("fia command routing", () => {
   });
 
   test("accepts debug before or after doctor", async () => {
-    for (const args of [["--debug", "doctor", "--json"], ["doctor", "--debug", "--json"]]) {
+    for (const args of [
+      ["--debug", "doctor", "--json"],
+      ["doctor", "--debug", "--json"],
+    ]) {
       const output = capture();
       expect(await runCLI(args, { io: output.io, doctorProbe: new FakeDoctorProbe() })).toBe(0);
-      const report = JSON.parse(output.stdout.join("")) as { checks: Array<{ details?: string[] }> };
+      const report = JSON.parse(output.stdout.join("")) as {
+        checks: Array<{ details?: string[] }>;
+      };
       expect(report.checks.some((check) => check.details !== undefined)).toBe(true);
     }
   });
@@ -82,11 +91,13 @@ describe("fia command routing", () => {
     const cwd = await mkdtemp(resolve(tmpdir(), "fia-cli-create-"));
     temporaryDirectories.push(cwd);
     const created = capture();
-    expect(await runCLI(["create", "from-cli", "--no-install"], {
-      io: created.io,
-      workingDirectory: cwd,
-      create: { cliPackageSpec: "file:../cli" },
-    })).toBe(0);
+    expect(
+      await runCLI(["create", "from-cli", "--no-install"], {
+        io: created.io,
+        workingDirectory: cwd,
+        create: { cliPackageSpec: "file:../cli" },
+      }),
+    ).toBe(0);
     expect(await Bun.file(resolve(cwd, "from-cli/package.json")).exists()).toBe(true);
     expect(await Bun.file(resolve(cwd, "from-cli/src/mcp/server.ts")).exists()).toBe(true);
     expect(created.stderr).toEqual([]);

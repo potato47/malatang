@@ -11,10 +11,15 @@ const executable = resolve(packageRoot, "bin/fia");
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 
-async function run(args: readonly string[], cwd = packageRoot): Promise<{
+async function run(
+  args: readonly string[],
+  cwd = packageRoot,
+): Promise<{
   exitCode: number;
   stdout: string;
   stderr: string;
@@ -68,10 +73,9 @@ describe("published FIA 0.5 shape", () => {
   test("packages a schema-5 Host manifest with MCP bridge metadata", async () => {
     const host = resolve(packageRoot, "assets/host/darwin-arm64/FIAHost");
     await access(host, constants.X_OK);
-    const manifest = JSON.parse(await readFile(
-      resolve(packageRoot, "assets/host/darwin-arm64/manifest.json"),
-      "utf8",
-    )) as Record<string, unknown>;
+    const manifest = JSON.parse(
+      await readFile(resolve(packageRoot, "assets/host/darwin-arm64/manifest.json"), "utf8"),
+    ) as Record<string, unknown>;
     const hasher = new Bun.CryptoHasher("sha256");
     hasher.update(await Bun.file(host).arrayBuffer());
     expect(manifest).toMatchObject({

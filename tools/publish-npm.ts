@@ -98,23 +98,28 @@ function releaseStep(index: number, label: string): void {
 
 export async function validateReleaseMetadata(): Promise<void> {
   if (cliPackage.name !== CLI_PACKAGE_NAME) {
-    throw new Error(`package name ${cliPackage.name} does not match CLI metadata ${CLI_PACKAGE_NAME}`);
+    throw new Error(
+      `package name ${cliPackage.name} does not match CLI metadata ${CLI_PACKAGE_NAME}`,
+    );
   }
   if (cliPackage.version !== CLI_VERSION) {
-    throw new Error(`package version ${cliPackage.version} does not match CLI metadata ${CLI_VERSION}`);
+    throw new Error(
+      `package version ${cliPackage.version} does not match CLI metadata ${CLI_VERSION}`,
+    );
   }
   if (cliPackage.publishConfig.access !== "public") {
     throw new Error("package publishConfig.access must be public");
   }
-  if (JSON.stringify(cliPackage.files) !== JSON.stringify(["bin", "dist", "templates", "assets", "README.md"])) {
+  if (
+    JSON.stringify(cliPackage.files) !==
+    JSON.stringify(["bin", "dist", "templates", "assets", "README.md"])
+  ) {
     throw new Error("package files must be exactly bin, dist, templates, assets, and README.md");
   }
-  if (JSON.stringify(Object.keys(cliPackage.exports)) !== JSON.stringify([
-    "./config",
-    "./mcp",
-    "./mcp/server",
-    "./native",
-  ])) {
+  if (
+    JSON.stringify(Object.keys(cliPackage.exports)) !==
+    JSON.stringify(["./config", "./mcp", "./mcp/server", "./native"])
+  ) {
     throw new Error("package exports must contain only the FIA 0.5 MCP public surface");
   }
 
@@ -122,23 +127,25 @@ export async function validateReleaseMetadata(): Promise<void> {
   const hostPath = resolve(HOST_DIRECTORY, "FIAHost");
   let manifest: HostManifest;
   try {
-    manifest = await Bun.file(manifestPath).json() as HostManifest;
+    manifest = (await Bun.file(manifestPath).json()) as HostManifest;
     await access(hostPath, constants.R_OK | constants.X_OK);
   } catch (error) {
     throw new Error("the release Host asset or manifest is missing", { cause: error });
   }
   if (
-    manifest.schemaVersion !== 2
-    || manifest.cliVersion !== CLI_VERSION
-    || manifest.hostVersion !== CLI_VERSION
-    || manifest.architecture !== "arm64"
-    || manifest.minimumSystemVersion !== "14.0"
-    || manifest.configurationSchema !== 5
-    || manifest.mcpBridge !== 1
-    || manifest.mcpProtocol !== "2026-07-28"
-    || JSON.stringify(manifest.nativeCapabilities) !== "[\"tools\",\"resources\",\"subscriptions\"]"
+    manifest.schemaVersion !== 2 ||
+    manifest.cliVersion !== CLI_VERSION ||
+    manifest.hostVersion !== CLI_VERSION ||
+    manifest.architecture !== "arm64" ||
+    manifest.minimumSystemVersion !== "14.0" ||
+    manifest.configurationSchema !== 5 ||
+    manifest.mcpBridge !== 1 ||
+    manifest.mcpProtocol !== "2026-07-28" ||
+    JSON.stringify(manifest.nativeCapabilities) !== '["tools","resources","subscriptions"]'
   ) {
-    throw new Error(`Host manifest is not release-compatible with ${CLI_PACKAGE_NAME}@${CLI_VERSION}`);
+    throw new Error(
+      `Host manifest is not release-compatible with ${CLI_PACKAGE_NAME}@${CLI_VERSION}`,
+    );
   }
 
   const hasher = new Bun.CryptoHasher("sha256");
@@ -150,7 +157,8 @@ export async function validateReleaseMetadata(): Promise<void> {
 
 async function workingTreeStatus(): Promise<string> {
   const result = await capture(["git", "status", "--porcelain", "--untracked-files=all"]);
-  if (result.exitCode !== 0) throw new Error(`could not inspect the Git working tree\n${result.stderr.trim()}`);
+  if (result.exitCode !== 0)
+    throw new Error(`could not inspect the Git working tree\n${result.stderr.trim()}`);
   return result.stdout.trim();
 }
 
@@ -164,11 +172,22 @@ async function ensureAuthenticated(): Promise<void> {
 
 async function ensureVersionIsUnpublished(): Promise<void> {
   const specification = `${CLI_PACKAGE_NAME}@${CLI_VERSION}`;
-  const result = await capture(["npm", "view", specification, "version", "--json", "--registry", NPM_REGISTRY]);
-  if (result.exitCode === 0) throw new Error(`${specification} is already published; bump the release version first`);
+  const result = await capture([
+    "npm",
+    "view",
+    specification,
+    "version",
+    "--json",
+    "--registry",
+    NPM_REGISTRY,
+  ]);
+  if (result.exitCode === 0)
+    throw new Error(`${specification} is already published; bump the release version first`);
   const diagnostic = `${result.stdout}\n${result.stderr}`;
   if (!diagnostic.includes("E404") && !diagnostic.includes("404 Not Found")) {
-    throw new Error(`could not check whether ${specification} is available\n${result.stderr.trim()}`);
+    throw new Error(
+      `could not check whether ${specification} is available\n${result.stderr.trim()}`,
+    );
   }
 }
 
@@ -199,7 +218,9 @@ export async function publishNPM(arguments_: ReleaseArguments): Promise<void> {
   ]);
 
   if (arguments_.dryRun) {
-    process.stdout.write(`\nDry run complete: ${CLI_PACKAGE_NAME}@${CLI_VERSION} was not published.\n`);
+    process.stdout.write(
+      `\nDry run complete: ${CLI_PACKAGE_NAME}@${CLI_VERSION} was not published.\n`,
+    );
     return;
   }
 
@@ -231,7 +252,9 @@ if (import.meta.main) {
   try {
     await main();
   } catch (error) {
-    process.stderr.write(`release:npm: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `release:npm: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     process.exitCode = 1;
   }
 }

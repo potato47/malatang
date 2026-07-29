@@ -2,26 +2,31 @@
   "name": "fia-framework",
   "version": "0.0.1",
   "private": true,
-  "type": "module",
   "workspaces": [
     "packages/*"
   ],
-  "engines": {
-    "bun": ">=1.3.14"
-  },
+  "type": "module",
   "scripts": {
     "fia": "bun run packages/cli/src/index.ts",
     "cli:build": "bun run --cwd packages/cli build",
+    "lint": "oxlint .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit",
     "test:cli": "bun run cli:build && bun test packages/cli/tests",
     "test:host": "swift test --package-path host",
     "host:package": "bun run tools/package-host.ts",
-    "check": "bun run typecheck && bun run test:cli && bun run test:host",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test:cli && bun run test:host",
     "version:npm": "bun run tools/version-npm.ts",
     "release:npm": "bun run tools/publish-npm.ts"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",
+    "oxfmt": "^0.61.0",
+    "oxlint": "^1.76.0",
     "typescript": "7.0.2"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
   }
 }

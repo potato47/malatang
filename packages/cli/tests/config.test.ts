@@ -12,7 +12,9 @@ import {
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 
 async function project(): Promise<string> {
@@ -76,39 +78,48 @@ describe("FIA configVersion 3", () => {
 
   test("resolves the default Bun app server and explicit watch paths", async () => {
     const root = await project();
-    const config = await resolveProjectConfig({
-      ...minimal(),
-      mcp: {
-        app: {
-          entry: "src/mcp/server.ts",
-          watch: ["src/mcp", "src/shared"],
+    const config = await resolveProjectConfig(
+      {
+        ...minimal(),
+        mcp: {
+          app: {
+            entry: "src/mcp/server.ts",
+            watch: ["src/mcp", "src/shared"],
+          },
         },
       },
-    }, root);
+      root,
+    );
     expect(config.mcp?.app).toEqual({
       entry: resolve(root, "src/mcp/server.ts"),
       watch: [resolve(root, "src/mcp"), resolve(root, "src/shared")],
     });
     expect(config.mcp?.servers).toEqual({});
 
-    const defaults = await resolveProjectConfig({
-      ...minimal(),
-      mcp: { app: { entry: "src/mcp/server.ts" } },
-    }, root);
+    const defaults = await resolveProjectConfig(
+      {
+        ...minimal(),
+        mcp: { app: { entry: "src/mcp/server.ts" } },
+      },
+      root,
+    );
     expect(defaults.mcp?.app?.watch).toEqual([resolve(root, "src/mcp")]);
   });
 
   test("supports multiple project-contained executable servers", async () => {
     const root = await project();
-    const config = await resolveProjectConfig({
-      ...minimal(),
-      mcp: {
-        app: { entry: "src/mcp/server.ts" },
-        servers: {
-          search: { executable: "mcp/search-server", args: ["--stdio"] },
+    const config = await resolveProjectConfig(
+      {
+        ...minimal(),
+        mcp: {
+          app: { entry: "src/mcp/server.ts" },
+          servers: {
+            search: { executable: "mcp/search-server", args: ["--stdio"] },
+          },
         },
       },
-    }, root);
+      root,
+    );
     expect(config.mcp?.servers.search).toEqual({
       executable: resolve(root, "mcp/search-server"),
       args: ["--stdio"],
@@ -118,10 +129,17 @@ describe("FIA configVersion 3", () => {
   test("rejects reserved and malformed server IDs", async () => {
     const root = await project();
     for (const id of ["app", "fia.native", "fia.search", "Upper", "a..b"]) {
-      await expectConfigError(resolveProjectConfig({
-        ...minimal(),
-        mcp: { servers: { [id]: { executable: "mcp/search-server" } } },
-      }, root), "CONFIG_INVALID", `mcp.servers.${id}`);
+      await expectConfigError(
+        resolveProjectConfig(
+          {
+            ...minimal(),
+            mcp: { servers: { [id]: { executable: "mcp/search-server" } } },
+          },
+          root,
+        ),
+        "CONFIG_INVALID",
+        `mcp.servers.${id}`,
+      );
     }
   });
 
@@ -129,25 +147,50 @@ describe("FIA configVersion 3", () => {
     const root = await project();
     const outside = await project();
     await symlink(resolve(outside, "mcp/search-server"), resolve(root, "mcp/linked"));
-    await expectConfigError(resolveProjectConfig({
-      ...minimal(),
-      mcp: { servers: { search: { executable: "../outside" } } },
-    }, root), "CONFIG_MCP_INVALID", "mcp.servers.search.executable");
-    await expectConfigError(resolveProjectConfig({
-      ...minimal(),
-      mcp: { servers: { search: { executable: "mcp/linked" } } },
-    }, root), "CONFIG_MCP_INVALID", "mcp.servers.search.executable");
+    await expectConfigError(
+      resolveProjectConfig(
+        {
+          ...minimal(),
+          mcp: { servers: { search: { executable: "../outside" } } },
+        },
+        root,
+      ),
+      "CONFIG_MCP_INVALID",
+      "mcp.servers.search.executable",
+    );
+    await expectConfigError(
+      resolveProjectConfig(
+        {
+          ...minimal(),
+          mcp: { servers: { search: { executable: "mcp/linked" } } },
+        },
+        root,
+      ),
+      "CONFIG_MCP_INVALID",
+      "mcp.servers.search.executable",
+    );
   });
 
   test("rejects every removed legacy field and unknown nested fields", async () => {
     const root = await project();
     for (const field of ["runtime", "swift", "entry"]) {
-      await expectConfigError(resolveProjectConfig({ ...minimal(), [field]: "legacy" }, root), "CONFIG_INVALID", field);
+      await expectConfigError(
+        resolveProjectConfig({ ...minimal(), [field]: "legacy" }, root),
+        "CONFIG_INVALID",
+        field,
+      );
     }
-    await expectConfigError(resolveProjectConfig({
-      ...minimal(),
-      mcp: { app: { entry: "src/mcp/server.ts", legacy: true } },
-    }, root), "CONFIG_INVALID", "mcp.app.legacy");
+    await expectConfigError(
+      resolveProjectConfig(
+        {
+          ...minimal(),
+          mcp: { app: { entry: "src/mcp/server.ts", legacy: true } },
+        },
+        root,
+      ),
+      "CONFIG_INVALID",
+      "mcp.app.legacy",
+    );
     await expectConfigError(
       resolveProjectConfig({ ...minimal(), configVersion: 2 }, root),
       "CONFIG_UNSUPPORTED_VERSION",

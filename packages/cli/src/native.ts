@@ -58,7 +58,9 @@ function resultValue(value: unknown): unknown {
   if ("structuredContent" in value) return value.structuredContent;
   const content = value.content;
   if (Array.isArray(content)) {
-    const text = content.find((item) => isObject(item) && item.type === "text" && typeof item.text === "string");
+    const text = content.find(
+      (item) => isObject(item) && item.type === "text" && typeof item.text === "string",
+    );
     if (isObject(text) && typeof text.text === "string") {
       try {
         return JSON.parse(text.text);
@@ -81,8 +83,12 @@ const nativeErrorCodes = new Set<FIANativeErrorCode>([
 ]);
 
 function mappedError(error: unknown): FIANativeError {
-  if (isObject(error) && isObject(error.data) && typeof error.data.code === "string"
-    && nativeErrorCodes.has(error.data.code as FIANativeErrorCode)) {
+  if (
+    isObject(error) &&
+    isObject(error.data) &&
+    typeof error.data.code === "string" &&
+    nativeErrorCodes.has(error.data.code as FIANativeErrorCode)
+  ) {
     return new FIANativeError(
       error.data.code as FIANativeErrorCode,
       error instanceof Error ? error.message : "The native MCP request failed",
@@ -96,9 +102,15 @@ function mappedError(error: unknown): FIANativeError {
   );
 }
 
-async function invoke<Result>(command: string, params: Record<string, unknown> = {}): Promise<Result> {
+async function invoke<Result>(
+  command: string,
+  params: Record<string, unknown> = {},
+): Promise<Result> {
   if (!mcp.isAvailable()) {
-    throw new FIANativeError("BRIDGE_UNAVAILABLE", "The FIA MCP bridge is unavailable in this environment");
+    throw new FIANativeError(
+      "BRIDGE_UNAVAILABLE",
+      "The FIA MCP bridge is unavailable in this environment",
+    );
   }
   try {
     const response = await mcp.server("fia.native").callTool({ name: command, arguments: params });

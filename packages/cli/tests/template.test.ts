@@ -11,7 +11,9 @@ const repositoryRoot = resolve(packageRoot, "../..");
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 
 async function generatedProject(): Promise<string> {
@@ -56,26 +58,30 @@ async function generatedProject(): Promise<string> {
 describe("generated MCP React template", () => {
   test("typechecks against the published FIA API", async () => {
     const project = await generatedProject();
-    const child = Bun.spawn([
-      process.execPath,
-      resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
-      "--noEmit",
-      "-p",
-      resolve(project, "tsconfig.json"),
-    ], { cwd: project, stdout: "pipe", stderr: "pipe" });
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
+        "--noEmit",
+        "-p",
+        resolve(project, "tsconfig.json"),
+      ],
+      { cwd: project, stdout: "pipe", stderr: "pipe" },
+    );
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
       child.exited,
     ]);
-    if (exitCode !== 0) throw new Error(`Generated template did not typecheck:\n${stdout}${stderr}`);
+    if (exitCode !== 0)
+      throw new Error(`Generated template did not typecheck:\n${stdout}${stderr}`);
   });
 
   test("exports a marked synchronous MCP server factory", async () => {
     const project = await generatedProject();
-    const module = await import(
+    const module = (await import(
       `${pathToFileURL(resolve(project, "src/mcp/server.ts")).href}?test=${crypto.randomUUID()}`
-    ) as { default: unknown };
+    )) as { default: unknown };
     expect(isDefinedMcpServer(module.default)).toBe(true);
   });
 });

@@ -8,8 +8,17 @@ const PACKAGE_PATH = resolve(repositoryRoot, "packages/cli/package.json");
 const METADATA_PATH = resolve(repositoryRoot, "packages/cli/src/metadata.ts");
 const LOCK_PATH = resolve(repositoryRoot, "bun.lock");
 const HOST_PATH = resolve(repositoryRoot, "packages/cli/assets/host/darwin-arm64/FIAHost");
-const HOST_MANIFEST_PATH = resolve(repositoryRoot, "packages/cli/assets/host/darwin-arm64/manifest.json");
-const VERSIONED_PATHS = [PACKAGE_PATH, METADATA_PATH, LOCK_PATH, HOST_PATH, HOST_MANIFEST_PATH] as const;
+const HOST_MANIFEST_PATH = resolve(
+  repositoryRoot,
+  "packages/cli/assets/host/darwin-arm64/manifest.json",
+);
+const VERSIONED_PATHS = [
+  PACKAGE_PATH,
+  METADATA_PATH,
+  LOCK_PATH,
+  HOST_PATH,
+  HOST_MANIFEST_PATH,
+] as const;
 
 const help = `Update the @semicoder/fia release version
 
@@ -56,10 +65,18 @@ export function parseVersionArguments(arguments_: readonly string[]): VersionArg
 }
 
 function parseVersion(value: string): ParsedVersion {
-  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(value);
+  const match =
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(
+      value,
+    );
   if (match === null) throw new Error(`invalid semantic version: ${value}`);
   const prerelease = match[4]?.split(".") ?? [];
-  if (prerelease.some((identifier) => /^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith("0"))) {
+  if (
+    prerelease.some(
+      (identifier) =>
+        /^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith("0"),
+    )
+  ) {
     throw new Error(`invalid semantic version: ${value}`);
   }
   return {
@@ -113,7 +130,8 @@ export function requireIncreasingVersion(current: string, target: string): void 
 
 export function readMetadataVersion(source: string): string {
   const matches = [...source.matchAll(/export const CLI_VERSION = "([^"]+)";/g)];
-  if (matches.length !== 1) throw new Error("CLI metadata must contain exactly one CLI_VERSION declaration");
+  if (matches.length !== 1)
+    throw new Error("CLI metadata must contain exactly one CLI_VERSION declaration");
   return matches[0]![1]!;
 }
 
@@ -154,7 +172,9 @@ export function replaceLockVersion(source: string, current: string, target: stri
 }
 
 async function snapshotFiles(): Promise<Snapshot[]> {
-  return await Promise.all(VERSIONED_PATHS.map(async (path) => ({ path, contents: await readFile(path) })));
+  return await Promise.all(
+    VERSIONED_PATHS.map(async (path) => ({ path, contents: await readFile(path) })),
+  );
 }
 
 async function restoreFiles(snapshots: readonly Snapshot[]): Promise<void> {
@@ -163,7 +183,8 @@ async function restoreFiles(snapshots: readonly Snapshot[]): Promise<void> {
 
 async function writeVersionSources(current: string, target: string): Promise<void> {
   const packageSource = JSON.parse(await readFile(PACKAGE_PATH, "utf8")) as Record<string, unknown>;
-  if (packageSource.version !== current) throw new Error("package version changed during the version update");
+  if (packageSource.version !== current)
+    throw new Error("package version changed during the version update");
   packageSource.version = target;
   const metadataSource = await readFile(METADATA_PATH, "utf8");
   const lockSource = await readFile(LOCK_PATH, "utf8");
@@ -183,12 +204,12 @@ async function validateVersionedFiles(target: string): Promise<void> {
   const hasher = new Bun.CryptoHasher("sha256");
   hasher.update(await Bun.file(HOST_PATH).arrayBuffer());
   if (
-    packageSource.version !== target
-    || metadataVersion !== target
-    || lockVersion !== target
-    || manifest.cliVersion !== target
-    || manifest.hostVersion !== target
-    || manifest.sha256 !== hasher.digest("hex")
+    packageSource.version !== target ||
+    metadataVersion !== target ||
+    lockVersion !== target ||
+    manifest.cliVersion !== target ||
+    manifest.hostVersion !== target ||
+    manifest.sha256 !== hasher.digest("hex")
   ) {
     throw new Error(`generated release metadata is not consistently versioned as ${target}`);
   }
@@ -217,15 +238,22 @@ export async function updateNPMVersion(target: string): Promise<void> {
     try {
       await restoreFiles(snapshots);
     } catch (rollbackError) {
-      throw new AggregateError([error, rollbackError], "version update failed and rollback was incomplete");
+      throw new AggregateError(
+        [error, rollbackError],
+        "version update failed and rollback was incomplete",
+      );
     }
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`version update failed; versioned files were rolled back: ${detail}`, { cause: error });
+    throw new Error(`version update failed; versioned files were rolled back: ${detail}`, {
+      cause: error,
+    });
   }
 
   process.stdout.write(`\nPrepared @semicoder/fia@${target}. Next run:\n`);
   process.stdout.write("  bun run release:npm --dry-run\n");
-  process.stdout.write("  git add packages/cli/package.json packages/cli/src/metadata.ts bun.lock packages/cli/assets/host\n");
+  process.stdout.write(
+    "  git add packages/cli/package.json packages/cli/src/metadata.ts bun.lock packages/cli/assets/host\n",
+  );
   process.stdout.write(`  git commit -m "release: v${target}"\n`);
   process.stdout.write("  bun run release:npm\n");
 }
@@ -243,7 +271,9 @@ if (import.meta.main) {
   try {
     await main();
   } catch (error) {
-    process.stderr.write(`version:npm: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(
+      `version:npm: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     process.exitCode = 1;
   }
 }

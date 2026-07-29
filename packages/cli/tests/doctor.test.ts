@@ -39,7 +39,11 @@ describe("fia doctor", () => {
     const report = await runDoctor(probe);
 
     expect(report.ok).toBe(false);
-    expect(report.checks.slice(0, 3).map((check) => check.status)).toEqual(["fail", "fail", "fail"]);
+    expect(report.checks.slice(0, 3).map((check) => check.status)).toEqual([
+      "fail",
+      "fail",
+      "fail",
+    ]);
   });
 
   test("accepts Bun versions newer than the minimum", async () => {
@@ -76,10 +80,9 @@ describe("fia doctor", () => {
     const report = await runDoctor(probe);
 
     expect(report.ok).toBe(false);
-    expect(report.checks.filter((check) => check.status === "fail").map((check) => check.id)).toEqual([
-      "codesign",
-      "working-directory",
-    ]);
+    expect(
+      report.checks.filter((check) => check.status === "fail").map((check) => check.id),
+    ).toEqual(["codesign", "working-directory"]);
   });
 
   test("treats missing native and release tools as optional warnings", async () => {
@@ -113,7 +116,9 @@ describe("fia doctor", () => {
       required: false,
       status: "warn",
     });
-    expect(report.checks.find((check) => check.id === "swift")?.message).toContain("Host development");
+    expect(report.checks.find((check) => check.id === "swift")?.message).toContain(
+      "Host development",
+    );
   });
 
   test("adds command details only in debug mode", async () => {
@@ -136,10 +141,7 @@ describe("fia doctor", () => {
   test("renders stable text status markers", async () => {
     const probe = new FakeDoctorProbe();
     probe.bunVersion = "1.3.13";
-    probe.setCommand(
-      ["/usr/bin/xcrun", "--find", "stapler"],
-      commandResult("", { exitCode: 1 }),
-    );
+    probe.setCommand(["/usr/bin/xcrun", "--find", "stapler"], commandResult("", { exitCode: 1 }));
 
     const output = renderDoctorText(await runDoctor(probe));
 

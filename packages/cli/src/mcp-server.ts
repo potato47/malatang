@@ -1,8 +1,4 @@
-import {
-  McpServer,
-  Server,
-  type McpRequestContext,
-} from "@modelcontextprotocol/server";
+import { McpServer, Server, type McpRequestContext } from "@modelcontextprotocol/server";
 
 const FIA_MCP_FACTORY = Symbol.for("@semicoder/fia/mcp-server-factory");
 
@@ -27,8 +23,9 @@ export function defineMcpServer(
 }
 
 export function isDefinedMcpServer(value: unknown): value is FIAMcpServerFactory {
-  return typeof value === "function"
-    && (value as Partial<FIAMcpServerFactory>)[FIA_MCP_FACTORY] === true;
+  return (
+    typeof value === "function" && (value as Partial<FIAMcpServerFactory>)[FIA_MCP_FACTORY] === true
+  );
 }
 
 export { McpServer, Server };

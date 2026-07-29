@@ -116,12 +116,17 @@ function usageError(io: CLIIO, message: string): number {
 function debugError(error: unknown): string {
   if (error instanceof Error) {
     const description = error.stack ?? error.message;
-    return error.cause === undefined ? description : `${description}\nCaused by: ${debugError(error.cause)}`;
+    return error.cause === undefined
+      ? description
+      : `${description}\nCaused by: ${debugError(error.cause)}`;
   }
   return String(error);
 }
 
-export async function runCLI(args: readonly string[], dependencies: CLIDependencies = {}): Promise<number> {
+export async function runCLI(
+  args: readonly string[],
+  dependencies: CLIDependencies = {},
+): Promise<number> {
   const io = dependencies.io ?? defaultIO;
   const remaining = [...args];
   const debug = remaining.includes("--debug");
@@ -148,14 +153,18 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
   if (command === "create") {
     const createArguments = remaining.slice(1);
     if (createArguments.includes("-h") || createArguments.includes("--help")) {
-      if (createArguments.length !== 1) return usageError(io, "create --help does not accept other arguments");
+      if (createArguments.length !== 1)
+        return usageError(io, "create --help does not accept other arguments");
       io.stdout(createHelp);
       return 0;
     }
     const name = createArguments[0];
-    if (name === undefined || name.startsWith("-")) return usageError(io, "create requires a project name");
+    if (name === undefined || name.startsWith("-"))
+      return usageError(io, "create requires a project name");
     const flags = createArguments.slice(1);
-    const unknown = flags.find((flag) => flag !== "--no-mcp" && flag !== "--no-install" && flag !== "--git");
+    const unknown = flags.find(
+      (flag) => flag !== "--no-mcp" && flag !== "--no-install" && flag !== "--git",
+    );
     if (unknown !== undefined) return usageError(io, `unknown create option: ${unknown}`);
     for (const flag of ["--no-mcp", "--no-install", "--git"] as const) {
       if (flags.filter((value) => value === flag).length > 1) {
@@ -175,7 +184,9 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
       });
       return 0;
     } catch (error) {
-      io.stderr(`fia: error: ${error instanceof Error ? error.message : "project creation failed"}\n`);
+      io.stderr(
+        `fia: error: ${error instanceof Error ? error.message : "project creation failed"}\n`,
+      );
       if (debug) io.stderr(`${debugError(error)}\n`);
       return 1;
     }
@@ -183,7 +194,8 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
   if (command === "dev" || command === "build" || command === "run") {
     const flags = remaining.slice(1);
     if (flags.includes("-h") || flags.includes("--help")) {
-      if (flags.length !== 1) return usageError(io, `${command} --help does not accept other options`);
+      if (flags.length !== 1)
+        return usageError(io, `${command} --help does not accept other options`);
       io.stdout(applicationHelp[command]);
       return 0;
     }
@@ -220,7 +232,9 @@ export async function runCLI(args: readonly string[], dependencies: CLIDependenc
   try {
     const probe = dependencies.doctorProbe ?? new SystemDoctorProbe();
     const report = await runDoctor(probe, { debug });
-    io.stdout(flags.includes("--json") ? `${JSON.stringify(report, null, 2)}\n` : renderDoctorText(report));
+    io.stdout(
+      flags.includes("--json") ? `${JSON.stringify(report, null, 2)}\n` : renderDoctorText(report),
+    );
     return report.ok ? 0 : 1;
   } catch (error) {
     io.stderr("fia: error: doctor could not complete\n");

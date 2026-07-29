@@ -1,8 +1,4 @@
-import {
-  CLI_PACKAGE_NAME,
-  CLI_VERSION,
-  MINIMUM_MACOS_MAJOR_VERSION,
-} from "./metadata.ts";
+import { CLI_PACKAGE_NAME, CLI_VERSION, MINIMUM_MACOS_MAJOR_VERSION } from "./metadata.ts";
 import { isBunVersionSupported, MINIMUM_BUN_VERSION } from "./bun-version.ts";
 import { ACCESS_MODE, type CommandResult, type DoctorProbe } from "./system-probe.ts";
 
@@ -83,7 +79,8 @@ async function platformCheck({ probe, debug }: CheckContext): Promise<DoctorChec
   const command = ["/usr/bin/sw_vers", "-productVersion"] as const;
   const commandResult = await probe.run(command);
   const version = firstLine(commandResult.stdout);
-  const major = version === undefined ? Number.NaN : Number.parseInt(version.split(".")[0] ?? "", 10);
+  const major =
+    version === undefined ? Number.NaN : Number.parseInt(version.split(".")[0] ?? "", 10);
   if (commandResult.exitCode !== 0 || commandResult.timedOut || !Number.isFinite(major)) {
     return result(
       "platform",
@@ -155,7 +152,9 @@ async function workingDirectoryCheck({ probe, debug }: CheckContext): Promise<Do
     "Working directory",
     true,
     available ? "pass" : "fail",
-    available ? "Current directory is readable and writable" : "Current directory must be readable and writable",
+    available
+      ? "Current directory is readable and writable"
+      : "Current directory must be readable and writable",
     debug ? [`path: ${probe.cwd}`] : undefined,
   );
 }
@@ -175,7 +174,9 @@ async function optionalCommandCheck(
     label,
     required,
     available ? "pass" : failureStatus(required),
-    available ? availableMessage(commandResult) : `${label} is not available${required ? "" : " (optional)"}`,
+    available
+      ? availableMessage(commandResult)
+      : `${label} is not available${required ? "" : " (optional)"}`,
     context.debug ? commandDetails(command, commandResult) : undefined,
   );
 }
@@ -185,7 +186,8 @@ async function swiftCheck(context: CheckContext): Promise<DoctorCheckResult> {
   const commandResult = await context.probe.run(command);
   const line = firstLine(commandResult.stdout);
   const major = Number.parseInt(line?.match(/Swift version\s+(\d+)/i)?.[1] ?? "", 10);
-  const available = commandResult.exitCode === 0 && !commandResult.timedOut && Number.isFinite(major);
+  const available =
+    commandResult.exitCode === 0 && !commandResult.timedOut && Number.isFinite(major);
   const supported = available && major >= 6;
   return result(
     "swift",
@@ -193,10 +195,10 @@ async function swiftCheck(context: CheckContext): Promise<DoctorCheckResult> {
     false,
     supported ? "pass" : "warn",
     supported
-      ? line ?? "Swift 6 is available for FIA Host development"
+      ? (line ?? "Swift 6 is available for FIA Host development")
       : available
-      ? `Swift ${major} is unsupported for FIA Host development; Swift 6 or newer is optional`
-      : "Swift is not available (optional; only needed for FIA Host development)",
+        ? `Swift ${major} is unsupported for FIA Host development; Swift 6 or newer is optional`
+        : "Swift is not available (optional; only needed for FIA Host development)",
     context.debug ? commandDetails(command, commandResult) : undefined,
   );
 }
@@ -221,7 +223,8 @@ async function toolCheck(
     id,
     label,
     ["/usr/bin/xcrun", "--find", id],
-    (commandResult) => `${label} is available at ${firstLine(commandResult.stdout) ?? "the active toolchain"}`,
+    (commandResult) =>
+      `${label} is available at ${firstLine(commandResult.stdout) ?? "the active toolchain"}`,
   );
 }
 
@@ -242,7 +245,10 @@ async function developerIDCheck(context: CheckContext): Promise<DoctorCheckResul
   );
 }
 
-export async function runDoctor(probe: DoctorProbe, options: DoctorOptions = {}): Promise<DoctorReport> {
+export async function runDoctor(
+  probe: DoctorProbe,
+  options: DoctorOptions = {},
+): Promise<DoctorReport> {
   const context = { probe, debug: options.debug === true };
   const checks: DoctorCheckResult[] = [];
   for (const check of [

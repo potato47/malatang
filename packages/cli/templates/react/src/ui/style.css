@@ -1,11 +1,20 @@
 :root {
   color: #f5f7ff;
   background: #080b14;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   font-synthesis: none;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   min-width: 320px;
@@ -13,11 +22,13 @@ body {
   margin: 0;
   background:
     radial-gradient(circle at 15% 10%, rgb(98 77 227 / 24%), transparent 34rem),
-    radial-gradient(circle at 90% 75%, rgb(0 194 203 / 16%), transparent 32rem),
-    #080b14;
+    radial-gradient(circle at 90% 75%, rgb(0 194 203 / 16%), transparent 32rem), #080b14;
 }
 
-button, input { font: inherit; }
+button,
+input {
+  font: inherit;
+}
 
 main {
   width: min(1040px, calc(100% - 48px));
@@ -25,7 +36,9 @@ main {
   padding: 10vh 0 40px;
 }
 
-.hero { max-width: 760px; }
+.hero {
+  max-width: 760px;
+}
 
 .eyebrow {
   color: #8fdcff;
@@ -56,7 +69,9 @@ h1 {
   margin-top: 56px;
 }
 
-.grid .card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.grid .card:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 
 .card {
   min-height: 260px;
@@ -68,8 +83,12 @@ h1 {
   backdrop-filter: blur(20px);
 }
 
-.card.success { border-color: rgb(78 226 172 / 42%); }
-.card.error { border-color: rgb(255 107 130 / 50%); }
+.card.success {
+  border-color: rgb(78 226 172 / 42%);
+}
+.card.error {
+  border-color: rgb(255 107 130 / 50%);
+}
 
 .badge {
   display: inline-flex;
@@ -83,7 +102,10 @@ h1 {
   text-transform: uppercase;
 }
 
-h2 { margin: 24px 0 10px; font-size: 1.4rem; }
+h2 {
+  margin: 24px 0 10px;
+  font-size: 1.4rem;
+}
 
 .card p {
   min-height: 52px;
@@ -100,13 +122,24 @@ button {
   background: linear-gradient(135deg, #b9c8ff, #72e4dc);
   font-weight: 750;
   cursor: pointer;
-  transition: transform 140ms ease, opacity 140ms ease;
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease;
 }
 
-button:hover { transform: translateY(-1px); }
-button:disabled { cursor: wait; opacity: 0.55; }
+button:hover {
+  transform: translateY(-1px);
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
 
-.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 
 footer {
   margin-top: 30px;
@@ -115,7 +148,15 @@ footer {
 }
 
 @media (max-width: 720px) {
-  main { width: min(100% - 28px, 560px); padding-top: 7vh; }
-  .grid { grid-template-columns: 1fr; margin-top: 40px; }
-  .grid .card:last-child:nth-child(odd) { grid-column: auto; }
+  main {
+    width: min(100% - 28px, 560px);
+    padding-top: 7vh;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+    margin-top: 40px;
+  }
+  .grid .card:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
 }

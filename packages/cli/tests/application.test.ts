@@ -16,7 +16,9 @@ const repositoryRoot = resolve(packageRoot, "../..");
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
 });
 
 async function project(name: string, mcp = true): Promise<string> {
@@ -94,20 +96,21 @@ describe("FIA MCP application packaging", () => {
     expect(await Bun.file(resolve(app, "Contents/Helpers/MCPServers/app")).exists()).toBe(true);
     expect(await Bun.file(resolve(app, "Contents/MacOS/fia-runtime")).exists()).toBe(false);
     expect(await Bun.file(resolve(app, "Contents/MacOS/fia-backend")).exists()).toBe(false);
-    const config = JSON.parse(await readFile(
-      resolve(app, "Contents/Resources/fia-config.json"),
-      "utf8",
-    )) as Record<string, unknown>;
+    const config = JSON.parse(
+      await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"),
+    ) as Record<string, unknown>;
     expect(config).toMatchObject({
       schemaVersion: 5,
       bridgeVersion: 1,
       mcpProtocolVersion: "2026-07-28",
       ui: { mode: "bundled", entry: "UI/index.html", url: null },
-      mcpServers: [{
-        id: "app",
-        executable: "Helpers/MCPServers/app",
-        arguments: [],
-      }],
+      mcpServers: [
+        {
+          id: "app",
+          executable: "Helpers/MCPServers/app",
+          arguments: [],
+        },
+      ],
       nativeCapabilities: ["tools", "resources", "subscriptions"],
     });
     const signedServer = resolve(app, "Contents/Helpers/MCPServers/app");
@@ -147,10 +150,9 @@ describe("FIA MCP application packaging", () => {
     const app = resolve(root, "dist/Ui Build.app");
     expect(await Bun.file(resolve(app, "Contents/Resources/UI/index.html")).exists()).toBe(true);
     expect(await Bun.file(resolve(app, "Contents/Helpers/MCPServers/app")).exists()).toBe(false);
-    const config = JSON.parse(await readFile(
-      resolve(app, "Contents/Resources/fia-config.json"),
-      "utf8",
-    )) as { mcpServers: unknown[] };
+    const config = JSON.parse(
+      await readFile(resolve(app, "Contents/Resources/fia-config.json"), "utf8"),
+    ) as { mcpServers: unknown[] };
     expect(config.mcpServers).toEqual([]);
   }, 30_000);
 });

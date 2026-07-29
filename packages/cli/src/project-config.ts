@@ -34,7 +34,11 @@ export class ProjectConfigError extends Error {
   readonly code: ProjectConfigErrorCode;
   readonly path?: string;
 
-  constructor(code: ProjectConfigErrorCode, message: string, options: { path?: string; cause?: unknown } = {}) {
+  constructor(
+    code: ProjectConfigErrorCode,
+    message: string,
+    options: { path?: string; cause?: unknown } = {},
+  ) {
     super(message, { cause: options.cause });
     this.name = "ProjectConfigError";
     this.code = code;
@@ -74,10 +78,15 @@ export interface ResolvedFIAConfig {
       readonly entry: string;
       readonly watch: readonly string[];
     };
-    readonly servers: Readonly<Record<string, {
-      readonly executable: string;
-      readonly args: readonly string[];
-    }>>;
+    readonly servers: Readonly<
+      Record<
+        string,
+        {
+          readonly executable: string;
+          readonly args: readonly string[];
+        }
+      >
+    >;
   };
 }
 
@@ -96,16 +105,22 @@ function objectAt(value: unknown, path: string): Record<string, unknown> {
   return value;
 }
 
-function exactKeys(object: Record<string, unknown>, allowed: readonly string[], path: string): void {
+function exactKeys(
+  object: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+): void {
   const allowedKeys = new Set(allowed);
   const unknown = Object.keys(object).find((key) => !allowedKeys.has(key));
-  if (unknown !== undefined) invalid(path === "config" ? unknown : `${path}.${unknown}`, "unknown field");
+  if (unknown !== undefined)
+    invalid(path === "config" ? unknown : `${path}.${unknown}`, "unknown field");
 }
 
 function requiredString(object: Record<string, unknown>, key: string, path: string): string {
   const value = object[key];
   const field = `${path}.${key}`;
-  if (typeof value !== "string") invalid(field, value === undefined ? "is required" : "expected a string");
+  if (typeof value !== "string")
+    invalid(field, value === undefined ? "is required" : "expected a string");
   if (value.trim().length === 0) invalid(field, "must not be empty");
   if (value.includes("\0")) invalid(field, "must not contain NUL");
   return value;
@@ -143,7 +158,10 @@ function optionalEnum<const Value extends string>(
   const value = object[key];
   if (value === undefined) return fallback;
   if (typeof value !== "string" || !allowed.includes(value as Value)) {
-    invalid(`${path}.${key}`, `expected one of ${allowed.map((item) => JSON.stringify(item)).join(", ")}`);
+    invalid(
+      `${path}.${key}`,
+      `expected one of ${allowed.map((item) => JSON.stringify(item)).join(", ")}`,
+    );
   }
   return value as Value;
 }
@@ -158,7 +176,8 @@ function optionalBoundedString(
   if (object[key] === undefined) return fallback;
   const value = requiredString(object, key, path);
   if (value !== value.trim()) invalid(`${path}.${key}`, "must not contain surrounding whitespace");
-  if (value.length > maximumLength) invalid(`${path}.${key}`, `must be at most ${maximumLength} characters`);
+  if (value.length > maximumLength)
+    invalid(`${path}.${key}`, `must be at most ${maximumLength} characters`);
   return value;
 }
 
@@ -183,12 +202,21 @@ function resolveProjectPath(
   code: ProjectConfigErrorCode = "CONFIG_MCP_INVALID",
 ): string {
   if (isAbsolute(value)) {
-    throw new ProjectConfigError(code, `${field}: must be relative to fia.config.ts`, { path: field });
+    throw new ProjectConfigError(code, `${field}: must be relative to fia.config.ts`, {
+      path: field,
+    });
   }
   const path = resolve(projectRoot, value);
   const fromRoot = relative(projectRoot, path);
-  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-    throw new ProjectConfigError(code, `${field}: must stay inside the project directory`, { path: field });
+  if (
+    fromRoot === "" ||
+    fromRoot === ".." ||
+    fromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(fromRoot)
+  ) {
+    throw new ProjectConfigError(code, `${field}: must stay inside the project directory`, {
+      path: field,
+    });
   }
   return path;
 }
@@ -197,11 +225,15 @@ async function requireProjectPath(
   projectRoot: string,
   value: unknown,
   field: string,
-  options: { kind: "file" | "any"; executable?: boolean; code?: ProjectConfigErrorCode } = { kind: "file" },
+  options: { kind: "file" | "any"; executable?: boolean; code?: ProjectConfigErrorCode } = {
+    kind: "file",
+  },
 ): Promise<string> {
   const code = options.code ?? "CONFIG_MCP_INVALID";
   if (typeof value !== "string" || value.trim().length === 0 || value.includes("\0")) {
-    throw new ProjectConfigError(code, `${field}: expected a non-empty relative path`, { path: field });
+    throw new ProjectConfigError(code, `${field}: expected a non-empty relative path`, {
+      path: field,
+    });
   }
   let path: string;
   try {
@@ -211,15 +243,24 @@ async function requireProjectPath(
     await access(path, constants.R_OK | (options.executable ? constants.X_OK : 0));
     const [physicalRoot, physicalPath] = await Promise.all([realpath(projectRoot), realpath(path)]);
     const fromRoot = relative(physicalRoot, physicalPath);
-    if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+    if (
+      fromRoot === "" ||
+      fromRoot === ".." ||
+      fromRoot.startsWith(`..${sep}`) ||
+      isAbsolute(fromRoot)
+    ) {
       throw new Error("resolved path is outside project");
     }
   } catch (error) {
     if (error instanceof ProjectConfigError) throw error;
-    throw new ProjectConfigError(code, `${field}: path is not accessible inside the project: ${value}`, {
-      path: field,
-      cause: error,
-    });
+    throw new ProjectConfigError(
+      code,
+      `${field}: path is not accessible inside the project: ${value}`,
+      {
+        path: field,
+        cause: error,
+      },
+    );
   }
   return path;
 }
@@ -247,7 +288,9 @@ async function resolveMcp(
   if (mcp.app !== undefined) {
     const source = objectAt(mcp.app, "mcp.app");
     exactKeys(source, ["entry", "watch"], "mcp.app");
-    const entry = await requireProjectPath(projectRoot, source.entry, "mcp.app.entry", { kind: "file" });
+    const entry = await requireProjectPath(projectRoot, source.entry, "mcp.app.entry", {
+      kind: "file",
+    });
     let watch: readonly string[];
     if (source.watch === undefined) {
       watch = [dirname(entry)];
@@ -255,9 +298,11 @@ async function resolveMcp(
       if (!Array.isArray(source.watch) || source.watch.length === 0) {
         invalid("mcp.app.watch", "expected a non-empty array of project paths");
       }
-      watch = await Promise.all(source.watch.map((value, index) =>
-        requireProjectPath(projectRoot, value, `mcp.app.watch.${index}`, { kind: "any" })
-      ));
+      watch = await Promise.all(
+        source.watch.map((value, index) =>
+          requireProjectPath(projectRoot, value, `mcp.app.watch.${index}`, { kind: "any" }),
+        ),
+      );
     }
     app = { entry, watch };
   }
@@ -315,12 +360,22 @@ export async function resolveProjectConfig(
   const app = objectAt(root.app, "app");
   exactKeys(app, ["name", "identifier", "version", "mode", "icon"], "app");
   const name = requiredString(app, "name", "app");
-  if (name !== name.trim() || name === "." || name === ".." || /[\0/:]/.test(name)) {
-    invalid("app.name", "must be a safe macOS application name without surrounding whitespace, '/', ':', or NUL");
+  if (
+    name !== name.trim() ||
+    name === "." ||
+    name === ".." ||
+    name.includes("\u0000") ||
+    /[/:]/.test(name)
+  ) {
+    invalid(
+      "app.name",
+      "must be a safe macOS application name without surrounding whitespace, '/', ':', or NUL",
+    );
   }
   const identifier = requiredString(app, "identifier", "app");
   const identifierPattern = /^[A-Za-z0-9][A-Za-z0-9-]*(\.[A-Za-z0-9][A-Za-z0-9-]*)+$/;
-  if (!identifierPattern.test(identifier)) invalid("app.identifier", "expected a reverse-DNS bundle identifier");
+  if (!identifierPattern.test(identifier))
+    invalid("app.identifier", "expected a reverse-DNS bundle identifier");
   const version = optionalString(app, "version", "app", DEFAULT_APP_VERSION);
   if (!/^\d+\.\d+\.\d+$/.test(version)) invalid("app.version", "expected a numeric X.Y.Z version");
   const mode = optionalEnum(app, "mode", "app", ["dock", "statusBar", "hybrid"], "dock");
@@ -331,27 +386,46 @@ export async function resolveProjectConfig(
       code: "CONFIG_ICON_INVALID",
     });
     if (extname(icon).toLowerCase() !== ".icns") {
-      throw new ProjectConfigError("CONFIG_ICON_INVALID", "app.icon: expected an ICNS file", { path: "app.icon" });
+      throw new ProjectConfigError("CONFIG_ICON_INVALID", "app.icon: expected an ICNS file", {
+        path: "app.icon",
+      });
     }
   }
 
   const uiValue = root.ui === undefined ? DEFAULT_UI : root.ui;
-  const ui = await requireProjectPath(projectRoot, uiValue, "ui", { kind: "file", code: "CONFIG_UI_INVALID" });
+  const ui = await requireProjectPath(projectRoot, uiValue, "ui", {
+    kind: "file",
+    code: "CONFIG_UI_INVALID",
+  });
   if (extname(ui).toLowerCase() !== ".html") {
-    throw new ProjectConfigError("CONFIG_UI_INVALID", "ui: expected an HTML entry file", { path: "ui" });
+    throw new ProjectConfigError("CONFIG_UI_INVALID", "ui: expected an HTML entry file", {
+      path: "ui",
+    });
   }
 
   const window = root.window === undefined ? {} : objectAt(root.window, "window");
-  exactKeys(window, [
-    "width", "height", "minWidth", "minHeight", "closeBehavior", "restoreState", "alwaysOnTop",
-    "visibleOnAllSpaces", "visibleOverFullScreen",
-  ], "window");
+  exactKeys(
+    window,
+    [
+      "width",
+      "height",
+      "minWidth",
+      "minHeight",
+      "closeBehavior",
+      "restoreState",
+      "alwaysOnTop",
+      "visibleOnAllSpaces",
+      "visibleOverFullScreen",
+    ],
+    "window",
+  );
   const width = optionalDimension(window, "width", "window", DEFAULT_WINDOW.width);
   const height = optionalDimension(window, "height", "window", DEFAULT_WINDOW.height);
   const minWidth = optionalDimension(window, "minWidth", "window", DEFAULT_WINDOW.minWidth);
   const minHeight = optionalDimension(window, "minHeight", "window", DEFAULT_WINDOW.minHeight);
   if (width < minWidth) invalid("window.width", "must be greater than or equal to window.minWidth");
-  if (height < minHeight) invalid("window.height", "must be greater than or equal to window.minHeight");
+  if (height < minHeight)
+    invalid("window.height", "must be greater than or equal to window.minHeight");
   const closeBehavior = optionalEnum(
     window,
     "closeBehavior",
@@ -366,7 +440,13 @@ export async function resolveProjectConfig(
 
   const statusBar = root.statusBar === undefined ? {} : objectAt(root.statusBar, "statusBar");
   exactKeys(statusBar, ["symbol", "tooltip"], "statusBar");
-  const symbol = optionalBoundedString(statusBar, "symbol", "statusBar", DEFAULT_STATUS_BAR_SYMBOL, 128);
+  const symbol = optionalBoundedString(
+    statusBar,
+    "symbol",
+    "statusBar",
+    DEFAULT_STATUS_BAR_SYMBOL,
+    128,
+  );
   const tooltip = optionalBoundedString(statusBar, "tooltip", "statusBar", name, 512);
   const mcp = await resolveMcp(root, projectRoot);
 
@@ -392,7 +472,9 @@ export async function resolveProjectConfig(
   };
 }
 
-export async function loadProjectConfig(projectDirectory = process.cwd()): Promise<ResolvedFIAConfig> {
+export async function loadProjectConfig(
+  projectDirectory = process.cwd(),
+): Promise<ResolvedFIAConfig> {
   const projectRoot = resolve(projectDirectory);
   const configPath = resolve(projectRoot, CONFIG_FILE_NAME);
   try {
@@ -400,20 +482,28 @@ export async function loadProjectConfig(projectDirectory = process.cwd()): Promi
     if (!configStat.isFile()) throw new Error("not a file");
     await access(configPath, constants.R_OK);
   } catch (error) {
-    throw new ProjectConfigError("CONFIG_NOT_FOUND", `${CONFIG_FILE_NAME}: file was not found or is not readable`, {
-      cause: error,
-    });
+    throw new ProjectConfigError(
+      "CONFIG_NOT_FOUND",
+      `${CONFIG_FILE_NAME}: file was not found or is not readable`,
+      {
+        cause: error,
+      },
+    );
   }
 
   let imported: { default?: FIAConfig };
   try {
     const url = pathToFileURL(configPath);
     url.searchParams.set("fia", crypto.randomUUID());
-    imported = await import(url.href) as { default?: FIAConfig };
+    imported = (await import(url.href)) as { default?: FIAConfig };
   } catch (error) {
-    throw new ProjectConfigError("CONFIG_IMPORT_FAILED", `${CONFIG_FILE_NAME}: could not be imported`, {
-      cause: error,
-    });
+    throw new ProjectConfigError(
+      "CONFIG_IMPORT_FAILED",
+      `${CONFIG_FILE_NAME}: could not be imported`,
+      {
+        cause: error,
+      },
+    );
   }
   if (!("default" in imported)) invalid("config", "fia.config.ts must have a default export");
   return await resolveProjectConfig(imported.default, projectRoot, configPath);

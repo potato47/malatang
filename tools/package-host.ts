@@ -15,21 +15,25 @@ const cacheEnvironment = {
   SWIFTPM_MODULECACHE_OVERRIDE: resolve(repositoryRoot, ".fia/cache/swiftpm-module-cache"),
 };
 
-await run([
-  "/usr/bin/swift",
-  "build",
-  "-c",
-  "release",
-  "--arch",
-  "arm64",
-  "--package-path",
-  resolve(repositoryRoot, "host"),
-  "--scratch-path",
-  scratch,
-], { env: cacheEnvironment });
+await run(
+  [
+    "/usr/bin/swift",
+    "build",
+    "-c",
+    "release",
+    "--arch",
+    "arm64",
+    "--package-path",
+    resolve(repositoryRoot, "host"),
+    "--scratch-path",
+    scratch,
+  ],
+  { env: cacheEnvironment },
+);
 
 const architectures = (await run(["/usr/bin/lipo", "-archs", source], { quiet: true })).trim();
-if (architectures !== "arm64") throw new Error(`Host architecture is ${architectures}; expected arm64`);
+if (architectures !== "arm64")
+  throw new Error(`Host architecture is ${architectures}; expected arm64`);
 
 await mkdir(destinationDirectory, { recursive: true });
 await copyFile(source, destination);
@@ -48,5 +52,8 @@ const manifest = {
   mcpProtocol: "2026-07-28",
   nativeCapabilities: ["tools", "resources", "subscriptions"],
 };
-await Bun.write(resolve(destinationDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+await Bun.write(
+  resolve(destinationDirectory, "manifest.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+);
 console.log(`Packaged Host ${cliPackage.version} at ${destination}`);

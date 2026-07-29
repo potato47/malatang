@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { FIA_MCP_BRIDGE_VERSION, FIA_MCP_PROTOCOL_VERSION, type JSONRPCMessage } from "../src/mcp.ts";
+import {
+  FIA_MCP_BRIDGE_VERSION,
+  FIA_MCP_PROTOCOL_VERSION,
+  type JSONRPCMessage,
+} from "../src/mcp.ts";
 import { FIANativeError, native, type FIANativeEvent } from "../src/native.ts";
 
 interface MutableBridgeGlobal {
@@ -26,27 +30,31 @@ describe("typed native MCP facade", () => {
   test("keeps typed lifecycle events", () => {
     const events: FIANativeEvent[] = [];
     const unsubscribe = native.onEvent((event) => events.push(event));
-    globalThis.dispatchEvent(new CustomEvent("fia:native-event", {
-      detail: {
-        type: "stateChanged",
-        state: {
-          mode: "dock",
-          dockVisible: true,
-          statusBarVisible: false,
-          statusBarSymbol: "circle.grid.2x2.fill",
-          window: {
-            visible: true,
-            focused: true,
-            alwaysOnTop: false,
-            visibleOnAllSpaces: false,
-            visibleOverFullScreen: false,
+    globalThis.dispatchEvent(
+      new CustomEvent("fia:native-event", {
+        detail: {
+          type: "stateChanged",
+          state: {
+            mode: "dock",
+            dockVisible: true,
+            statusBarVisible: false,
+            statusBarSymbol: "circle.grid.2x2.fill",
+            window: {
+              visible: true,
+              focused: true,
+              alwaysOnTop: false,
+              visibleOnAllSpaces: false,
+              visibleOverFullScreen: false,
+            },
           },
         },
-      },
-    }));
-    globalThis.dispatchEvent(new CustomEvent("fia:native-event", {
-      detail: { type: "statusBarClicked", button: "left" },
-    }));
+      }),
+    );
+    globalThis.dispatchEvent(
+      new CustomEvent("fia:native-event", {
+        detail: { type: "statusBarClicked", button: "left" },
+      }),
+    );
     unsubscribe();
     expect(events.map((event) => event.type)).toEqual(["stateChanged", "statusBarClicked"]);
   });
@@ -60,35 +68,43 @@ describe("typed native MCP facade", () => {
               serverId: string;
               message: JSONRPCMessage & { id?: unknown; method?: string };
             };
-            const message = envelope.message.method === "server/discover"
-              ? {
-                  jsonrpc: "2.0",
-                  id: envelope.message.id,
-                  result: {
-                    resultType: "complete",
-                    supportedVersions: [FIA_MCP_PROTOCOL_VERSION],
-                    capabilities: { tools: { listChanged: false } },
-                    _meta: {
-                      "io.modelcontextprotocol/serverInfo": { name: "fia.native", version: "0.5.0" },
+            const message =
+              envelope.message.method === "server/discover"
+                ? {
+                    jsonrpc: "2.0",
+                    id: envelope.message.id,
+                    result: {
+                      resultType: "complete",
+                      supportedVersions: [FIA_MCP_PROTOCOL_VERSION],
+                      capabilities: { tools: { listChanged: false } },
+                      _meta: {
+                        "io.modelcontextprotocol/serverInfo": {
+                          name: "fia.native",
+                          version: "0.5.0",
+                        },
+                      },
                     },
+                  }
+                : {
+                    jsonrpc: "2.0",
+                    id: envelope.message.id,
+                    error: {
+                      code: -32602,
+                      message: "invalid native argument",
+                      data: { code: "INVALID_ARGUMENT" },
+                    },
+                  };
+            queueMicrotask(() =>
+              globalThis.dispatchEvent(
+                new CustomEvent("fia:mcp-message", {
+                  detail: {
+                    bridgeVersion: FIA_MCP_BRIDGE_VERSION,
+                    serverId: "fia.native",
+                    message,
                   },
-                }
-              : {
-                  jsonrpc: "2.0",
-                  id: envelope.message.id,
-                  error: {
-                    code: -32602,
-                    message: "invalid native argument",
-                    data: { code: "INVALID_ARGUMENT" },
-                  },
-                };
-            queueMicrotask(() => globalThis.dispatchEvent(new CustomEvent("fia:mcp-message", {
-              detail: {
-                bridgeVersion: FIA_MCP_BRIDGE_VERSION,
-                serverId: "fia.native",
-                message,
-              },
-            })));
+                }),
+              ),
+            );
             return { ok: true };
           },
         },

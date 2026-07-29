@@ -4,10 +4,7 @@ function commandKey(command: readonly string[]): string {
   return command.join("\u0000");
 }
 
-export function commandResult(
-  stdout = "",
-  overrides: Partial<CommandResult> = {},
-): CommandResult {
+export function commandResult(stdout = "", overrides: Partial<CommandResult> = {}): CommandResult {
   return {
     exitCode: 0,
     stdout,
@@ -43,13 +40,12 @@ export class FakeDoctorProbe implements DoctorProbe {
       ["/usr/bin/xcrun", "--find", "notarytool"],
       commandResult("/usr/bin/notarytool\n"),
     );
-    this.setCommand(
-      ["/usr/bin/xcrun", "--find", "stapler"],
-      commandResult("/usr/bin/stapler\n"),
-    );
+    this.setCommand(["/usr/bin/xcrun", "--find", "stapler"], commandResult("/usr/bin/stapler\n"));
     this.setCommand(
       ["/usr/bin/security", "find-identity", "-v", "-p", "codesigning"],
-      commandResult('  1) ABCDEF "Developer ID Application: Example (TEAMID)"\n     1 valid identities found\n'),
+      commandResult(
+        '  1) ABCDEF "Developer ID Application: Example (TEAMID)"\n     1 valid identities found\n',
+      ),
     );
   }
 
@@ -59,11 +55,14 @@ export class FakeDoctorProbe implements DoctorProbe {
 
   public async run(command: readonly string[]): Promise<CommandResult> {
     this.calls.push([...command]);
-    return this.commands.get(commandKey(command)) ?? commandResult("", {
-      exitCode: 127,
-      stderr: "command not found",
-      error: "command not found",
-    });
+    return (
+      this.commands.get(commandKey(command)) ??
+      commandResult("", {
+        exitCode: 127,
+        stderr: "command not found",
+        error: "command not found",
+      })
+    );
   }
 
   public async canAccess(path: string, _mode: number): Promise<boolean> {

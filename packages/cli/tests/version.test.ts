@@ -39,7 +39,8 @@ describe("npm version workflow", () => {
     expect(readMetadataVersion(updated)).toBe("0.3.0");
     expect(updated).toContain('export const OTHER = "0.2.0";');
     expect(() => replaceMetadataVersion(metadata, "0.1.0", "0.3.0")).toThrow("does not match");
-    expect(readWorkspaceVersionFromLock(`{
+    expect(
+      readWorkspaceVersionFromLock(`{
       "workspaces": {
         "packages/cli": {
           "name": "@semicoder/fia",
@@ -47,6 +48,7 @@ describe("npm version workflow", () => {
         },
       },
       "packages": {}
-    }`)).toBe("0.3.0");
+    }`),
+    ).toBe("0.3.0");
   });
 });

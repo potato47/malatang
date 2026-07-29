@@ -5,17 +5,17 @@
 
 ## 当前 tools
 
-| Tool | Typed facade |
-| --- | --- |
-| `native.getState` | `native.getState()` |
-| `app.quit` | `native.app.quit()` |
-| `app.showDock` / `app.hideDock` | `native.app.showDock()` / `hideDock()` |
-| `window.show` / `hide` / `focus` | `native.window.*` |
-| `window.setAlwaysOnTop` | `native.window.setAlwaysOnTop()` |
-| `window.setVisibleOnAllSpaces` | `native.window.setVisibleOnAllSpaces()` |
+| Tool                              | Typed facade                               |
+| --------------------------------- | ------------------------------------------ |
+| `native.getState`                 | `native.getState()`                        |
+| `app.quit`                        | `native.app.quit()`                        |
+| `app.showDock` / `app.hideDock`   | `native.app.showDock()` / `hideDock()`     |
+| `window.show` / `hide` / `focus`  | `native.window.*`                          |
+| `window.setAlwaysOnTop`           | `native.window.setAlwaysOnTop()`           |
+| `window.setVisibleOnAllSpaces`    | `native.window.setVisibleOnAllSpaces()`    |
 | `window.setVisibleOverFullScreen` | `native.window.setVisibleOverFullScreen()` |
-| `statusBar.setVisible` | `native.statusBar.setVisible()` |
-| `statusBar.setIcon` | `native.statusBar.setIcon()` |
+| `statusBar.setVisible`            | `native.statusBar.setVisible()`            |
+| `statusBar.setIcon`               | `native.statusBar.setIcon()`               |
 
 状态包含应用 mode、Dock/状态栏可见性、状态栏 symbol，以及窗口 visible、focused、
 always-on-top 和 Spaces 行为。

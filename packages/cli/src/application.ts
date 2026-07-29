@@ -133,15 +133,17 @@ export function injectCSPNonce(html: string, nonce = CSP_NONCE): string {
 }
 
 export function generatedMcpRunner(entry: string): string {
-  return `import factory from ${JSON.stringify(resolve(entry))};\n`
-    + `import { isDefinedMcpServer, serveStdio } from "@semicoder/fia/mcp/server";\n`
-    + `if (!isDefinedMcpServer(factory)) {\n`
-    + `  process.stderr.write("MCP entry must default-export defineMcpServer(() => server).\\n");\n`
-    + `  process.exit(65);\n`
-    + `}\n`
-    + `serveStdio(factory, { legacy: "reject", maxSubscriptions: 1024, onerror(error) {\n`
-    + `  process.stderr.write(\`MCP server error: \${error.message}\\n\`);\n`
-    + `} });\n`;
+  return (
+    `import factory from ${JSON.stringify(resolve(entry))};\n` +
+    `import { isDefinedMcpServer, serveStdio } from "@semicoder/fia/mcp/server";\n` +
+    `if (!isDefinedMcpServer(factory)) {\n` +
+    `  process.stderr.write("MCP entry must default-export defineMcpServer(() => server).\\n");\n` +
+    `  process.exit(65);\n` +
+    `}\n` +
+    `serveStdio(factory, { legacy: "reject", maxSubscriptions: 1024, onerror(error) {\n` +
+    `  process.stderr.write(\`MCP server error: \${error.message}\\n\`);\n` +
+    `} });\n`
+  );
 }
 
 function commandText(command: readonly string[]): string {
@@ -229,46 +231,57 @@ async function verifyHostAsset(context: BuildContext): Promise<string> {
   try {
     manifest = JSON.parse(await readFile(manifestPath, "utf8")) as HostManifest;
   } catch (error) {
-    throw new Error(`precompiled Host manifest is missing or invalid: ${error instanceof Error ? error.message : error}`);
+    throw new Error(
+      `precompiled Host manifest is missing or invalid: ${error instanceof Error ? error.message : error}`,
+    );
   }
   if (
-    manifest.schemaVersion !== 2
-    || manifest.cliVersion !== CLI_VERSION
-    || manifest.hostVersion !== CLI_VERSION
-    || manifest.architecture !== "arm64"
-    || manifest.minimumSystemVersion !== "14.0"
-    || manifest.configurationSchema !== 5
-    || manifest.mcpBridge !== 1
-    || manifest.mcpProtocol !== MCP_PROTOCOL_VERSION
-    || manifest.nativeCapabilities.join(",") !== NATIVE_CAPABILITIES.join(",")
+    manifest.schemaVersion !== 2 ||
+    manifest.cliVersion !== CLI_VERSION ||
+    manifest.hostVersion !== CLI_VERSION ||
+    manifest.architecture !== "arm64" ||
+    manifest.minimumSystemVersion !== "14.0" ||
+    manifest.configurationSchema !== 5 ||
+    manifest.mcpBridge !== 1 ||
+    manifest.mcpProtocol !== MCP_PROTOCOL_VERSION ||
+    manifest.nativeCapabilities.join(",") !== NATIVE_CAPABILITIES.join(",")
   ) {
     throw new Error("precompiled Host manifest is incompatible with this CLI");
   }
   await access(executable, constants.R_OK | constants.X_OK);
-  if (await sha256(executable) !== manifest.sha256) {
+  if ((await sha256(executable)) !== manifest.sha256) {
     throw new Error("precompiled Host checksum does not match manifest");
   }
   await verifyArm64MachO("Host", executable, context);
   return executable;
 }
 
-async function verifyArm64MachO(label: string, executable: string, context: BuildContext): Promise<void> {
+async function verifyArm64MachO(
+  label: string,
+  executable: string,
+  context: BuildContext,
+): Promise<void> {
   await access(executable, constants.R_OK | constants.X_OK);
-  const architectures = (await checked(
-    `${label} architecture verification`,
-    ["/usr/bin/lipo", "-archs", executable],
-    context.config.projectRoot,
-    context.debug,
-    context.io,
-  )).trim();
-  if (architectures !== "arm64") throw new Error(`${label} architecture is ${architectures}; expected arm64`);
-  const kind = (await checked(
-    `${label} Mach-O verification`,
-    ["/usr/bin/file", "-b", executable],
-    context.config.projectRoot,
-    context.debug,
-    context.io,
-  )).trim();
+  const architectures = (
+    await checked(
+      `${label} architecture verification`,
+      ["/usr/bin/lipo", "-archs", executable],
+      context.config.projectRoot,
+      context.debug,
+      context.io,
+    )
+  ).trim();
+  if (architectures !== "arm64")
+    throw new Error(`${label} architecture is ${architectures}; expected arm64`);
+  const kind = (
+    await checked(
+      `${label} Mach-O verification`,
+      ["/usr/bin/file", "-b", executable],
+      context.config.projectRoot,
+      context.debug,
+      context.io,
+    )
+  ).trim();
   if (!kind.includes("Mach-O") || !kind.includes("arm64")) {
     throw new Error(`${label} is not an arm64 Mach-O executable`);
   }
@@ -276,9 +289,10 @@ async function verifyArm64MachO(label: string, executable: string, context: Buil
 
 async function typecheck(context: BuildContext): Promise<void> {
   const compiler = resolve(context.config.projectRoot, "node_modules/typescript/bin/tsc");
-  if (!await existingFile(compiler)) throw new Error("TypeScript is not installed; run bun install first");
+  if (!(await existingFile(compiler)))
+    throw new Error("TypeScript is not installed; run bun install first");
   const tsconfig = resolve(context.config.projectRoot, "tsconfig.json");
-  if (!await existingFile(tsconfig)) throw new Error("tsconfig.json was not found");
+  if (!(await existingFile(tsconfig))) throw new Error("tsconfig.json was not found");
   await checked(
     "TypeScript typecheck",
     [process.execPath, compiler, "--noEmit", "-p", tsconfig],
@@ -298,14 +312,17 @@ async function writeMcpRunner(context: BuildContext): Promise<string | undefined
 
 async function validateMcpFactory(context: BuildContext, runner: string): Promise<void> {
   const validator = resolve(context.stagingRoot, "validate-mcp-entry.ts");
-  await Bun.write(validator, `
+  await Bun.write(
+    validator,
+    `
     import factory from ${JSON.stringify(pathToFileURL(context.config.mcp!.app!.entry).href)};
     import { isDefinedMcpServer } from "@semicoder/fia/mcp/server";
     if (!isDefinedMcpServer(factory)) {
       process.stderr.write("MCP entry must default-export defineMcpServer(() => server).\\n");
       process.exit(65);
     }
-  `);
+  `,
+  );
   await checked(
     "MCP server factory validation",
     [process.execPath, validator],
@@ -315,7 +332,14 @@ async function validateMcpFactory(context: BuildContext, runner: string): Promis
   );
   await checked(
     "MCP runner validation",
-    [process.execPath, "build", "--target=bun", runner, "--outdir", resolve(context.stagingRoot, "runner-check")],
+    [
+      process.execPath,
+      "build",
+      "--target=bun",
+      runner,
+      "--outdir",
+      resolve(context.stagingRoot, "runner-check"),
+    ],
     context.config.projectRoot,
     context.debug,
     context.io,
@@ -334,7 +358,8 @@ async function buildProductionUI(context: BuildContext): Promise<UIArtifact> {
   );
   const output = resolve(outputDirectory, basename(context.config.ui));
   let html = injectCSPNonce(await readFile(output, "utf8"));
-  if (!html.includes(CSP_NONCE)) throw new Error("UI build contains no script or style tags to protect with CSP");
+  if (!html.includes(CSP_NONCE))
+    throw new Error("UI build contains no script or style tags to protect with CSP");
   await Bun.write(output, html);
   return { directory: outputDirectory, entry: output };
 }
@@ -380,8 +405,10 @@ async function buildProductionServers(
 
 async function smokeMcpServer(context: BuildContext, server: ServerArtifact): Promise<void> {
   const script = resolve(context.stagingRoot, "smoke-mcp.ts");
-  if (!await existingFile(script)) {
-    await Bun.write(script, `
+  if (!(await existingFile(script))) {
+    await Bun.write(
+      script,
+      `
       import { Client } from ${JSON.stringify(MCP_CLIENT_IMPORT)};
       import { StdioClientTransport } from ${JSON.stringify(MCP_CLIENT_STDIO_IMPORT)};
       const [command, cwd, argsJSON] = process.argv.slice(2);
@@ -402,7 +429,8 @@ async function smokeMcpServer(context: BuildContext, server: ServerArtifact): Pr
       } finally {
         await client.close();
       }
-    `);
+    `,
+    );
   }
   const cwd = resolve(context.stagingRoot, `smoke/${server.id}`);
   await mkdir(cwd, { recursive: true });
@@ -425,9 +453,8 @@ function plistEscape(value: string): string {
 }
 
 function infoPlist(config: ResolvedFIAConfig): string {
-  const icon = config.app.icon === undefined
-    ? ""
-    : "  <key>CFBundleIconFile</key><string>AppIcon</string>\n";
+  const icon =
+    config.app.icon === undefined ? "" : "  <key>CFBundleIconFile</key><string>AppIcon</string>\n";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -465,9 +492,10 @@ function hostConfiguration(
     },
     window: config.window,
     statusBar: config.statusBar,
-    ui: ui.mode === "bundled"
-      ? { mode: "bundled", entry: ui.entry, url: null }
-      : { mode: "development", entry: null, url: ui.url },
+    ui:
+      ui.mode === "bundled"
+        ? { mode: "bundled", entry: ui.entry, url: null }
+        : { mode: "development", entry: null, url: ui.url },
     mcpServers: servers.map((server) => ({
       id: server.id,
       executable: server.manifestExecutable,
@@ -547,14 +575,17 @@ async function assembleApp(
   }
   // Code signing mutates Mach-O files, so the runtime integrity hash must be
   // computed from the final signed bytes.
-  const manifestServers = await Promise.all(stagedServers.map(async (server) => ({
-    ...server,
-    sha256: await sha256(server.executable),
-  })));
+  const manifestServers = await Promise.all(
+    stagedServers.map(async (server) => ({
+      ...server,
+      sha256: await sha256(server.executable),
+    })),
+  );
 
-  const uiConfiguration = options.ui.mode === "bundled"
-    ? { mode: "bundled" as const, entry: `UI/${basename(options.ui.artifact.entry)}` }
-    : { mode: "development" as const, url: options.ui.url };
+  const uiConfiguration =
+    options.ui.mode === "bundled"
+      ? { mode: "bundled" as const, entry: `UI/${basename(options.ui.artifact.entry)}` }
+      : { mode: "development" as const, url: options.ui.url };
   await Promise.all([
     Bun.write(resolve(contents, "Info.plist"), infoPlist(context.config)),
     Bun.write(resolve(contents, "PkgInfo"), "APPL????"),
@@ -592,9 +623,11 @@ async function verifyApp(context: BuildContext, production: boolean): Promise<vo
   const configuration = JSON.parse(
     await readFile(resolve(contents, "Resources/fia-config.json"), "utf8"),
   ) as Record<string, unknown>;
-  if (configuration.schemaVersion !== 5
-    || configuration.bridgeVersion !== 1
-    || configuration.mcpProtocolVersion !== MCP_PROTOCOL_VERSION) {
+  if (
+    configuration.schemaVersion !== 5 ||
+    configuration.bridgeVersion !== 1 ||
+    configuration.mcpProtocolVersion !== MCP_PROTOCOL_VERSION
+  ) {
     throw new Error("packaged Host configuration is incompatible");
   }
   if (!Array.isArray(configuration.mcpServers)) {
@@ -602,10 +635,13 @@ async function verifyApp(context: BuildContext, production: boolean): Promise<vo
   }
   if (production) {
     for (const value of configuration.mcpServers) {
-      if (typeof value !== "object" || value === null
-        || typeof (value as { id?: unknown }).id !== "string"
-        || typeof (value as { executable?: unknown }).executable !== "string"
-        || typeof (value as { sha256?: unknown }).sha256 !== "string") {
+      if (
+        typeof value !== "object" ||
+        value === null ||
+        typeof (value as { id?: unknown }).id !== "string" ||
+        typeof (value as { executable?: unknown }).executable !== "string" ||
+        typeof (value as { sha256?: unknown }).sha256 !== "string"
+      ) {
         throw new Error("packaged MCP server manifest is invalid");
       }
       const server = value as { id: string; executable: string; sha256: string };
@@ -614,7 +650,7 @@ async function verifyApp(context: BuildContext, production: boolean): Promise<vo
       }
       const executable = resolve(contents, server.executable);
       await access(executable, constants.R_OK | constants.X_OK);
-      if (await sha256(executable) !== server.sha256) {
+      if ((await sha256(executable)) !== server.sha256) {
         throw new Error(`packaged MCP server ${server.id} checksum does not match`);
       }
       await checked(
@@ -676,7 +712,9 @@ async function streamToIO(
 
 async function startUIDevServer(context: BuildContext): Promise<UIDevServer> {
   const entry = resolve(context.stagingRoot, "ui-dev-server.ts");
-  await Bun.write(entry, `
+  await Bun.write(
+    entry,
+    `
     import page from ${JSON.stringify(context.config.ui)};
     const server = Bun.serve({
       hostname: "127.0.0.1",
@@ -685,7 +723,8 @@ async function startUIDevServer(context: BuildContext): Promise<UIDevServer> {
       development: { hmr: true, console: true },
     });
     console.log(JSON.stringify({ type: "ready", port: server.port }));
-  `);
+  `,
+  );
   const child = Bun.spawn([process.execPath, "--hot", "--no-clear-screen", entry], {
     cwd: context.config.projectRoot,
     env: process.env,
@@ -701,7 +740,7 @@ async function startUIDevServer(context: BuildContext): Promise<UIDevServer> {
   while (port === undefined && Date.now() < deadline) {
     const remaining = Math.max(1, deadline - Date.now());
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("UI development server readiness timed out")), remaining)
+      setTimeout(() => reject(new Error("UI development server readiness timed out")), remaining),
     );
     const result = await Promise.race([reader.read(), timeout]);
     if (result.done) throw new Error("UI development server exited before becoming ready");
@@ -753,26 +792,38 @@ function watchMcpServers(
   const restart = (serverID: string, validate: boolean): void => {
     const old = timers.get(serverID);
     if (old !== undefined) clearTimeout(old);
-    timers.set(serverID, setTimeout(async () => {
-      if (closed || host.exitCode !== null) return;
-      if (validate && runner !== undefined) {
-        try {
-          await checked(
-            "Application MCP development validation",
-            [process.execPath, "build", "--target=bun", runner, "--outdir", resolve(context.stagingRoot, "dev-check")],
-            context.config.projectRoot,
-            context.debug,
-            context.io,
-          );
-        } catch (error) {
-          context.io.stderr(`MCP source change was not activated: ${error instanceof Error ? error.message : error}\n`);
-          return;
+    timers.set(
+      serverID,
+      setTimeout(async () => {
+        if (closed || host.exitCode !== null) return;
+        if (validate && runner !== undefined) {
+          try {
+            await checked(
+              "Application MCP development validation",
+              [
+                process.execPath,
+                "build",
+                "--target=bun",
+                runner,
+                "--outdir",
+                resolve(context.stagingRoot, "dev-check"),
+              ],
+              context.config.projectRoot,
+              context.debug,
+              context.io,
+            );
+          } catch (error) {
+            context.io.stderr(
+              `MCP source change was not activated: ${error instanceof Error ? error.message : error}\n`,
+            );
+            return;
+          }
         }
-      }
-      hostInput.write(`${JSON.stringify({ type: "restartMcpServer", serverId: serverID })}\n`);
-      hostInput.flush();
-      context.io.stdout(`Restarted MCP server ${serverID}\n`);
-    }, 180));
+        hostInput.write(`${JSON.stringify({ type: "restartMcpServer", serverId: serverID })}\n`);
+        hostInput.flush();
+        context.io.stdout(`Restarted MCP server ${serverID}\n`);
+      }, 180),
+    );
   };
   for (const path of context.config.mcp?.app?.watch ?? []) {
     const watcher = watch(path, { recursive: true }, () => restart("app", true));
@@ -871,7 +922,7 @@ async function replaceDistribution(context: BuildContext): Promise<string> {
     await verifyApp({ ...context, appPath: destination }, true);
   } catch (error) {
     await rm(destination, { recursive: true, force: true });
-    if (hadPrevious && await existingFile(resolve(previous, "Contents/Info.plist"))) {
+    if (hadPrevious && (await existingFile(resolve(previous, "Contents/Info.plist")))) {
       await rename(previous, destination);
     }
     throw error;
@@ -899,7 +950,9 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
     config,
     stagingRoot,
     appPath,
-    hostAssetDirectory: resolve(options.dependencies?.hostAssetDirectory ?? defaultHostAssetDirectory()),
+    hostAssetDirectory: resolve(
+      options.dependencies?.hostAssetDirectory ?? defaultHostAssetDirectory(),
+    ),
     debug: options.debug,
     io: options.io,
   };

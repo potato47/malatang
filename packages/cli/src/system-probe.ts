@@ -32,7 +32,10 @@ export class SystemDoctorProbe implements DoctorProbe {
   public readonly bunVersion = typeof Bun === "undefined" ? undefined : Bun.version;
   public readonly cwd = process.cwd();
 
-  public async run(command: readonly string[], timeoutMilliseconds = 5_000): Promise<CommandResult> {
+  public async run(
+    command: readonly string[],
+    timeoutMilliseconds = 5_000,
+  ): Promise<CommandResult> {
     if (command.length === 0) {
       return {
         exitCode: 1,

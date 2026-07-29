@@ -23,13 +23,17 @@ afterEach(() => {
 });
 
 function response(id: unknown, result: Record<string, unknown>, serverId = "app"): void {
-  queueMicrotask(() => globalThis.dispatchEvent(new CustomEvent("fia:mcp-message", {
-    detail: {
-      bridgeVersion: FIA_MCP_BRIDGE_VERSION,
-      serverId,
-      message: { jsonrpc: "2.0", id, result },
-    },
-  })));
+  queueMicrotask(() =>
+    globalThis.dispatchEvent(
+      new CustomEvent("fia:mcp-message", {
+        detail: {
+          bridgeVersion: FIA_MCP_BRIDGE_VERSION,
+          serverId,
+          message: { jsonrpc: "2.0", id, result },
+        },
+      }),
+    ),
+  );
 }
 
 describe("FIA MCP public APIs", () => {
@@ -112,31 +116,39 @@ describe("FIA MCP public APIs", () => {
               "io.modelcontextprotocol/serverInfo": { name: "search", version: "0.1.0" },
             };
             if (envelope.message.method === "server/discover") {
-              response(envelope.message.id, {
-                resultType: "complete",
-                supportedVersions: [FIA_MCP_PROTOCOL_VERSION],
-                capabilities: { resources: { subscribe: true, listChanged: false } },
-                _meta: meta,
-              }, "search");
+              response(
+                envelope.message.id,
+                {
+                  resultType: "complete",
+                  supportedVersions: [FIA_MCP_PROTOCOL_VERSION],
+                  capabilities: { resources: { subscribe: true, listChanged: false } },
+                  _meta: meta,
+                },
+                "search",
+              );
             } else if (envelope.message.method === "subscriptions/listen") {
               subscribeCalls += 1;
               subscriptionIDs.push(envelope.message.id);
-              queueMicrotask(() => globalThis.dispatchEvent(new CustomEvent("fia:mcp-message", {
-                detail: {
-                  bridgeVersion: FIA_MCP_BRIDGE_VERSION,
-                  serverId: "search",
-                  message: {
-                    jsonrpc: "2.0",
-                    method: "notifications/subscriptions/acknowledged",
-                    params: {
-                      _meta: {
-                        "io.modelcontextprotocol/subscriptionId": envelope.message.id,
+              queueMicrotask(() =>
+                globalThis.dispatchEvent(
+                  new CustomEvent("fia:mcp-message", {
+                    detail: {
+                      bridgeVersion: FIA_MCP_BRIDGE_VERSION,
+                      serverId: "search",
+                      message: {
+                        jsonrpc: "2.0",
+                        method: "notifications/subscriptions/acknowledged",
+                        params: {
+                          _meta: {
+                            "io.modelcontextprotocol/subscriptionId": envelope.message.id,
+                          },
+                          notifications: { resourceSubscriptions: ["fia://search/state"] },
+                        },
                       },
-                      notifications: { resourceSubscriptions: ["fia://search/state"] },
                     },
-                  },
-                },
-              })));
+                  }),
+                ),
+              );
             } else if (envelope.message.method === "notifications/cancelled") {
               unsubscribeCalls += 1;
             }
@@ -147,34 +159,40 @@ describe("FIA MCP public APIs", () => {
     };
 
     const server = mcp.server("search");
-    const unsubscribe = await server.subscribeResource("fia://search/state", ({ uri }) => updates.push(uri));
+    const unsubscribe = await server.subscribeResource("fia://search/state", ({ uri }) =>
+      updates.push(uri),
+    );
     expect(subscribeCalls).toBe(1);
-    globalThis.dispatchEvent(new CustomEvent("fia:mcp-message", {
-      detail: {
-        bridgeVersion: FIA_MCP_BRIDGE_VERSION,
-        serverId: "search",
-        message: {
-          jsonrpc: "2.0",
-          method: "notifications/resources/updated",
-          params: {
-            _meta: {
-              "io.modelcontextprotocol/subscriptionId": subscriptionIDs[0],
+    globalThis.dispatchEvent(
+      new CustomEvent("fia:mcp-message", {
+        detail: {
+          bridgeVersion: FIA_MCP_BRIDGE_VERSION,
+          serverId: "search",
+          message: {
+            jsonrpc: "2.0",
+            method: "notifications/resources/updated",
+            params: {
+              _meta: {
+                "io.modelcontextprotocol/subscriptionId": subscriptionIDs[0],
+              },
+              uri: "fia://search/state",
             },
-            uri: "fia://search/state",
           },
         },
-      },
-    }));
+      }),
+    );
     await Bun.sleep(0);
     expect(updates).toEqual(["fia://search/state"]);
 
-    globalThis.dispatchEvent(new CustomEvent("fia:mcp-state", {
-      detail: {
-        bridgeVersion: FIA_MCP_BRIDGE_VERSION,
-        serverId: "search",
-        state: "restarting",
-      },
-    }));
+    globalThis.dispatchEvent(
+      new CustomEvent("fia:mcp-state", {
+        detail: {
+          bridgeVersion: FIA_MCP_BRIDGE_VERSION,
+          serverId: "search",
+          state: "restarting",
+        },
+      }),
+    );
     for (let attempt = 0; attempt < 100 && subscribeCalls < 2; attempt += 1) {
       await Bun.sleep(5);
     }
@@ -219,23 +237,26 @@ describe("FIA MCP public APIs", () => {
               message: JSONRPCMessage & { id?: unknown; method?: string };
             };
             if (envelope.message.method === "server/discover") {
-              response(envelope.message.id, {
-                resultType: "complete",
-                supportedVersions: [FIA_MCP_PROTOCOL_VERSION],
-                capabilities: { tools: { listChanged: false } },
-                _meta: {
-                  "io.modelcontextprotocol/serverInfo": { name: "slow", version: "0.1.0" },
+              response(
+                envelope.message.id,
+                {
+                  resultType: "complete",
+                  supportedVersions: [FIA_MCP_PROTOCOL_VERSION],
+                  capabilities: { tools: { listChanged: false } },
+                  _meta: {
+                    "io.modelcontextprotocol/serverInfo": { name: "slow", version: "0.1.0" },
+                  },
                 },
-              }, "slow");
+                "slow",
+              );
             }
             return { ok: true };
           },
         },
       },
     };
-    await expect(mcp.server("slow").callTool(
-      { name: "never-returns", arguments: {} },
-      { timeout: 5 },
-    )).rejects.toThrow();
+    await expect(
+      mcp.server("slow").callTool({ name: "never-returns", arguments: {} }, { timeout: 5 }),
+    ).rejects.toThrow();
   });
 });
