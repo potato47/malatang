@@ -40,6 +40,15 @@ const COMMON_TEMPLATE_FILES = [
   ["src/ui/index.html", "src/ui/index.html"],
   ["src/ui/main.tsx.template", "src/ui/main.tsx"],
   ["src/ui/style.css", "src/ui/style.css"],
+  ["src/ui/components/ui/cn.ts.template", "src/ui/components/ui/cn.ts"],
+  ["src/ui/components/ui/forms.tsx.template", "src/ui/components/ui/forms.tsx"],
+  ["src/ui/components/ui/index.ts.template", "src/ui/components/ui/index.ts"],
+  ["src/ui/components/ui/navigation.tsx.template", "src/ui/components/ui/navigation.tsx"],
+  ["src/ui/components/ui/overlays.tsx.template", "src/ui/components/ui/overlays.tsx"],
+  ["src/ui/components/ui/primitives.tsx.template", "src/ui/components/ui/primitives.tsx"],
+  ["src/ui/components/ui/styles.css", "src/ui/components/ui/styles.css"],
+  ["src/ui/components/ui/theme.tsx.template", "src/ui/components/ui/theme.tsx"],
+  ["src/ui/components/ui/toast.tsx.template", "src/ui/components/ui/toast.tsx"],
 ] as const;
 
 const MCP_TEMPLATE_FILES = [
@@ -102,8 +111,13 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
       typecheck: "tsc --noEmit",
     },
     dependencies: {
+      "@base-ui/react": "^1.6.0",
+      "class-variance-authority": "^0.7.1",
+      clsx: "^2.1.1",
+      "lucide-react": "^0.468.0",
       react: "^19.2.7",
       "react-dom": "^19.2.7",
+      "tailwind-merge": "^3.3.1",
       zod: "^4.2.0",
     },
     devDependencies: {

@@ -1,0 +1,130 @@
+import { Dialog as BaseDialog } from "@base-ui/react/dialog";
+import { Popover as BasePopover } from "@base-ui/react/popover";
+import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
+import { X } from "lucide-react";
+import * as React from "react";
+
+import { cn } from "./cn";
+
+export interface TooltipProps extends Omit<
+  React.ComponentPropsWithoutRef<typeof BaseTooltip.Root>,
+  "children"
+> {
+  content: React.ReactNode;
+  children: React.ReactElement;
+  side?: React.ComponentPropsWithoutRef<typeof BaseTooltip.Positioner>["side"];
+}
+
+export function Tooltip({ content, children, side = "top", ...props }: TooltipProps) {
+  return (
+    <BaseTooltip.Root {...props}>
+      <BaseTooltip.Trigger render={children} />
+      <BaseTooltip.Portal>
+        <BaseTooltip.Positioner className="ui-positioner" side={side} sideOffset={6}>
+          <BaseTooltip.Popup className="ui-tooltip-popup">{content}</BaseTooltip.Popup>
+        </BaseTooltip.Positioner>
+      </BaseTooltip.Portal>
+    </BaseTooltip.Root>
+  );
+}
+
+export interface PopoverProps extends Omit<
+  React.ComponentPropsWithoutRef<typeof BasePopover.Root>,
+  "children"
+> {
+  trigger: React.ReactElement;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+  align?: "start" | "center" | "end";
+  side?: React.ComponentPropsWithoutRef<typeof BasePopover.Positioner>["side"];
+  className?: string;
+}
+
+export function Popover({
+  trigger,
+  title,
+  description,
+  children,
+  align = "center",
+  side = "bottom",
+  className,
+  ...props
+}: PopoverProps) {
+  return (
+    <BasePopover.Root {...props}>
+      <BasePopover.Trigger render={trigger} />
+      <BasePopover.Portal>
+        <BasePopover.Positioner className="ui-positioner" side={side} align={align} sideOffset={8}>
+          <BasePopover.Popup className={cn("ui-popup ui-popover", className)}>
+            {(title || description) && (
+              <header className="ui-popover__header">
+                {title ? (
+                  <BasePopover.Title className="ui-overlay-title">{title}</BasePopover.Title>
+                ) : null}
+                {description ? (
+                  <BasePopover.Description className="ui-overlay-description">
+                    {description}
+                  </BasePopover.Description>
+                ) : null}
+              </header>
+            )}
+            {children}
+          </BasePopover.Popup>
+        </BasePopover.Positioner>
+      </BasePopover.Portal>
+    </BasePopover.Root>
+  );
+}
+
+export interface DialogProps extends Omit<
+  React.ComponentPropsWithoutRef<typeof BaseDialog.Root>,
+  "children"
+> {
+  trigger?: React.ReactElement;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  className?: string;
+}
+
+export function Dialog({
+  trigger,
+  title,
+  description,
+  children,
+  footer,
+  className,
+  ...props
+}: DialogProps) {
+  return (
+    <BaseDialog.Root {...props}>
+      {trigger ? <BaseDialog.Trigger render={trigger} /> : null}
+      <BaseDialog.Portal>
+        <BaseDialog.Backdrop className="ui-dialog-backdrop" />
+        <BaseDialog.Viewport className="ui-dialog-viewport">
+          <BaseDialog.Popup className={cn("ui-dialog", className)}>
+            <header className="ui-dialog__header">
+              <div>
+                <BaseDialog.Title className="ui-dialog__title">{title}</BaseDialog.Title>
+                {description ? (
+                  <BaseDialog.Description className="ui-overlay-description">
+                    {description}
+                  </BaseDialog.Description>
+                ) : null}
+              </div>
+              <BaseDialog.Close className="ui-dialog__close" aria-label="Close dialog">
+                <X size={16} />
+              </BaseDialog.Close>
+            </header>
+            <div className="ui-dialog__content">{children}</div>
+            {footer ? <footer className="ui-dialog__footer">{footer}</footer> : null}
+          </BaseDialog.Popup>
+        </BaseDialog.Viewport>
+      </BaseDialog.Portal>
+    </BaseDialog.Root>
+  );
+}
+
+export const DialogClose = BaseDialog.Close;

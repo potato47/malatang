@@ -1,10 +1,27 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <title>FIA Application</title>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("fia-ui-theme");
+          const theme =
+            stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+          const resolved =
+            theme === "system"
+              ? matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : theme;
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.colorScheme = resolved;
+        } catch {}
+      })();
+    </script>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>

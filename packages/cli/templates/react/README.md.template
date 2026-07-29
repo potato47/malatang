@@ -15,6 +15,20 @@ standalone MCP server binaries; the resulting application does not require Bun t
 The UI uses `@semicoder/fia/mcp` for application extensions and `@semicoder/fia/native` for typed
 desktop APIs. Both use MCP `2026-07-28` through the Host's WebKit transport.
 
+## Preset UI library
+
+The editable component library lives in `src/ui/components/ui` and is exported from its `index.ts`.
+Import components from the local barrel:
+
+```tsx
+import { Button, Dialog, Field, Input, useToast } from "./components/ui";
+```
+
+It includes primitives, form controls, navigation, overlays, notifications, and a light/dark/system
+theme. `src/ui/main.tsx` already installs `ThemeProvider` and `ToastProvider`, while
+`src/ui/style.css` imports the component design tokens and styles. Keep those providers mounted when
+using `useTheme` or `useToast`; edit the local components and CSS directly to adapt the design.
+
 ## MCP boundary
 
 `src/mcp/server.ts` exports a synchronous `defineMcpServer` factory. FIA generates the stdio entry and

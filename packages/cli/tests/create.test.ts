@@ -36,6 +36,15 @@ describe("FIA project creation", () => {
       "src/mcp/server.ts",
       "src/shared/types.ts",
       "src/ui/App.tsx",
+      "src/ui/components/ui/cn.ts",
+      "src/ui/components/ui/forms.tsx",
+      "src/ui/components/ui/index.ts",
+      "src/ui/components/ui/navigation.tsx",
+      "src/ui/components/ui/overlays.tsx",
+      "src/ui/components/ui/primitives.tsx",
+      "src/ui/components/ui/styles.css",
+      "src/ui/components/ui/theme.tsx",
+      "src/ui/components/ui/toast.tsx",
       "src/ui/index.html",
       "package.json",
       "AGENTS.md",
@@ -51,10 +60,48 @@ describe("FIA project creation", () => {
     expect(server).toContain('registerTool(\n    "greet"');
     const app = await readFile(resolve(root, "src/ui/App.tsx"), "utf8");
     expect(app).toContain('mcp.server("app").callTool');
+    expect(app).toContain("useToast");
+    const main = await readFile(resolve(root, "src/ui/main.tsx"), "utf8");
+    expect(main).toContain("<ThemeProvider>");
+    expect(main).toContain("<ToastProvider>");
+    const html = await readFile(resolve(root, "src/ui/index.html"), "utf8");
+    expect(html).toContain('localStorage.getItem("fia-ui-theme")');
+    const uiIndex = await readFile(resolve(root, "src/ui/components/ui/index.ts"), "utf8");
+    for (const component of [
+      "Avatar",
+      "Badge",
+      "Button",
+      "Checkbox",
+      "Combobox",
+      "Dialog",
+      "Field",
+      "Input",
+      "Menu",
+      "Popover",
+      "Progress",
+      "RadioGroup",
+      "Select",
+      "Switch",
+      "Tabs",
+      "Textarea",
+      "ToastProvider",
+      "ToggleGroup",
+      "Tooltip",
+      "ThemeProvider",
+    ]) {
+      expect(uiIndex).toContain(component);
+    }
+    const style = await readFile(resolve(root, "src/ui/style.css"), "utf8");
+    expect(style).toContain('@import "./components/ui/styles.css"');
     const metadata = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
     };
+    expect(metadata.dependencies["@base-ui/react"]).toBe("^1.6.0");
+    expect(metadata.dependencies["class-variance-authority"]).toBe("^0.7.1");
+    expect(metadata.dependencies.clsx).toBe("^2.1.1");
+    expect(metadata.dependencies["lucide-react"]).toBe("^0.468.0");
+    expect(metadata.dependencies["tailwind-merge"]).toBe("^3.3.1");
     expect(metadata.dependencies.zod).toBe("^4.2.0");
     expect(metadata.devDependencies["@semicoder/fia"]).toBe("file:../cli");
   });
@@ -74,6 +121,8 @@ describe("FIA project creation", () => {
     const app = await readFile(resolve(root, "src/ui/App.tsx"), "utf8");
     expect(app).toContain("@semicoder/fia/native");
     expect(app).not.toContain('mcp.server("app")');
+    expect(app).toContain('from "./components/ui"');
+    expect(await Bun.file(resolve(root, "src/ui/components/ui/index.ts")).exists()).toBe(true);
   });
 
   test("installs and initializes git only when requested", async () => {

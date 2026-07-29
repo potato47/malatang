@@ -1,0 +1,134 @@
+import { Avatar as BaseAvatar } from "@base-ui/react/avatar";
+import { Button as BaseButton } from "@base-ui/react/button";
+import { Progress as BaseProgress } from "@base-ui/react/progress";
+import { cva, type VariantProps } from "class-variance-authority";
+import { LoaderCircle } from "lucide-react";
+import * as React from "react";
+
+import { cn } from "./cn";
+
+const buttonVariants = cva("ui-button", {
+  variants: {
+    variant: {
+      primary: "ui-button--primary",
+      secondary: "ui-button--secondary",
+      ghost: "ui-button--ghost",
+      danger: "ui-button--danger",
+    },
+    size: {
+      sm: "ui-control--sm",
+      md: "ui-control--md",
+      lg: "ui-control--lg",
+    },
+  },
+  defaultVariants: {
+    variant: "secondary",
+    size: "md",
+  },
+});
+
+export interface ButtonProps
+  extends React.ComponentPropsWithoutRef<typeof BaseButton>, VariantProps<typeof buttonVariants> {
+  loading?: boolean;
+  iconOnly?: boolean;
+}
+
+export const Button = React.forwardRef<HTMLElement, ButtonProps>(function Button(
+  { className, variant, size, loading = false, iconOnly = false, disabled, children, ...props },
+  ref,
+) {
+  return (
+    <BaseButton
+      ref={ref}
+      className={cn(buttonVariants({ variant, size }), iconOnly && "ui-button--icon", className)}
+      disabled={disabled || loading}
+      focusableWhenDisabled={loading}
+      aria-busy={loading || undefined}
+      {...props}
+    >
+      {loading ? <LoaderCircle className="ui-spin" aria-hidden size={15} /> : null}
+      {children}
+    </BaseButton>
+  );
+});
+
+export const IconButton = React.forwardRef<HTMLElement, ButtonProps>(
+  function IconButton(props, ref) {
+    return <Button ref={ref} iconOnly {...props} />;
+  },
+);
+
+const badgeVariants = cva("ui-badge", {
+  variants: {
+    tone: {
+      neutral: "ui-badge--neutral",
+      accent: "ui-badge--accent",
+      success: "ui-badge--success",
+      warning: "ui-badge--warning",
+      danger: "ui-badge--danger",
+    },
+  },
+  defaultVariants: { tone: "neutral" },
+});
+
+export interface BadgeProps
+  extends React.HTMLAttributes<HTMLSpanElement>, VariantProps<typeof badgeVariants> {
+  dot?: boolean;
+}
+
+export function Badge({ className, tone, dot = false, children, ...props }: BadgeProps) {
+  return (
+    <span className={cn(badgeVariants({ tone }), className)} {...props}>
+      {dot ? <span className="ui-badge__dot" aria-hidden /> : null}
+      {children}
+    </span>
+  );
+}
+
+export interface AvatarProps extends React.ComponentPropsWithoutRef<typeof BaseAvatar.Root> {
+  src?: string;
+  alt?: string;
+  fallback: string;
+  size?: "sm" | "md" | "lg";
+}
+
+export const Avatar = React.forwardRef<HTMLSpanElement, AvatarProps>(function Avatar(
+  { className, src, alt = "", fallback, size = "md", ...props },
+  ref,
+) {
+  return (
+    <BaseAvatar.Root
+      ref={ref}
+      className={cn("ui-avatar", `ui-avatar--${size}`, className)}
+      {...props}
+    >
+      {src ? <BaseAvatar.Image className="ui-avatar__image" src={src} alt={alt} /> : null}
+      <BaseAvatar.Fallback className="ui-avatar__fallback">
+        {fallback.slice(0, 2).toUpperCase()}
+      </BaseAvatar.Fallback>
+    </BaseAvatar.Root>
+  );
+});
+
+export interface ProgressProps extends React.ComponentPropsWithoutRef<typeof BaseProgress.Root> {
+  label?: string;
+  showValue?: boolean;
+}
+
+export function Progress({ className, label, showValue = false, value, ...props }: ProgressProps) {
+  return (
+    <BaseProgress.Root className={cn("ui-progress", className)} value={value} {...props}>
+      {label || showValue ? (
+        <div className="ui-progress__meta">
+          <BaseProgress.Label>{label}</BaseProgress.Label>
+          {showValue ? (
+            <BaseProgress.Value>{(formattedValue) => formattedValue}</BaseProgress.Value>
+          ) : null}
+        </div>
+      ) : null}
+      <BaseProgress.Track className="ui-progress__track">
+        <BaseProgress.Indicator className="ui-progress__indicator" />
+      </BaseProgress.Track>
+    </BaseProgress.Root>
+  );
+}

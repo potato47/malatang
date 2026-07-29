@@ -34,13 +34,23 @@ async function project(name: string, mcp = true): Promise<string> {
     dependencies: { cliPackageSpec: `file:${packageRoot}` },
   });
   const modules = resolve(root, "node_modules");
+  await mkdir(resolve(modules, "@base-ui"), { recursive: true });
   await mkdir(resolve(modules, "@semicoder"), { recursive: true });
   await mkdir(resolve(modules, "@types"), { recursive: true });
+  await symlink(
+    resolve(packageRoot, "node_modules/@base-ui/react"),
+    resolve(modules, "@base-ui/react"),
+    "dir",
+  );
   await symlink(packageRoot, resolve(modules, "@semicoder/fia"), "dir");
   for (const [name, source] of [
     ["typescript", resolve(repositoryRoot, "node_modules/typescript")],
+    ["class-variance-authority", resolve(packageRoot, "node_modules/class-variance-authority")],
+    ["clsx", resolve(packageRoot, "node_modules/clsx")],
+    ["lucide-react", resolve(packageRoot, "node_modules/lucide-react")],
     ["react", resolve(packageRoot, "node_modules/react")],
     ["react-dom", resolve(packageRoot, "node_modules/react-dom")],
+    ["tailwind-merge", resolve(packageRoot, "node_modules/tailwind-merge")],
     ["zod", resolve(packageRoot, "node_modules/zod")],
   ] as const) {
     await symlink(source, resolve(modules, name), "dir");

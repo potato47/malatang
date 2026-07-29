@@ -1,0 +1,292 @@
+import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
+import { Combobox as BaseCombobox } from "@base-ui/react/combobox";
+import type { ComboboxRootProps } from "@base-ui/react/combobox";
+import { Field as BaseField } from "@base-ui/react/field";
+import { Input as BaseInput } from "@base-ui/react/input";
+import { Radio as BaseRadio } from "@base-ui/react/radio";
+import { RadioGroup as BaseRadioGroup } from "@base-ui/react/radio-group";
+import { Select as BaseSelect } from "@base-ui/react/select";
+import type { SelectRootProps } from "@base-ui/react/select";
+import { Switch as BaseSwitch } from "@base-ui/react/switch";
+import { Check, ChevronDown, Search, X } from "lucide-react";
+import * as React from "react";
+
+import { cn } from "./cn";
+
+export interface FieldProps extends Omit<
+  React.ComponentPropsWithoutRef<typeof BaseField.Root>,
+  "children"
+> {
+  label?: React.ReactNode;
+  description?: React.ReactNode;
+  error?: React.ReactNode;
+  optional?: boolean;
+  children: React.ReactNode;
+}
+
+export function Field({
+  label,
+  description,
+  error,
+  optional,
+  className,
+  children,
+  invalid,
+  ...props
+}: FieldProps) {
+  return (
+    <BaseField.Root
+      className={cn("ui-field", className)}
+      invalid={invalid ?? Boolean(error)}
+      {...props}
+    >
+      {label ? (
+        <BaseField.Label className="ui-field__label">
+          <span>{label}</span>
+          {optional ? <span className="ui-field__optional">Optional</span> : null}
+        </BaseField.Label>
+      ) : null}
+      {children}
+      {description && !error ? (
+        <BaseField.Description className="ui-field__description">
+          {description}
+        </BaseField.Description>
+      ) : null}
+      {error ? (
+        <BaseField.Error className="ui-field__error" match>
+          {error}
+        </BaseField.Error>
+      ) : null}
+    </BaseField.Root>
+  );
+}
+
+export type InputProps = React.ComponentPropsWithoutRef<typeof BaseInput>;
+
+export const Input = React.forwardRef<HTMLElement, InputProps>(function Input(
+  { className, ...props },
+  ref,
+) {
+  return <BaseInput ref={ref} className={cn("ui-input ui-control--md", className)} {...props} />;
+});
+
+export type TextareaProps = React.ComponentPropsWithoutRef<"textarea">;
+
+export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
+  { className, ...props },
+  ref,
+) {
+  return (
+    <BaseField.Control
+      ref={ref as React.Ref<HTMLElement>}
+      render={<textarea ref={ref} className={cn("ui-input ui-textarea", className)} {...props} />}
+    />
+  );
+});
+
+export interface CheckboxProps extends React.ComponentPropsWithoutRef<typeof BaseCheckbox.Root> {
+  label: React.ReactNode;
+  description?: React.ReactNode;
+}
+
+export function Checkbox({ label, description, className, ...props }: CheckboxProps) {
+  return (
+    <label className={cn("ui-choice-row", props.disabled && "ui-choice-row--disabled")}>
+      <BaseCheckbox.Root className={cn("ui-checkbox", className)} {...props}>
+        <BaseCheckbox.Indicator className="ui-checkbox__indicator">
+          <Check size={13} strokeWidth={2.5} />
+        </BaseCheckbox.Indicator>
+      </BaseCheckbox.Root>
+      <span className="ui-choice-copy">
+        <span className="ui-choice-label">{label}</span>
+        {description ? <span className="ui-choice-description">{description}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+export interface RadioOption {
+  value: string;
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  disabled?: boolean;
+}
+
+export interface RadioGroupProps extends Omit<
+  React.ComponentPropsWithoutRef<typeof BaseRadioGroup>,
+  "children"
+> {
+  options: RadioOption[];
+}
+
+export function RadioGroup({ options, className, ...props }: RadioGroupProps) {
+  return (
+    <BaseRadioGroup className={cn("ui-radio-group", className)} {...props}>
+      {options.map((option) => (
+        <label
+          className={cn("ui-choice-row", option.disabled && "ui-choice-row--disabled")}
+          key={option.value}
+        >
+          <BaseRadio.Root className="ui-radio" value={option.value} disabled={option.disabled}>
+            <BaseRadio.Indicator className="ui-radio__indicator" />
+          </BaseRadio.Root>
+          <span className="ui-choice-copy">
+            <span className="ui-choice-label">{option.label}</span>
+            {option.description ? (
+              <span className="ui-choice-description">{option.description}</span>
+            ) : null}
+          </span>
+        </label>
+      ))}
+    </BaseRadioGroup>
+  );
+}
+
+export interface SwitchProps extends React.ComponentPropsWithoutRef<typeof BaseSwitch.Root> {
+  label: React.ReactNode;
+  description?: React.ReactNode;
+}
+
+export function Switch({ label, description, className, ...props }: SwitchProps) {
+  return (
+    <label className={cn("ui-switch-row", props.disabled && "ui-choice-row--disabled")}>
+      <span className="ui-choice-copy">
+        <span className="ui-choice-label">{label}</span>
+        {description ? <span className="ui-choice-description">{description}</span> : null}
+      </span>
+      <BaseSwitch.Root className={cn("ui-switch", className)} {...props}>
+        <BaseSwitch.Thumb className="ui-switch__thumb" />
+      </BaseSwitch.Root>
+    </label>
+  );
+}
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface SelectProps extends Omit<
+  SelectRootProps<string, false>,
+  "children" | "items" | "multiple"
+> {
+  options: SelectOption[];
+  placeholder?: string;
+  className?: string;
+}
+
+export function Select({
+  options,
+  placeholder = "Select an option",
+  className,
+  ...props
+}: SelectProps) {
+  return (
+    <BaseSelect.Root<string> items={options} {...props}>
+      <BaseSelect.Trigger className={cn("ui-select-trigger ui-control--md", className)}>
+        <BaseSelect.Value placeholder={placeholder} />
+        <BaseSelect.Icon className="ui-select-icon">
+          <ChevronDown size={15} />
+        </BaseSelect.Icon>
+      </BaseSelect.Trigger>
+      <BaseSelect.Portal>
+        <BaseSelect.Positioner className="ui-positioner" sideOffset={6}>
+          <BaseSelect.Popup className="ui-popup ui-select-popup">
+            <BaseSelect.List>
+              {options.map((option) => (
+                <BaseSelect.Item className="ui-list-item" key={option.value} value={option.value}>
+                  <BaseSelect.ItemIndicator className="ui-list-item__indicator">
+                    <Check size={14} />
+                  </BaseSelect.ItemIndicator>
+                  <span className="ui-list-item__copy">
+                    <BaseSelect.ItemText>{option.label}</BaseSelect.ItemText>
+                    {option.description ? (
+                      <span className="ui-list-item__description">{option.description}</span>
+                    ) : null}
+                  </span>
+                </BaseSelect.Item>
+              ))}
+            </BaseSelect.List>
+          </BaseSelect.Popup>
+        </BaseSelect.Positioner>
+      </BaseSelect.Portal>
+    </BaseSelect.Root>
+  );
+}
+
+export interface ComboboxOption {
+  value: string;
+  label: string;
+  meta?: string;
+}
+
+export interface ComboboxProps extends Omit<
+  ComboboxRootProps<ComboboxOption, false>,
+  | "children"
+  | "items"
+  | "multiple"
+  | "itemToStringLabel"
+  | "itemToStringValue"
+  | "isItemEqualToValue"
+> {
+  options: ComboboxOption[];
+  placeholder?: string;
+  className?: string;
+  ariaLabel?: string;
+}
+
+export function Combobox({
+  options,
+  placeholder = "Search options",
+  className,
+  ariaLabel,
+  ...props
+}: ComboboxProps) {
+  return (
+    <BaseCombobox.Root<ComboboxOption>
+      items={options}
+      itemToStringLabel={(item) => item.label}
+      itemToStringValue={(item) => item.value}
+      isItemEqualToValue={(item, value) => item.value === value.value}
+      {...props}
+    >
+      <BaseCombobox.InputGroup className={cn("ui-combobox-group ui-control--md", className)}>
+        <Search className="ui-combobox-search" size={14} aria-hidden />
+        <BaseCombobox.Input
+          aria-label={ariaLabel}
+          className="ui-combobox-input"
+          placeholder={placeholder}
+        />
+        <BaseCombobox.Clear className="ui-combobox-action" aria-label="Clear selection">
+          <X size={13} />
+        </BaseCombobox.Clear>
+        <BaseCombobox.Trigger className="ui-combobox-action" aria-label="Open options">
+          <ChevronDown size={14} />
+        </BaseCombobox.Trigger>
+      </BaseCombobox.InputGroup>
+      <BaseCombobox.Portal>
+        <BaseCombobox.Positioner className="ui-positioner" sideOffset={6}>
+          <BaseCombobox.Popup className="ui-popup ui-combobox-popup">
+            <BaseCombobox.Empty className="ui-empty">No matching options</BaseCombobox.Empty>
+            <BaseCombobox.List className="ui-combobox-list">
+              {(option: ComboboxOption) => (
+                <BaseCombobox.Item key={option.value} value={option} className="ui-list-item">
+                  <BaseCombobox.ItemIndicator className="ui-list-item__indicator">
+                    <Check size={14} />
+                  </BaseCombobox.ItemIndicator>
+                  <span className="ui-list-item__copy">
+                    <span>{option.label}</span>
+                    {option.meta ? (
+                      <span className="ui-list-item__description">{option.meta}</span>
+                    ) : null}
+                  </span>
+                </BaseCombobox.Item>
+              )}
+            </BaseCombobox.List>
+          </BaseCombobox.Popup>
+        </BaseCombobox.Positioner>
+      </BaseCombobox.Portal>
+    </BaseCombobox.Root>
+  );
+}

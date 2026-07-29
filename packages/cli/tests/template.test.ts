@@ -16,27 +16,42 @@ afterEach(async () => {
   );
 });
 
-async function generatedProject(): Promise<string> {
-  const cwd = await mkdtemp(resolve(tmpdir(), "fia-template-mcp-"));
+async function generatedProject(mcp: boolean): Promise<string> {
+  const cwd = await mkdtemp(resolve(tmpdir(), `fia-template-${mcp ? "mcp" : "ui"}-`));
   temporaryDirectories.push(cwd);
   const project = await createProject({
     name: "template-app",
     cwd,
+    mcp,
     install: false,
     initializeGit: false,
     io: { stdout: () => {} },
     dependencies: { cliPackageSpec: `file:${packageRoot}` },
   });
   const modules = resolve(project, "node_modules");
+  await mkdir(resolve(modules, "@base-ui"), { recursive: true });
   await mkdir(resolve(modules, "@semicoder"), { recursive: true });
   await mkdir(resolve(modules, "@types"), { recursive: true });
+  await symlink(
+    resolve(packageRoot, "node_modules/@base-ui/react"),
+    resolve(modules, "@base-ui/react"),
+    "dir",
+  );
   await symlink(packageRoot, resolve(modules, "@semicoder/fia"), "dir");
   await symlink(
     resolve(repositoryRoot, "node_modules/typescript"),
     resolve(modules, "typescript"),
     "dir",
   );
-  for (const dependency of ["react", "react-dom", "zod"] as const) {
+  for (const dependency of [
+    "class-variance-authority",
+    "clsx",
+    "lucide-react",
+    "react",
+    "react-dom",
+    "tailwind-merge",
+    "zod",
+  ] as const) {
     await symlink(
       resolve(packageRoot, "node_modules", dependency),
       resolve(modules, dependency),
@@ -56,29 +71,33 @@ async function generatedProject(): Promise<string> {
 }
 
 describe("generated MCP React template", () => {
-  test("typechecks against the published FIA API", async () => {
-    const project = await generatedProject();
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
-        "--noEmit",
-        "-p",
-        resolve(project, "tsconfig.json"),
-      ],
-      { cwd: project, stdout: "pipe", stderr: "pipe" },
-    );
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (exitCode !== 0)
-      throw new Error(`Generated template did not typecheck:\n${stdout}${stderr}`);
+  test("typechecks MCP and UI-only projects against the published FIA API", async () => {
+    for (const mcp of [true, false]) {
+      const project = await generatedProject(mcp);
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
+          "--noEmit",
+          "-p",
+          resolve(project, "tsconfig.json"),
+        ],
+        { cwd: project, stdout: "pipe", stderr: "pipe" },
+      );
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      if (exitCode !== 0)
+        throw new Error(
+          `Generated ${mcp ? "MCP" : "UI-only"} template did not typecheck:\n${stdout}${stderr}`,
+        );
+    }
   });
 
   test("exports a marked synchronous MCP server factory", async () => {
-    const project = await generatedProject();
+    const project = await generatedProject(true);
     const module = (await import(
       `${pathToFileURL(resolve(project, "src/mcp/server.ts")).href}?test=${crypto.randomUUID()}`
     )) as { default: unknown };

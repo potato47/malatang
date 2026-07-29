@@ -1,56 +1,160 @@
 import { useCallback, useEffect, useState } from "react";
 import { native, type FIANativeState } from "@semicoder/fia/native";
+import { AppWindow, Moon, Monitor, PanelTop, Sparkles, Sun } from "lucide-react";
+import {
+  Badge,
+  Button,
+  IconButton,
+  Menu,
+  Tooltip,
+  useTheme,
+  useToast,
+  type BadgeProps,
+} from "./components/ui";
 
 type Status = "idle" | "working" | "success" | "error";
 
+const statusTone: Record<Status, BadgeProps["tone"]> = {
+  idle: "neutral",
+  working: "warning",
+  success: "success",
+  error: "danger",
+};
+
+function ThemeMenu() {
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const ThemeIcon = resolvedTheme === "dark" ? Moon : Sun;
+
+  return (
+    <Menu
+      trigger={
+        <IconButton variant="ghost" aria-label="Change color theme">
+          <ThemeIcon size={16} />
+        </IconButton>
+      }
+      items={[
+        {
+          id: "theme-system",
+          label: "System",
+          icon: <Monitor size={14} />,
+          checked: theme === "system",
+          onSelect: () => setTheme("system"),
+        },
+        {
+          id: "theme-light",
+          label: "Light",
+          icon: <Sun size={14} />,
+          checked: theme === "light",
+          onSelect: () => setTheme("light"),
+        },
+        {
+          id: "theme-dark",
+          label: "Dark",
+          icon: <Moon size={14} />,
+          checked: theme === "dark",
+          onSelect: () => setTheme("dark"),
+        },
+      ]}
+    />
+  );
+}
+
 export function App() {
+  const toast = useToast();
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("Checking the FIA native MCP server …");
   const [desktopState, setDesktopState] = useState<FIANativeState | null>(null);
 
-  const update = useCallback(async (action: () => Promise<FIANativeState>) => {
-    setStatus("working");
-    try {
-      const state = await action();
-      setDesktopState(state);
-      setStatus("success");
-      setMessage(`${state.mode} mode · native MCP ready`);
-    } catch (error) {
-      setStatus("error");
-      setMessage(error instanceof Error ? error.message : "Native MCP command failed");
-    }
-  }, []);
+  const update = useCallback(
+    async (action: () => Promise<FIANativeState>, notify = true) => {
+      setStatus("working");
+      try {
+        const state = await action();
+        setDesktopState(state);
+        setStatus("success");
+        setMessage(`${state.mode} mode · native MCP ready`);
+        if (notify) {
+          toast.success({
+            title: "Window mode updated",
+            description: "The native window state is up to date.",
+          });
+        }
+      } catch (error) {
+        const nextMessage = error instanceof Error ? error.message : "Native MCP command failed";
+        setStatus("error");
+        setMessage(nextMessage);
+        if (notify) toast.error({ title: "Native command failed", description: nextMessage });
+      }
+    },
+    [toast],
+  );
 
   useEffect(() => {
     if (!native.isAvailable()) {
       setMessage("Native MCP bridge unavailable outside the FIA Host.");
       return;
     }
-    void update(() => native.getState());
+    void update(() => native.getState(), false);
   }, [update]);
 
   return (
-    <main>
-      <header className="hero">
-        <div className="eyebrow">FIA Framework · UI only</div>
+    <main className="app-shell">
+      <nav className="app-nav" aria-label="Application">
+        <div className="app-brand">
+          <span className="app-brand__mark">
+            <Sparkles size={15} />
+          </span>
+          <span>FIA</span>
+        </div>
+        <ThemeMenu />
+      </nav>
+
+      <header className="app-hero">
+        <Badge tone="accent">FIA Framework · UI only</Badge>
         <h1>__FIA_DISPLAY_NAME__</h1>
-        <p>A static React UI backed only by the built-in native MCP server.</p>
+        <p>
+          A static React interface with accessible preset components and the built-in native MCP
+          server.
+        </p>
       </header>
-      <section className="grid">
-        <article className={`card ${status}`}>
-          <span className="badge">fia.native</span>
-          <h2>Desktop shell</h2>
-          <p>{message}</p>
-          <button
-            type="button"
+
+      <section className="app-grid app-grid--single" aria-label="Framework checks">
+        <article className="app-card">
+          <div className="app-card__heading">
+            <span className="app-card__icon">
+              <AppWindow size={18} />
+            </span>
+            <Badge tone={statusTone[status]} dot>
+              {status}
+            </Badge>
+          </div>
+          <div className="app-card__copy">
+            <span>fia.native</span>
+            <h2>Desktop shell</h2>
+            <p>{message}</p>
+          </div>
+          <Button
+            variant="primary"
+            loading={status === "working"}
             disabled={status === "working" || desktopState === null}
-            onClick={() => void update(() => native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop))}
+            onClick={() =>
+              void update(() =>
+                native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop),
+              )
+            }
           >
+            <PanelTop size={15} />
             Toggle floating
-          </button>
+          </Button>
         </article>
       </section>
-      <footer>Static UI · built-in native MCP · no application server</footer>
+
+      <footer className="app-footer">
+        <span>Static UI · built-in native MCP · no application server</span>
+        <Tooltip content="Editable source in src/ui/components/ui">
+          <Badge>Preset UI library</Badge>
+        </Tooltip>
+      </footer>
     </main>
   );
 }

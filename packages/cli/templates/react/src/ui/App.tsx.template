@@ -1,11 +1,76 @@
 import { useCallback, useEffect, useState } from "react";
 import { mcp } from "@semicoder/fia/mcp";
 import { native, type FIANativeState } from "@semicoder/fia/native";
+import {
+  AppWindow,
+  Moon,
+  Monitor,
+  PanelTop,
+  Radio,
+  Sparkles,
+  Sun,
+} from "lucide-react";
 import type { Greeting } from "../shared/types";
+import {
+  Badge,
+  Button,
+  IconButton,
+  Menu,
+  Tooltip,
+  useTheme,
+  useToast,
+  type BadgeProps,
+} from "./components/ui";
 
 type Status = "idle" | "working" | "success" | "error";
 
+const statusTone: Record<Status, BadgeProps["tone"]> = {
+  idle: "neutral",
+  working: "warning",
+  success: "success",
+  error: "danger",
+};
+
+function ThemeMenu() {
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const ThemeIcon = resolvedTheme === "dark" ? Moon : Sun;
+
+  return (
+    <Menu
+      trigger={
+        <IconButton variant="ghost" aria-label="Change color theme">
+          <ThemeIcon size={16} />
+        </IconButton>
+      }
+      items={[
+        {
+          id: "theme-system",
+          label: "System",
+          icon: <Monitor size={14} />,
+          checked: theme === "system",
+          onSelect: () => setTheme("system"),
+        },
+        {
+          id: "theme-light",
+          label: "Light",
+          icon: <Sun size={14} />,
+          checked: theme === "light",
+          onSelect: () => setTheme("light"),
+        },
+        {
+          id: "theme-dark",
+          label: "Dark",
+          icon: <Moon size={14} />,
+          checked: theme === "dark",
+          onSelect: () => setTheme("dark"),
+        },
+      ]}
+    />
+  );
+}
+
 export function App() {
+  const toast = useToast();
   const [mcpStatus, setMcpStatus] = useState<Status>("idle");
   const [mcpMessage, setMcpMessage] = useState("Ready to call the bundled application MCP server.");
   const [nativeStatus, setNativeStatus] = useState<Status>("idle");
@@ -20,84 +85,152 @@ export function App() {
         arguments: { name: "FIA" },
       });
       const greeting = result.structuredContent as Greeting;
+      const message = `${greeting.message} · ${new Date(greeting.timestamp).toLocaleTimeString()}`;
       setMcpStatus("success");
-      setMcpMessage(`${greeting.message} · ${new Date(greeting.timestamp).toLocaleTimeString()}`);
+      setMcpMessage(message);
+      toast.success({ title: "Application MCP responded", description: greeting.message });
     } catch (error) {
+      const message = error instanceof Error ? error.message : "MCP request failed";
       setMcpStatus("error");
-      setMcpMessage(error instanceof Error ? error.message : "MCP request failed");
+      setMcpMessage(message);
+      toast.error({ title: "Application MCP failed", description: message });
     }
-  }, []);
+  }, [toast]);
 
-  const runNative = useCallback(async (action: () => Promise<FIANativeState>) => {
-    setNativeStatus("working");
-    try {
-      const state = await action();
-      setDesktopState(state);
-      setNativeStatus("success");
-      setNativeMessage(`${state.mode} mode · ${state.window.alwaysOnTop ? "floating" : "normal"} window`);
-    } catch (error) {
-      setNativeStatus("error");
-      setNativeMessage(error instanceof Error ? error.message : "Native MCP command failed");
-    }
-  }, []);
+  const runNative = useCallback(
+    async (action: () => Promise<FIANativeState>, successTitle: string) => {
+      setNativeStatus("working");
+      try {
+        const state = await action();
+        setDesktopState(state);
+        setNativeStatus("success");
+        setNativeMessage(
+          `${state.mode} mode · ${state.window.alwaysOnTop ? "floating" : "normal"} window`,
+        );
+        toast.success({ title: successTitle, description: "The native window state is up to date." });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Native MCP command failed";
+        setNativeStatus("error");
+        setNativeMessage(message);
+        toast.error({ title: "Native command failed", description: message });
+      }
+    },
+    [toast],
+  );
 
   useEffect(() => {
     if (!native.isAvailable()) {
       setNativeMessage("Native MCP bridge unavailable outside the FIA Host.");
       return;
     }
-    void native.getState().then((state) => {
-      setDesktopState(state);
-      setNativeStatus("success");
-      setNativeMessage(`${state.mode} mode · native MCP ready`);
-    }).catch((error: unknown) => {
-      setNativeStatus("error");
-      setNativeMessage(error instanceof Error ? error.message : "Native MCP failed");
-    });
+    void native
+      .getState()
+      .then((state) => {
+        setDesktopState(state);
+        setNativeStatus("success");
+        setNativeMessage(`${state.mode} mode · native MCP ready`);
+      })
+      .catch((error: unknown) => {
+        setNativeStatus("error");
+        setNativeMessage(error instanceof Error ? error.message : "Native MCP failed");
+      });
   }, []);
 
   return (
-    <main>
-      <header className="hero">
-        <div className="eyebrow">FIA Framework · MCP 2026-07-28</div>
+    <main className="app-shell">
+      <nav className="app-nav" aria-label="Application">
+        <div className="app-brand">
+          <span className="app-brand__mark">
+            <Sparkles size={15} />
+          </span>
+          <span>FIA</span>
+        </div>
+        <ThemeMenu />
+      </nav>
+
+      <header className="app-hero">
+        <Badge tone="accent">FIA Framework · MCP 2026-07-28</Badge>
         <h1>__FIA_DISPLAY_NAME__</h1>
-        <p>A static React UI with Bun-powered MCP extensions and a native Swift host.</p>
+        <p>
+          A static React interface with accessible preset components, Bun-powered MCP extensions,
+          and a native Swift host.
+        </p>
       </header>
 
-      <section className="grid" aria-label="MCP checks">
-        <article className={`card ${mcpStatus}`}>
-          <span className="badge">App MCP</span>
-          <h2>Typed greeting</h2>
-          <p>{mcpMessage}</p>
-          <button type="button" onClick={callApp} disabled={mcpStatus === "working"}>
+      <section className="app-grid" aria-label="Framework checks">
+        <article className="app-card">
+          <div className="app-card__heading">
+            <span className="app-card__icon">
+              <Radio size={18} />
+            </span>
+            <Badge tone={statusTone[mcpStatus]} dot>
+              {mcpStatus}
+            </Badge>
+          </div>
+          <div className="app-card__copy">
+            <span>Application MCP</span>
+            <h2>Typed greeting</h2>
+            <p>{mcpMessage}</p>
+          </div>
+          <Button
+            variant="primary"
+            onClick={callApp}
+            loading={mcpStatus === "working"}
+            disabled={mcpStatus === "working"}
+          >
             Call greet
-          </button>
+          </Button>
         </article>
 
-        <article className={`card ${nativeStatus}`}>
-          <span className="badge">fia.native</span>
-          <h2>Desktop shell</h2>
-          <p>{nativeMessage}</p>
-          <div className="actions">
-            <button
-              type="button"
+        <article className="app-card">
+          <div className="app-card__heading">
+            <span className="app-card__icon">
+              <AppWindow size={18} />
+            </span>
+            <Badge tone={statusTone[nativeStatus]} dot>
+              {nativeStatus}
+            </Badge>
+          </div>
+          <div className="app-card__copy">
+            <span>fia.native</span>
+            <h2>Desktop shell</h2>
+            <p>{nativeMessage}</p>
+          </div>
+          <div className="app-actions">
+            <Button
               disabled={nativeStatus === "working" || desktopState === null}
-              onClick={() => void runNative(() => native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop))}
+              loading={nativeStatus === "working"}
+              onClick={() =>
+                void runNative(
+                  () => native.window.setAlwaysOnTop(!desktopState!.window.alwaysOnTop),
+                  "Window mode updated",
+                )
+              }
             >
+              <PanelTop size={15} />
               Toggle floating
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
               disabled={nativeStatus === "working" || desktopState === null}
-              onClick={() => void runNative(() => native.statusBar.setVisible(!desktopState!.statusBarVisible))}
+              onClick={() =>
+                void runNative(
+                  () => native.statusBar.setVisible(!desktopState!.statusBarVisible),
+                  "Status item updated",
+                )
+              }
             >
               Toggle status item
-            </button>
+            </Button>
           </div>
         </article>
       </section>
 
-      <footer>Static UI · MCP stdio extensions · no production Bun dependency</footer>
+      <footer className="app-footer">
+        <span>Static UI · MCP stdio extensions · no production Bun dependency</span>
+        <Tooltip content="Editable source in src/ui/components/ui">
+          <Badge>Preset UI library</Badge>
+        </Tooltip>
+      </footer>
     </main>
   );
 }

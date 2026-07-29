@@ -1,0 +1,144 @@
+import { Menu as BaseMenu } from "@base-ui/react/menu";
+import { Tabs as BaseTabs } from "@base-ui/react/tabs";
+import { Toggle as BaseToggle } from "@base-ui/react/toggle";
+import { ToggleGroup as BaseToggleGroup } from "@base-ui/react/toggle-group";
+import { Check, ChevronRight } from "lucide-react";
+import * as React from "react";
+
+import { cn } from "./cn";
+
+const TabsRoot = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof BaseTabs.Root>
+>(function TabsRoot({ className, ...props }, ref) {
+  return <BaseTabs.Root ref={ref} className={cn("ui-tabs", className)} {...props} />;
+});
+
+const TabsList = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof BaseTabs.List>
+>(function TabsList({ className, ...props }, ref) {
+  return <BaseTabs.List ref={ref} className={cn("ui-tabs__list", className)} {...props} />;
+});
+
+const TabsTab = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentPropsWithoutRef<typeof BaseTabs.Tab>
+>(function TabsTab({ className, ...props }, ref) {
+  return <BaseTabs.Tab ref={ref} className={cn("ui-tabs__tab", className)} {...props} />;
+});
+
+const TabsPanel = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentPropsWithoutRef<typeof BaseTabs.Panel>
+>(function TabsPanel({ className, ...props }, ref) {
+  return <BaseTabs.Panel ref={ref} className={cn("ui-tabs__panel", className)} {...props} />;
+});
+
+export const Tabs = {
+  Root: TabsRoot,
+  List: TabsList,
+  Tab: TabsTab,
+  Panel: TabsPanel,
+};
+
+export interface ToggleOption {
+  value: string;
+  label: React.ReactNode;
+  icon?: React.ReactNode;
+  ariaLabel?: string;
+}
+
+export interface ToggleGroupProps extends Omit<
+  React.ComponentPropsWithoutRef<typeof BaseToggleGroup>,
+  "children"
+> {
+  options: ToggleOption[];
+}
+
+export function ToggleGroup({ options, className, ...props }: ToggleGroupProps) {
+  return (
+    <BaseToggleGroup className={cn("ui-toggle-group", className)} {...props}>
+      {options.map((option) => (
+        <BaseToggle
+          className="ui-toggle"
+          key={option.value}
+          value={option.value}
+          aria-label={option.ariaLabel}
+        >
+          {option.icon}
+          {option.label}
+        </BaseToggle>
+      ))}
+    </BaseToggleGroup>
+  );
+}
+
+export interface MenuItem {
+  id: string;
+  label: React.ReactNode;
+  icon?: React.ReactNode;
+  shortcut?: string;
+  disabled?: boolean;
+  danger?: boolean;
+  checked?: boolean;
+  onSelect?: () => void;
+}
+
+export interface MenuProps extends Omit<
+  React.ComponentPropsWithoutRef<typeof BaseMenu.Root>,
+  "children"
+> {
+  trigger: React.ReactElement;
+  items: MenuItem[];
+  align?: "start" | "center" | "end";
+}
+
+export function Menu({ trigger, items, align = "end", ...props }: MenuProps) {
+  return (
+    <BaseMenu.Root {...props}>
+      <BaseMenu.Trigger render={trigger} />
+      <BaseMenu.Portal>
+        <BaseMenu.Positioner className="ui-positioner" sideOffset={6} align={align}>
+          <BaseMenu.Popup className="ui-popup ui-menu-popup">
+            {items.map((item) =>
+              typeof item.checked === "boolean" ? (
+                <BaseMenu.CheckboxItem
+                  className="ui-menu-item"
+                  key={item.id}
+                  checked={item.checked}
+                  disabled={item.disabled}
+                  onClick={item.onSelect}
+                >
+                  <span className="ui-menu-item__icon">
+                    <BaseMenu.CheckboxItemIndicator>
+                      <Check size={14} />
+                    </BaseMenu.CheckboxItemIndicator>
+                  </span>
+                  <span className="ui-menu-item__label">{item.label}</span>
+                  {item.shortcut ? (
+                    <span className="ui-menu-item__shortcut">{item.shortcut}</span>
+                  ) : null}
+                </BaseMenu.CheckboxItem>
+              ) : (
+                <BaseMenu.Item
+                  className={cn("ui-menu-item", item.danger && "ui-menu-item--danger")}
+                  key={item.id}
+                  disabled={item.disabled}
+                  onClick={item.onSelect}
+                >
+                  <span className="ui-menu-item__icon">{item.icon}</span>
+                  <span className="ui-menu-item__label">{item.label}</span>
+                  {item.shortcut ? (
+                    <span className="ui-menu-item__shortcut">{item.shortcut}</span>
+                  ) : null}
+                  {item.id.endsWith("-more") ? <ChevronRight size={13} aria-hidden /> : null}
+                </BaseMenu.Item>
+              ),
+            )}
+          </BaseMenu.Popup>
+        </BaseMenu.Positioner>
+      </BaseMenu.Portal>
+    </BaseMenu.Root>
+  );
+}
