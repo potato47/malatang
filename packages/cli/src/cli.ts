@@ -31,15 +31,15 @@ const rootHelp = `FIA command-line interface
 Usage:
   fia [--help]
   fia [--version]
-  fia [--debug] create <name> [--no-mcp] [--no-install] [--git]
+  fia [--debug] create <name> [--no-install] [--git]
   fia [--debug] dev
   fia [--debug] build
   fia [--debug] run
   fia [--debug] doctor [--json]
 
 Commands:
-  create       Create a React FIA project with an optional Bun MCP server
-  dev          Launch the application with React HMR
+  create       Create a React FIA project with a resident Bun backend
+  dev          Launch the application with Bun full-stack HMR
   build        Build and ad-hoc sign a production .app
   run          Build and launch the current source in production mode
   doctor       Check the local FIA development environment
@@ -51,14 +51,13 @@ Global options:
   --debug      Include diagnostic command details
 `;
 
-const createHelp = `Create a React FIA project with an optional Bun MCP server
+const createHelp = `Create a React FIA project with a resident Bun backend
 
 Usage:
-  fia [--debug] create <name> [--no-mcp] [--no-install] [--git]
+  fia [--debug] create <name> [--no-install] [--git]
 
 Options:
   -h, --help   Show help for create
-  --no-mcp     Generate a UI-only application
   --no-install Generate files without running bun install
   --git        Initialize a Git repository
   --debug      Include diagnostic error details
@@ -162,11 +161,9 @@ export async function runCLI(
     if (name === undefined || name.startsWith("-"))
       return usageError(io, "create requires a project name");
     const flags = createArguments.slice(1);
-    const unknown = flags.find(
-      (flag) => flag !== "--no-mcp" && flag !== "--no-install" && flag !== "--git",
-    );
+    const unknown = flags.find((flag) => flag !== "--no-install" && flag !== "--git");
     if (unknown !== undefined) return usageError(io, `unknown create option: ${unknown}`);
-    for (const flag of ["--no-mcp", "--no-install", "--git"] as const) {
+    for (const flag of ["--no-install", "--git"] as const) {
       if (flags.filter((value) => value === flag).length > 1) {
         return usageError(io, `create ${flag} may only be specified once`);
       }
@@ -176,7 +173,6 @@ export async function runCLI(
       await createProject({
         name,
         cwd: dependencies.workingDirectory ?? process.cwd(),
-        mcp: !flags.includes("--no-mcp"),
         install: !flags.includes("--no-install"),
         initializeGit: flags.includes("--git"),
         io,

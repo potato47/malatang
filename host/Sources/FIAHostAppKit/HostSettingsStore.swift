@@ -2,7 +2,7 @@ import FIAHostCore
 import Foundation
 
 @MainActor
-final class DesktopSettingsStore {
+final class HostSettingsStore {
     private let settingsURL: URL
     private let diagnostic: (String) -> Void
     private var pendingSave: Task<Void, Never>?
@@ -16,27 +16,26 @@ final class DesktopSettingsStore {
         )
         let directory = base.appendingPathComponent(identifier, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        settingsURL = directory.appendingPathComponent("settings.json", isDirectory: false)
+        settingsURL = directory.appendingPathComponent("settings-v2.json", isDirectory: false)
         self.diagnostic = diagnostic
     }
 
-    deinit {
-        pendingSave?.cancel()
-    }
+    deinit { pendingSave?.cancel() }
 
-    func load() -> DesktopSettings? {
-        guard FileManager.default.fileExists(atPath: settingsURL.path) else { return nil }
+    func load(fallbackSymbol: String) -> HostSettings {
+        guard FileManager.default.fileExists(atPath: settingsURL.path) else {
+            return HostSettings(statusItemSymbol: fallbackSymbol)
+        }
         do {
-            return try DesktopSettings.decode(Data(contentsOf: settingsURL, options: [.mappedIfSafe]))
+            return try HostSettings.decode(Data(contentsOf: settingsURL, options: [.mappedIfSafe]))
         } catch {
-            diagnostic("ignoring invalid desktop settings: \(error)")
-            return nil
+            diagnostic("ignoring invalid host settings: \(error)")
+            return HostSettings(statusItemSymbol: fallbackSymbol)
         }
     }
 
-    func scheduleSave(state: DesktopState, windowFrame: DesktopWindowFrame?) {
+    func scheduleSave(_ settings: HostSettings) {
         pendingSave?.cancel()
-        let settings = DesktopSettings(state: state, windowFrame: windowFrame)
         pendingSave = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(200))
             guard !Task.isCancelled else { return }
@@ -44,13 +43,13 @@ final class DesktopSettingsStore {
         }
     }
 
-    func flush(state: DesktopState, windowFrame: DesktopWindowFrame?) {
+    func flush(_ settings: HostSettings) {
         pendingSave?.cancel()
         pendingSave = nil
-        save(DesktopSettings(state: state, windowFrame: windowFrame))
+        save(settings)
     }
 
-    private func save(_ settings: DesktopSettings) {
+    private func save(_ settings: HostSettings) {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -58,7 +57,7 @@ final class DesktopSettingsStore {
             data.append(0x0A)
             try data.write(to: settingsURL, options: .atomic)
         } catch {
-            diagnostic("could not save desktop settings: \(error.localizedDescription)")
+            diagnostic("could not save host settings: \(error.localizedDescription)")
         }
     }
 }

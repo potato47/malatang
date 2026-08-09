@@ -1,34 +1,17 @@
-# Native MCP 能力
+# Host 原生能力
 
-`fia.native` 在 Host 进程内实现 MCP tools、resources 和 subscriptions。浏览器端的
-`@semicoder/fia/native` 只提供类型化易用接口，所有实际操作仍是 `tools/call`。
+原生能力只通过 `defineBackend` 上下文中的 `host` 暴露，浏览器 bundle 没有对应导出。
 
-## 当前 tools
+- `host.application`：读取 Dock/状态栏可见性、退出、切换 Dock。
+- `host.statusItem`：可见性、SF Symbol、tooltip、完整动态菜单、左键与 action 事件。
+- `host.webviews`：按 ID open/upsert、navigate、show/hide/focus/close/update/list 和状态事件。
+- `host.system.openURL`：通过系统默认浏览器打开 HTTP(S) URL。
 
-| Tool                              | Typed facade                               |
-| --------------------------------- | ------------------------------------------ |
-| `native.getState`                 | `native.getState()`                        |
-| `app.quit`                        | `native.app.quit()`                        |
-| `app.showDock` / `app.hideDock`   | `native.app.showDock()` / `hideDock()`     |
-| `window.show` / `hide` / `focus`  | `native.window.*`                          |
-| `window.setAlwaysOnTop`           | `native.window.setAlwaysOnTop()`           |
-| `window.setVisibleOnAllSpaces`    | `native.window.setVisibleOnAllSpaces()`    |
-| `window.setVisibleOverFullScreen` | `native.window.setVisibleOverFullScreen()` |
-| `statusBar.setVisible`            | `native.statusBar.setVisible()`            |
-| `statusBar.setIcon`               | `native.statusBar.setIcon()`               |
+菜单最多 8 层/256 节点，支持 separator、enabled、hidden、checked、SF Symbol、快捷键和
+子菜单；`fia.*` ID 保留，Quit 始终由 Host 追加。
 
-状态包含应用 mode、Dock/状态栏可见性、状态栏 symbol，以及窗口 visible、focused、
-always-on-top 和 Spaces 行为。
+WebView 默认 1024×700、最小 720×480、关闭时隐藏并恢复按 ID 保存的位置。Backend 可加载
+任意 HTTP(S) URL，但 WebView 没有 script message handler；用户点击的跨 origin 主框架链接
+交给系统浏览器。
 
-## 状态资源与通知
-
-Native Server 提供当前桌面状态 resource，并在窗口、Dock 或状态栏状态改变时发送更新。
-typed facade 同时提供 `native.onEvent()` 以便常见 UI 直接消费状态变更和状态栏点击。
-
-## 扩展原则
-
-- 可复用原生能力优先建模为 MCP tool/resource，而不是新增 WebKit handler。
-- 输入、输出与错误都声明 schema。
-- 能读取的稳定状态优先提供 resource。
-- 仅向主 frame 的精确应用 origin 暴露。
-- 文件面板、通知、外部打开和 Keychain 作为后续 Native MCP 能力加入。
+Dock 和状态栏不能同时隐藏，以保证故障后仍有恢复入口。

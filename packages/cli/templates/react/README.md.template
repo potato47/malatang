@@ -1,41 +1,31 @@
 # __FIA_DISPLAY_NAME__
 
-This project was created with FIA Framework 0.5.
+这是一个 FIA 常驻 Bun 服务应用：Swift 状态栏宿主管理唯一 Backend 进程，React 前端通过普通
+HTTP 和 WebSocket 与 Backend 通信。
 
 ```bash
 bun run dev
+bun run typecheck
 bun run build
 bun run run
 ```
 
-`bun run dev` launches the Swift Host with React HMR. Changes under `mcp.app.watch` restart only the
-application MCP server. `bun run build` creates a signed macOS app containing a static UI and
-standalone MCP server binaries; the resulting application does not require Bun to be installed.
+- `src/backend.ts` 使用 `defineBackend` 声明页面、API、WebSocket 和原生宿主交互。
+- `src/ui/` 是普通 React 前端，只使用相对 `fetch` 和 WebSocket，不依赖 FIA 浏览器 SDK。
+- `fia.config.ts` 使用严格的 `configVersion: 4`，Backend 是必选项。
+- `bun run dev` 使用 Bun 全栈 HMR，并由 Swift Host 监管常驻 Backend。
+- `bun run build` 生成包含 Swift Host 与单个 standalone `FIABackend` 的 macOS 应用；目标机器无需安装 Bun。
 
-The UI uses `@semicoder/fia/mcp` for application extensions and `@semicoder/fia/native` for typed
-desktop APIs. Both use MCP `2026-07-28` through the Host's WebKit transport.
+Backend 可通过 `host.application`、`host.statusItem`、`host.webviews` 和 `host.system` 使用原生能力。
+浏览器和 WebView 必须由 Backend 调用安全打开接口建立会话，前端不能直接访问原生接口。
 
-## Preset UI library
+## UI 组件
 
-The editable Tailwind CSS v4 component library lives in `src/ui/components/ui` and is exported from
-its `index.ts`. Import components from the local barrel:
+可编辑的 Tailwind CSS v4 组件库位于 `src/ui/components/ui`，通过本地 barrel 导入：
 
 ```tsx
 import { Button, Dialog, Field, Input, useToast } from "./components/ui";
 ```
 
-It includes primitives, form controls, navigation, overlays, notifications, and a light/dark/system
-theme. `src/ui/main.tsx` already installs `ThemeProvider` and `ToastProvider`.
-`src/ui/style.css` imports Tailwind CSS v4 and exposes the semantic `ui-*` color and radius tokens;
-the components themselves are styled with Tailwind utilities. Keep those providers mounted when
-using `useTheme` or `useToast`. `bunfig.toml` enables the Tailwind plugin for HMR, and FIA applies the
-same plugin during production builds.
-
-## MCP boundary
-
-`src/mcp/server.ts` exports a synchronous `defineMcpServer` factory. FIA generates the stdio entry and
-rejects legacy MCP clients. Keep structured control data under 1 MiB on MCP; use explicit file paths
-or another purpose-built channel for large media.
-
-Additional servers may be configured in `mcp.servers`. They must be executable arm64 Mach-O files
-inside the project and are copied, verified, and signed into the application.
+`src/ui/main.tsx` 已挂载 `ThemeProvider` 和 `ToastProvider`。`bunfig.toml` 为开发 HMR 启用
+Tailwind 插件，FIA 在生产编译时使用相同插件。

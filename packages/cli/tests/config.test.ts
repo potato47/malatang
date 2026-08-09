@@ -1,16 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { defineConfig, FIA_CONFIG_VERSION } from "../src/config.ts";
-import {
-  ProjectConfigError,
-  resolveProjectConfig,
-  type ProjectConfigErrorCode,
-} from "../src/project-config.ts";
+import { ProjectConfigError, resolveProjectConfig } from "../src/project-config.ts";
 
 const temporaryDirectories: string[] = [];
-
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
@@ -18,183 +13,84 @@ afterEach(async () => {
 });
 
 async function project(): Promise<string> {
-  const root = await mkdtemp(resolve(tmpdir(), "fia-config-v3-"));
+  const root = await mkdtemp(resolve(tmpdir(), "fia-config-v4-"));
   temporaryDirectories.push(root);
-  await mkdir(resolve(root, "src/ui"), { recursive: true });
-  await mkdir(resolve(root, "src/mcp"), { recursive: true });
-  await mkdir(resolve(root, "src/shared"), { recursive: true });
-  await mkdir(resolve(root, "mcp"), { recursive: true });
-  await writeFile(resolve(root, "src/ui/index.html"), "<div>test</div>\n");
-  await writeFile(resolve(root, "src/mcp/server.ts"), "export {};\n");
-  await writeFile(resolve(root, "mcp/search-server"), "#!/bin/sh\nexit 0\n");
-  await chmod(resolve(root, "mcp/search-server"), 0o755);
+  await mkdir(resolve(root, "src"));
+  await writeFile(resolve(root, "src/backend.ts"), "export default {};\n");
+  await writeFile(resolve(root, "icon.icns"), "icon");
   return root;
 }
 
-function minimal(): Record<string, unknown> {
+function base() {
   return {
-    configVersion: 3,
-    app: { name: "Hello", identifier: "com.example.hello" },
+    configVersion: 4 as const,
+    app: { name: "Desktop", identifier: "com.example.desktop" },
+    backend: { entry: "src/backend.ts" },
   };
 }
 
-async function expectConfigError(
-  promise: Promise<unknown>,
-  code: ProjectConfigErrorCode,
-  path?: string,
-): Promise<void> {
-  try {
-    await promise;
-    throw new Error("Expected ProjectConfigError");
-  } catch (error) {
-    expect(error).toBeInstanceOf(ProjectConfigError);
-    expect((error as ProjectConfigError).code).toBe(code);
-    if (path !== undefined) expect((error as ProjectConfigError).path).toBe(path);
-  }
-}
-
-describe("FIA configVersion 3", () => {
-  test("exports the modern configuration version", () => {
-    const config = defineConfig({
-      configVersion: FIA_CONFIG_VERSION,
-      app: { name: "Hello", identifier: "com.example.hello" },
-    });
-    expect(config.app.name).toBe("Hello");
-    expect(FIA_CONFIG_VERSION).toBe(3);
+describe("FIA configVersion 4", () => {
+  test("exports a strict defineConfig helper", () => {
+    const value = defineConfig(base());
+    expect(FIA_CONFIG_VERSION).toBe(4);
+    expect(value.configVersion).toBe(4);
   });
 
-  test("supports a pure UI application", async () => {
+  test("resolves required backend and defaults", async () => {
     const root = await project();
-    const config = await resolveProjectConfig(minimal(), root);
-    expect(config).toMatchObject({
-      configVersion: 3,
-      ui: resolve(root, "src/ui/index.html"),
-      app: { name: "Hello", identifier: "com.example.hello", version: "0.1.0", mode: "dock" },
-      window: { closeBehavior: "quit", restoreState: true },
-      statusBar: { symbol: "circle.grid.2x2.fill", tooltip: "Hello" },
-    });
-    expect(config.mcp).toBeUndefined();
+    const config = await resolveProjectConfig(base(), root);
+    expect(config.backend.entry).toBe(resolve(root, "src/backend.ts"));
+    expect(config.backend.watch).toEqual([resolve(root, "src")]);
+    expect(config.app.version).toBe("0.1.0");
+    expect(config.statusBar.symbol).toBe("circle.grid.2x2.fill");
+    expect(config.statusBar.tooltip).toBe("Desktop");
   });
 
-  test("resolves the default Bun app server and explicit watch paths", async () => {
+  test("resolves explicit watch, icon and status item", async () => {
     const root = await project();
     const config = await resolveProjectConfig(
       {
-        ...minimal(),
-        mcp: {
-          app: {
-            entry: "src/mcp/server.ts",
-            watch: ["src/mcp", "src/shared"],
-          },
-        },
+        ...base(),
+        app: { ...base().app, version: "1.2.3", icon: "icon.icns" },
+        backend: { entry: "src/backend.ts", watch: ["src"] },
+        statusBar: { symbol: "bolt.fill", tooltip: "Service" },
       },
       root,
     );
-    expect(config.mcp?.app).toEqual({
-      entry: resolve(root, "src/mcp/server.ts"),
-      watch: [resolve(root, "src/mcp"), resolve(root, "src/shared")],
-    });
-    expect(config.mcp?.servers).toEqual({});
-
-    const defaults = await resolveProjectConfig(
-      {
-        ...minimal(),
-        mcp: { app: { entry: "src/mcp/server.ts" } },
-      },
-      root,
-    );
-    expect(defaults.mcp?.app?.watch).toEqual([resolve(root, "src/mcp")]);
+    expect(config.backend.watch).toEqual([resolve(root, "src")]);
+    expect(config.app.icon).toBe(resolve(root, "icon.icns"));
+    expect(config.statusBar).toEqual({ symbol: "bolt.fill", tooltip: "Service" });
   });
 
-  test("supports multiple project-contained executable servers", async () => {
+  test("rejects all legacy architecture fields without compatibility", async () => {
     const root = await project();
-    const config = await resolveProjectConfig(
-      {
-        ...minimal(),
-        mcp: {
-          app: { entry: "src/mcp/server.ts" },
-          servers: {
-            search: { executable: "mcp/search-server", args: ["--stdio"] },
-          },
+    for (const [field, value] of [
+      ["ui", "src/ui/index.html"],
+      ["window", {}],
+      ["mcp", {}],
+      ["runtime", {}],
+    ] as const) {
+      await expect(resolveProjectConfig({ ...base(), [field]: value }, root)).rejects.toMatchObject(
+        {
+          code: "CONFIG_INVALID",
+          path: field,
         },
-      },
-      root,
-    );
-    expect(config.mcp?.servers.search).toEqual({
-      executable: resolve(root, "mcp/search-server"),
-      args: ["--stdio"],
-    });
-  });
-
-  test("rejects reserved and malformed server IDs", async () => {
-    const root = await project();
-    for (const id of ["app", "fia.native", "fia.search", "Upper", "a..b"]) {
-      await expectConfigError(
-        resolveProjectConfig(
-          {
-            ...minimal(),
-            mcp: { servers: { [id]: { executable: "mcp/search-server" } } },
-          },
-          root,
-        ),
-        "CONFIG_INVALID",
-        `mcp.servers.${id}`,
       );
     }
-  });
-
-  test("rejects traversal and symlink escape paths", async () => {
-    const root = await project();
-    const outside = await project();
-    await symlink(resolve(outside, "mcp/search-server"), resolve(root, "mcp/linked"));
-    await expectConfigError(
-      resolveProjectConfig(
-        {
-          ...minimal(),
-          mcp: { servers: { search: { executable: "../outside" } } },
-        },
-        root,
-      ),
-      "CONFIG_MCP_INVALID",
-      "mcp.servers.search.executable",
-    );
-    await expectConfigError(
-      resolveProjectConfig(
-        {
-          ...minimal(),
-          mcp: { servers: { search: { executable: "mcp/linked" } } },
-        },
-        root,
-      ),
-      "CONFIG_MCP_INVALID",
-      "mcp.servers.search.executable",
+    await expect(resolveProjectConfig({ ...base(), configVersion: 3 }, root)).rejects.toMatchObject(
+      {
+        code: "CONFIG_UNSUPPORTED_VERSION",
+      },
     );
   });
 
-  test("rejects every removed legacy field and unknown nested fields", async () => {
+  test("requires safe accessible project paths", async () => {
     const root = await project();
-    for (const field of ["runtime", "swift", "entry"]) {
-      await expectConfigError(
-        resolveProjectConfig({ ...minimal(), [field]: "legacy" }, root),
-        "CONFIG_INVALID",
-        field,
-      );
-    }
-    await expectConfigError(
-      resolveProjectConfig(
-        {
-          ...minimal(),
-          mcp: { app: { entry: "src/mcp/server.ts", legacy: true } },
-        },
-        root,
-      ),
-      "CONFIG_INVALID",
-      "mcp.app.legacy",
-    );
-    await expectConfigError(
-      resolveProjectConfig({ ...minimal(), configVersion: 2 }, root),
-      "CONFIG_UNSUPPORTED_VERSION",
-      "configVersion",
-    );
+    await expect(
+      resolveProjectConfig({ ...base(), backend: { entry: "../outside.ts" } }, root),
+    ).rejects.toBeInstanceOf(ProjectConfigError);
+    await expect(
+      resolveProjectConfig({ ...base(), backend: { entry: "missing.ts" } }, root),
+    ).rejects.toMatchObject({ code: "CONFIG_BACKEND_INVALID" });
   });
 });

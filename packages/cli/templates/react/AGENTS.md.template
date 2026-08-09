@@ -1,25 +1,24 @@
 # Agent guide for __FIA_DISPLAY_NAME__
 
-This is a FIA 0.5 desktop application: a static React UI in `WKWebView`, a Swift/AppKit Host, and
-optional MCP stdio extension servers.
+这是一个 FIA 常驻 Bun 服务应用：Swift/AppKit 状态栏宿主管理一个 Bun Backend，网页仅通过 HTTP
+和 WebSocket 与 Backend 通信。
 
 ## Project map
 
-- `fia.config.ts` uses `configVersion: 3` and declares UI, desktop, and MCP settings.
-- `src/mcp/server.ts` exports a synchronous factory with `defineMcpServer`.
-- `src/ui/` contains the React UI; `src/shared/` contains types shared with the MCP server.
-- `src/ui/components/ui/` is the editable Tailwind CSS v4 preset component library.
-- `dist/` and `.fia/` are generated.
+- `fia.config.ts` 使用严格的 `configVersion: 4`，声明应用、必选 Backend 与状态栏初始配置。
+- `src/backend.ts` 使用 `defineBackend` 声明 HTTP、WebSocket、生命周期与 Host 原生调用。
+- `src/ui/` 是普通 React 前端；不要导入 FIA 原生 API。
+- `src/ui/components/ui/` 是可编辑的 Tailwind CSS v4 组件库。
+- `dist/` 和 `.fia/` 是生成目录。
 
-Use `@semicoder/fia/mcp` for extension servers and `@semicoder/fia/native` for typed desktop tools.
-Do not use the removed runtime or backend modules. MCP is pinned to `2026-07-28`; do not add legacy
-initialization or compatibility shims.
+原生能力只能在 Backend 中通过 `host.application`、`host.statusItem`、`host.webviews` 和
+`host.system` 使用。前端使用相对 `fetch` 和同源 WebSocket。不要添加网页桥接、旧 API 兼容层、
+额外 Host 托管的 MCP Server，或绕过安全打开流程传递会话密钥。
 
-Import shared controls from `./components/ui` instead of recreating buttons, fields, dialogs, menus,
-or feedback patterns. Keep `ThemeProvider` and `ToastProvider` mounted in `src/ui/main.tsx`; the
-theme selection is persisted under `fia-ui-theme`. Use Tailwind v4 utilities for component styling,
-and keep shared semantic theme tokens in `src/ui/style.css`. The Bun plugin is configured in
-`bunfig.toml` for development and is also applied by `fia build`.
+状态栏菜单 ID 必须全树唯一，不能使用保留的 `fia.*`；菜单最多 8 层、256 项。打开本机页面时
+调用 `host.webviews.open` 或 `host.system.openURL`，由 Host 注入一次性 bootstrap code。
 
-Run `bun run typecheck` after TypeScript changes and `bun run build` after changing packaging or MCP
-configuration. Keep MCP stdout protocol-clean; write diagnostics to stderr.
+从 `./components/ui` 导入已有控件，保持 `ThemeProvider` 和 `ToastProvider` 挂载。开发期日志写入
+stderr；Backend stdout 专用于 FIA JSONL 协议。
+
+修改 TypeScript 后运行 `bun run typecheck`，涉及生命周期、协议或打包时运行 `bun run build`。

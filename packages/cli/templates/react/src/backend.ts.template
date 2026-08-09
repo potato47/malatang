@@ -1,0 +1,52 @@
+import { defineBackend } from "@semicoder/fia/backend";
+import index from "./ui/index.html";
+
+interface SocketData {
+  connectedAt: number;
+}
+
+export default defineBackend<SocketData>({
+  http: {
+    publicRoutes: { "/": index },
+    routes: {
+      "/api/greet": {
+        GET: () => Response.json({
+          message: "Hello from the resident Bun backend!",
+          timestamp: new Date().toISOString(),
+        }),
+      },
+      "/ws": (request, server) => {
+        if (server.upgrade(request, { data: { connectedAt: Date.now() } })) return;
+        return new Response("WebSocket upgrade failed", { status: 400 });
+      },
+    },
+    websocket: {
+      open(socket) {
+        socket.send(JSON.stringify({ type: "ready", connectedAt: socket.data.connectedAt }));
+      },
+      message(socket, message) {
+        socket.send(message);
+      },
+    },
+  },
+  async start({ host, url }) {
+    await host.statusItem.setMenu([
+      { type: "item", id: "open-window", title: "Open Window", symbol: "macwindow" },
+      { type: "item", id: "open-browser", title: "Open in Browser", symbol: "safari" },
+    ]);
+    const openWindow = () =>
+      host.webviews.open({ id: "main", url: url("/").href, title: __FIA_APP_NAME_JSON__ });
+    const removeClick = host.statusItem.onClick(() => void openWindow());
+    const removeAction = host.statusItem.onAction(({ id }) => {
+      if (id === "open-window") void openWindow();
+      if (id === "open-browser") void host.system.openURL(url("/").href);
+    });
+    (globalThis as typeof globalThis & { __fiaDispose?: () => void }).__fiaDispose = () => {
+      removeClick();
+      removeAction();
+    };
+  },
+  stop() {
+    (globalThis as typeof globalThis & { __fiaDispose?: () => void }).__fiaDispose?.();
+  },
+});

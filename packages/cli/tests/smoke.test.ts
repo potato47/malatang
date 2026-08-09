@@ -9,21 +9,13 @@ import { CLI_VERSION } from "../src/metadata.ts";
 const packageRoot = resolve(import.meta.dir, "..");
 const executable = resolve(packageRoot, "bin/fia");
 const temporaryDirectories: string[] = [];
-
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
 });
 
-async function run(
-  args: readonly string[],
-  cwd = packageRoot,
-): Promise<{
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}> {
+async function run(args: readonly string[], cwd = packageRoot) {
   const child = Bun.spawn([process.execPath, executable, ...args], {
     cwd,
     stdin: "ignore",
@@ -38,39 +30,34 @@ async function run(
   return { stdout, stderr, exitCode };
 }
 
-describe("published FIA 0.5 shape", () => {
-  test("exports only config, MCP, MCP server, and native facades", () => {
+describe("published FIA resident backend shape", () => {
+  test("exports only config and Bun backend APIs", () => {
     expect(packageMetadata.version).toBe(CLI_VERSION);
-    expect(Object.keys(packageMetadata.exports)).toEqual([
-      "./config",
-      "./mcp",
-      "./mcp/server",
-      "./native",
-    ]);
-    expect(packageMetadata.exports).not.toHaveProperty("./runtime");
-    expect(packageMetadata.exports).not.toHaveProperty("./backend");
-    expect(packageMetadata.files).not.toContain("swift");
+    expect(Object.keys(packageMetadata.exports)).toEqual(["./config", "./backend"]);
+    expect(packageMetadata.exports).not.toHaveProperty("./mcp");
+    expect(packageMetadata.exports).not.toHaveProperty("./native");
   });
 
-  test("build output excludes old runtime and backend modules", async () => {
+  test("build output excludes browser bridges and MCP", async () => {
     for (const file of [
       "dist/config.js",
       "dist/config.d.ts",
-      "dist/mcp.js",
-      "dist/mcp.d.ts",
-      "dist/mcp-server.js",
-      "dist/mcp-server.d.ts",
-      "dist/native.js",
-      "dist/native.d.ts",
+      "dist/backend.js",
+      "dist/backend.d.ts",
     ]) {
       expect(await Bun.file(resolve(packageRoot, file)).exists()).toBe(true);
     }
-    for (const removed of ["dist/runtime.js", "dist/backend.js", "dist/managed-runtime.js"]) {
+    for (const removed of [
+      "dist/mcp.js",
+      "dist/mcp-server.js",
+      "dist/native.js",
+      "dist/runtime.js",
+    ]) {
       expect(await Bun.file(resolve(packageRoot, removed)).exists()).toBe(false);
     }
   });
 
-  test("packages a schema-5 Host manifest with MCP bridge metadata", async () => {
+  test("packages a schema-6 Host manifest with stdio capabilities", async () => {
     const host = resolve(packageRoot, "assets/host/darwin-arm64/FIAHost");
     await access(host, constants.X_OK);
     const manifest = JSON.parse(
@@ -79,25 +66,23 @@ describe("published FIA 0.5 shape", () => {
     const hasher = new Bun.CryptoHasher("sha256");
     hasher.update(await Bun.file(host).arrayBuffer());
     expect(manifest).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       cliVersion: CLI_VERSION,
       hostVersion: CLI_VERSION,
-      configurationSchema: 5,
-      mcpBridge: 1,
-      mcpProtocol: "2026-07-28",
-      nativeCapabilities: ["tools", "resources", "subscriptions"],
+      configurationSchema: 6,
+      stdioProtocol: 1,
+      hostCapabilities: ["application", "statusItem", "webviews", "system"],
       sha256: hasher.digest("hex"),
     });
   });
 
-  test("built CLI creates MCP and --no-mcp projects", async () => {
-    const cwd = await mkdtemp(resolve(tmpdir(), "fia-built-v3-"));
+  test("built CLI creates a required backend project and rejects --no-mcp", async () => {
+    const cwd = await mkdtemp(resolve(tmpdir(), "fia-built-v4-"));
     temporaryDirectories.push(cwd);
-    const normal = await run(["create", "mcp-app", "--no-install"], cwd);
-    const uiOnly = await run(["create", "ui-only", "--no-install", "--no-mcp"], cwd);
-    expect(normal.exitCode).toBe(0);
-    expect(uiOnly.exitCode).toBe(0);
-    expect(await Bun.file(resolve(cwd, "mcp-app/src/mcp/server.ts")).exists()).toBe(true);
-    expect(await Bun.file(resolve(cwd, "ui-only/src/mcp/server.ts")).exists()).toBe(false);
+    const created = await run(["create", "service-app", "--no-install"], cwd);
+    const legacy = await run(["create", "legacy", "--no-install", "--no-mcp"], cwd);
+    expect(created.exitCode).toBe(0);
+    expect(legacy.exitCode).toBe(2);
+    expect(await Bun.file(resolve(cwd, "service-app/src/backend.ts")).exists()).toBe(true);
   });
 });

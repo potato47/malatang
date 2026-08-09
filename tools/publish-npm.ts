@@ -39,9 +39,8 @@ interface HostManifest {
   readonly architecture: string;
   readonly minimumSystemVersion: string;
   readonly configurationSchema: number;
-  readonly mcpBridge: number;
-  readonly mcpProtocol: string;
-  readonly nativeCapabilities: readonly string[];
+  readonly stdioProtocol: number;
+  readonly hostCapabilities: readonly string[];
 }
 
 export function parseReleaseArguments(arguments_: readonly string[]): ReleaseArguments {
@@ -117,10 +116,9 @@ export async function validateReleaseMetadata(): Promise<void> {
     throw new Error("package files must be exactly bin, dist, templates, assets, and README.md");
   }
   if (
-    JSON.stringify(Object.keys(cliPackage.exports)) !==
-    JSON.stringify(["./config", "./mcp", "./mcp/server", "./native"])
+    JSON.stringify(Object.keys(cliPackage.exports)) !== JSON.stringify(["./config", "./backend"])
   ) {
-    throw new Error("package exports must contain only the FIA 0.5 MCP public surface");
+    throw new Error("package exports must contain only config and the Bun backend runtime");
   }
 
   const manifestPath = resolve(HOST_DIRECTORY, "manifest.json");
@@ -133,15 +131,14 @@ export async function validateReleaseMetadata(): Promise<void> {
     throw new Error("the release Host asset or manifest is missing", { cause: error });
   }
   if (
-    manifest.schemaVersion !== 2 ||
+    manifest.schemaVersion !== 3 ||
     manifest.cliVersion !== CLI_VERSION ||
     manifest.hostVersion !== CLI_VERSION ||
     manifest.architecture !== "arm64" ||
     manifest.minimumSystemVersion !== "14.0" ||
-    manifest.configurationSchema !== 5 ||
-    manifest.mcpBridge !== 1 ||
-    manifest.mcpProtocol !== "2026-07-28" ||
-    JSON.stringify(manifest.nativeCapabilities) !== '["tools","resources","subscriptions"]'
+    manifest.configurationSchema !== 6 ||
+    manifest.stdioProtocol !== 1 ||
+    JSON.stringify(manifest.hostCapabilities) !== '["application","statusItem","webviews","system"]'
   ) {
     throw new Error(
       `Host manifest is not release-compatible with ${CLI_PACKAGE_NAME}@${CLI_VERSION}`,

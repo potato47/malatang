@@ -99,7 +99,7 @@ describe("fia command routing", () => {
       }),
     ).toBe(0);
     expect(await Bun.file(resolve(cwd, "from-cli/package.json")).exists()).toBe(true);
-    expect(await Bun.file(resolve(cwd, "from-cli/src/mcp/server.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(cwd, "from-cli/src/backend.ts")).exists()).toBe(true);
     expect(created.stderr).toEqual([]);
   });
 
@@ -107,7 +107,7 @@ describe("fia command routing", () => {
     for (const args of [
       ["create", "hello", "--no-install", "--no-install"],
       ["create", "hello", "--git", "--git"],
-      ["create", "hello", "--no-mcp", "--no-mcp"],
+      ["create", "hello", "--no-mcp"],
       ["create", "hello", "--force"],
       ["create", "hello", "--runtime", "node"],
     ]) {

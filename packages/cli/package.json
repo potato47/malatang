@@ -1,7 +1,7 @@
 {
   "name": "@semicoder/fia",
-  "version": "0.6.3",
-  "description": "Command-line tools for building FIA macOS applications",
+  "version": "0.7.0",
+  "description": "Build resident Bun services hosted by a native macOS status bar application",
   "bin": {
     "fia": "bin/fia"
   },
@@ -19,35 +19,21 @@
       "import": "./dist/config.js",
       "default": "./dist/config.js"
     },
-    "./mcp": {
-      "types": "./dist/mcp.d.ts",
-      "import": "./dist/mcp.js",
-      "default": "./dist/mcp.js"
-    },
-    "./mcp/server": {
-      "types": "./dist/mcp-server.d.ts",
-      "import": "./dist/mcp-server.js",
-      "default": "./dist/mcp-server.js"
-    },
-    "./native": {
-      "types": "./dist/native.d.ts",
-      "import": "./dist/native.js",
-      "default": "./dist/native.js"
+    "./backend": {
+      "types": "./dist/backend.d.ts",
+      "import": "./dist/backend.js",
+      "default": "./dist/backend.js"
     }
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && bun build src/index.ts --target=bun --outfile=dist/index.js && bun build src/config.ts --target=bun --outfile=dist/config.js && bun build src/mcp.ts --target=browser --outfile=dist/mcp.js && bun build src/mcp-server.ts --target=bun --outfile=dist/mcp-server.js && bun build src/native.ts --target=browser --outfile=dist/native.js && bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && bun build src/index.ts --target=bun --outfile=dist/index.js && bun build src/config.ts --target=bun --outfile=dist/config.js && bun build src/backend.ts --target=bun --outfile=dist/backend.js && bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
     "test": "bun run build && bun test tests",
     "prepack": "bun run build"
   },
-  "dependencies": {
-    "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0",
-    "zod": "^4.2.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@base-ui/react": "^1.6.0",
     "@types/react": "19.2.17",

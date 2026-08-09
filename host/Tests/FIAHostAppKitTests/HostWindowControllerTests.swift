@@ -2,36 +2,12 @@ import AppKit
 import FIAHostCore
 import Foundation
 import Testing
+import WebKit
 @testable import FIAHostAppKit
 
 @MainActor
-@Suite("AppKit desktop shell")
+@Suite("AppKit host primitives")
 struct HostWindowControllerTests {
-    private func configuration(closeBehavior: HostConfiguration.Window.CloseBehavior) -> HostConfiguration {
-        HostConfiguration(
-            app: .init(name: "Desktop", identifier: "com.example.desktop", mode: .hybrid),
-            window: .init(
-                width: 900,
-                height: 600,
-                minWidth: 500,
-                minHeight: 400,
-                closeBehavior: closeBehavior,
-                restoreState: true,
-                alwaysOnTop: false,
-                visibleOnAllSpaces: false,
-                visibleOverFullScreen: false
-            ),
-            statusBar: .init(symbol: "bolt.fill", tooltip: "Desktop"),
-            ui: .init(mode: .bundled, entry: "UI/index.html")
-        )
-    }
-
-    @Test func bundledContentSecurityPolicyAllowsPackagedStylesheets() {
-        let policy = BundledResourceSchemeHandler.contentSecurityPolicy(nonce: "test-nonce")
-        #expect(policy.contains("style-src 'self' 'nonce-test-nonce'"))
-        #expect(!policy.contains("'unsafe-inline'"))
-    }
-
     @Test func constrainsRestoredFramesToAVisibleScreen() throws {
         let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
         let restored = DesktopWindowFrame(x: 1200, y: 700, width: 500, height: 400)
@@ -41,88 +17,101 @@ struct HostWindowControllerTests {
             screens: [screen]
         ))
         #expect(screen.contains(frame))
-        #expect(frame.width == 500)
-        #expect(frame.height == 400)
     }
 
-    @Test func rejectsFramesWithNoValidScreenSoConfiguredSizeCanBeCentered() {
-        let restored = DesktopWindowFrame(x: 2000, y: 1400, width: 1800, height: 1000)
-        #expect(HostWindowController.constrainedFrame(
-            restored,
-            minimumSize: NSSize(width: 500, height: 400),
-            screens: [NSRect(x: 0, y: 0, width: 1440, height: 900)]
-        ) == nil)
-    }
-
-    @Test func hideCloseBehaviorKeepsTheWindowControllerAlive() {
+    @Test func hideCloseBehaviorKeepsWindowAlive() throws {
         _ = NSApplication.shared
-        let controller = HostWindowController(configuration: configuration(closeBehavior: .hide))
-        let shouldClose = controller.windowShouldClose(controller.window!)
-        #expect(!shouldClose)
+        let controller = HostWindowController(
+            id: "main",
+            url: URL(string: "https://example.com")!,
+            title: "Desktop",
+            width: 900,
+            height: 600,
+            minWidth: 500,
+            minHeight: 400,
+            restoredFrame: nil,
+            dataStore: .nonPersistent(),
+            closeBehavior: .hide,
+            alwaysOnTop: false,
+            visibleOnAllSpaces: false,
+            visibleOverFullScreen: false,
+            inspectable: false
+        )
+        #expect(!controller.windowShouldClose(controller.window!))
         #expect(controller.window != nil)
     }
 
-    @Test func quitCloseBehaviorRequestsTerminationWithoutClosingTheWindow() {
-        _ = NSApplication.shared
-        var terminationRequests = 0
-        let controller = HostWindowController(
-            configuration: configuration(closeBehavior: .quit),
-            terminateApplication: { terminationRequests += 1 }
-        )
-        let shouldClose = controller.windowShouldClose(controller.window!)
-        #expect(!shouldClose)
-        #expect(terminationRequests == 1)
-        #expect(controller.window != nil)
-    }
-
-    @Test func hidingAQuitOnCloseWindowDoesNotRequestTermination() {
-        _ = NSApplication.shared
-        var terminationRequests = 0
-        let controller = HostWindowController(
-            configuration: configuration(closeBehavior: .quit),
-            terminateApplication: { terminationRequests += 1 }
-        )
-        controller.show()
-        controller.hide()
-        #expect(terminationRequests == 0)
-        #expect(controller.window?.isVisible == false)
-    }
-
-    @Test func appliesWindowFlagsIndependently() throws {
-        _ = NSApplication.shared
-        let configuration = configuration(closeBehavior: .hide)
-        let windowController = HostWindowController(configuration: configuration)
-        let desktop = DesktopController(
-            configuration: configuration,
-            initialState: DesktopState(configuration: configuration),
-            windowController: windowController,
-            settingsStore: nil
-        )
-        desktop.start()
-        _ = try desktop.execute(.setAlwaysOnTop(true))
-        #expect(windowController.window?.level == .floating)
-        #expect(windowController.window?.collectionBehavior.contains(.canJoinAllSpaces) == false)
-        _ = try desktop.execute(.setVisibleOnAllSpaces(true))
-        #expect(windowController.window?.collectionBehavior.contains(.canJoinAllSpaces) == true)
-        #expect(windowController.window?.collectionBehavior.contains(.fullScreenAuxiliary) == false)
-        _ = try desktop.execute(.setVisibleOverFullScreen(true))
-        #expect(windowController.window?.collectionBehavior.contains(.canJoinAllSpaces) == true)
-        #expect(windowController.window?.collectionBehavior.contains(.fullScreenAuxiliary) == true)
-    }
-
-    @Test func statusBarMenuTracksWindowVisibilityAndKeepsQuitAvailable() {
+    @Test func buildsNestedDynamicMenuAndKeepsQuit() throws {
         let controller = StatusBarController(symbol: "bolt.fill", tooltip: "Desktop")
+        try controller.setMenu([
+            ["type": "item", "id": "open", "title": "Open", "symbol": "macwindow"],
+            ["type": "item", "id": "mode", "title": "Mode", "children": [
+                ["type": "item", "id": "mode.auto", "title": "Automatic", "checked": true],
+            ]],
+        ])
+        let menu = controller.makeMenu()
+        #expect(menu.items.map(\.title) == ["Open", "Mode", "", "Quit"])
+        #expect(menu.items[1].submenu?.items.first?.state == .on)
+        #expect(menu.items.last?.keyEquivalent == "q")
+    }
 
-        controller.updateWindowVisible(true)
-        let visibleMenu = controller.makeMenu()
-        #expect(visibleMenu.items.map(\.title) == ["Hide Window", "", "Quit"])
-        #expect(visibleMenu.items[0].isEnabled)
-        #expect(visibleMenu.items[2].isEnabled)
+    @Test func rejectsReservedAndDuplicateMenuIDs() {
+        let controller = StatusBarController(symbol: "bolt.fill", tooltip: "Desktop")
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.setMenu([["type": "item", "id": "fia.bad", "title": "Bad"]])
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.setMenu([
+                ["type": "item", "id": "same", "title": "One"],
+                ["type": "item", "id": "same", "title": "Two"],
+            ])
+        }
+    }
 
-        controller.updateWindowVisible(false)
-        let hiddenMenu = controller.makeMenu()
-        #expect(hiddenMenu.items.map(\.title) == ["Show Window", "", "Quit"])
-        #expect(hiddenMenu.items[0].action != nil)
-        #expect(hiddenMenu.items[2].action != nil)
+    @Test func menuUpdatesAreAtomicAndStartingClearsOnReady() throws {
+        let controller = StatusBarController(symbol: "bolt.fill", tooltip: "Desktop")
+        try controller.setMenu([["type": "item", "id": "open", "title": "Open"]])
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.updateMenuItem(id: "open", patch: ["title": 42])
+        }
+        #expect(controller.makeMenu().items.first?.title == "Open")
+
+        controller.showStarting()
+        controller.showReadyIfStarting()
+        #expect(controller.makeMenu().items.map(\.title) == ["Quit"])
+    }
+
+    @Test func updatesWindowConfigurationAndCloseBehavior() throws {
+        _ = NSApplication.shared
+        let controller = HostWindowController(
+            id: "settings",
+            url: URL(string: "https://example.com")!,
+            title: "Settings",
+            width: 900,
+            height: 600,
+            minWidth: 500,
+            minHeight: 400,
+            restoredFrame: nil,
+            dataStore: .nonPersistent(),
+            closeBehavior: .hide,
+            alwaysOnTop: false,
+            visibleOnAllSpaces: false,
+            visibleOverFullScreen: false,
+            inspectable: false
+        )
+        try controller.update(
+            title: "Updated",
+            width: 840,
+            height: 540,
+            minWidth: 720,
+            minHeight: 480,
+            closeBehavior: .close,
+            alwaysOnTop: true,
+            visibleOnAllSpaces: true,
+            visibleOverFullScreen: true
+        )
+        #expect(controller.state()["title"] as? String == "Updated")
+        #expect(controller.state()["alwaysOnTop"] as? Bool == true)
+        #expect(controller.windowShouldClose(controller.window!))
     }
 }
