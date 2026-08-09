@@ -36,17 +36,10 @@ export default defineBackend<SocketData>({
     ]);
     const openWindow = () =>
       host.webviews.open({ id: "main", url: url("/").href, title: __FIA_APP_NAME_JSON__ });
-    const removeClick = host.statusItem.onClick(() => void openWindow());
-    const removeAction = host.statusItem.onAction(({ id }) => {
+    host.statusItem.onClick(() => void openWindow());
+    host.statusItem.onAction(({ id }) => {
       if (id === "open-window") void openWindow();
       if (id === "open-browser") void host.system.openURL(url("/").href);
     });
-    (globalThis as typeof globalThis & { __fiaDispose?: () => void }).__fiaDispose = () => {
-      removeClick();
-      removeAction();
-    };
-  },
-  stop() {
-    (globalThis as typeof globalThis & { __fiaDispose?: () => void }).__fiaDispose?.();
   },
 });

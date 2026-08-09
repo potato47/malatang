@@ -58,6 +58,74 @@ describe("resident Bun backend runtime", () => {
     input.end();
   });
 
+  test("scopes Host event listeners to the active Backend definition", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "fia-backend-events-"));
+    temporaryDirectories.push(root);
+    const backendSource = pathToFileURL(resolve(import.meta.dir, "../src/backend.ts")).href;
+    const runner = resolve(root, "runner.ts");
+    await Bun.write(
+      runner,
+      `
+        import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
+        const backend = (label) => defineBackend({
+          http: {},
+          start({ host }) {
+            host.statusItem.onClick(() => process.stderr.write(label + "\\n"));
+          },
+        });
+        await runBackend(backend("stale"));
+        await Bun.sleep(50);
+        await runBackend(backend("active"));
+      `,
+    );
+    const child = Bun.spawn([process.execPath, "--hot", "--no-clear-screen", runner], {
+      cwd: root,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stderrText = new Response(child.stderr).text();
+    const input = child.stdin;
+    if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
+    input.write(
+      `${JSON.stringify({
+        v: 1,
+        type: "initialize",
+        sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
+        preferredPort: 0,
+        development: true,
+        applicationSupport: root,
+        app: { name: "Events", identifier: "com.example.events" },
+      })}\n`,
+    );
+    input.flush();
+    const reader = child.stdout.getReader();
+    const ready = await Promise.race([reader.read(), Bun.sleep(5_000).then(() => undefined)]);
+    if (ready === undefined || ready.done) {
+      if (child.exitCode === null) child.kill("SIGKILL");
+      throw new Error("Backend did not become ready");
+    }
+    expect(new TextDecoder().decode(ready.value)).toContain('"type":"ready"');
+    await Bun.sleep(150);
+    input.write(
+      `${JSON.stringify({
+        v: 1,
+        type: "event",
+        event: "statusItem.clicked",
+        payload: { button: "left" },
+      })}\n`,
+    );
+    input.write(`${JSON.stringify({ v: 1, type: "event", event: "host.shutdown" })}\n`);
+    input.flush();
+    const exitCode = await Promise.race([child.exited, Bun.sleep(5_000).then(() => undefined)]);
+    if (exitCode === undefined) child.kill("SIGKILL");
+    const diagnostic = await stderrText;
+    if (exitCode !== 0) throw new Error(`Backend exited with status ${exitCode}: ${diagnostic}`);
+    expect(diagnostic).toBe("active\n");
+    reader.releaseLock();
+    input.end();
+  });
+
   test("uses one-time bootstrap sessions and protects handlers", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "fia-backend-runtime-"));
     temporaryDirectories.push(root);

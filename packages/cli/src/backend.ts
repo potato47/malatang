@@ -631,11 +631,39 @@ function eventListener<Value>(
   peer: StdioPeer,
   event: string,
   listener: (value: Value) => void,
+  scope: HostEventScope,
 ): () => void {
-  return peer.on(event, (payload) => listener(payload as Value));
+  return scope.add(peer.on(event, (payload) => listener(payload as Value)));
 }
 
-function createHost(peer: StdioPeer, session: SessionGuard): FIAHost {
+class HostEventScope {
+  readonly #removers = new Set<() => void>();
+  #disposed = false;
+
+  add(remove: () => void): () => void {
+    if (this.#disposed) {
+      remove();
+      return () => {};
+    }
+    let active = true;
+    const scopedRemove = (): void => {
+      if (!active) return;
+      active = false;
+      this.#removers.delete(scopedRemove);
+      remove();
+    };
+    this.#removers.add(scopedRemove);
+    return scopedRemove;
+  }
+
+  dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    for (const remove of this.#removers) remove();
+  }
+}
+
+function createHost(peer: StdioPeer, session: SessionGuard, events: HostEventScope): FIAHost {
   return {
     application: {
       getState: () => peer.call("application.getState"),
@@ -651,8 +679,8 @@ function createHost(peer: StdioPeer, session: SessionGuard): FIAHost {
         await peer.call("statusItem.setMenu", { menu });
       },
       updateMenuItem: (id, patch) => peer.call("statusItem.updateMenuItem", { id, patch }),
-      onClick: (listener) => eventListener(peer, "statusItem.clicked", listener),
-      onAction: (listener) => eventListener(peer, "statusItem.action", listener),
+      onClick: (listener) => eventListener(peer, "statusItem.clicked", listener, events),
+      onAction: (listener) => eventListener(peer, "statusItem.action", listener, events),
     },
     webviews: {
       open: (options) =>
@@ -664,7 +692,7 @@ function createHost(peer: StdioPeer, session: SessionGuard): FIAHost {
       close: (id) => peer.call("webviews.close", { id }),
       update: (id, options) => peer.call("webviews.update", { id, ...options }),
       list: () => peer.call("webviews.list"),
-      onEvent: (listener) => eventListener(peer, "webviews.event", listener),
+      onEvent: (listener) => eventListener(peer, "webviews.event", listener, events),
     },
     system: {
       openURL: (url) => peer.call("system.openURL", { url: session.authorizeURL(url) }),
@@ -708,12 +736,27 @@ interface SharedBackendRuntime {
   server?: Bun.Server<unknown>;
   definition?: FIABackendDefinition;
   context?: FIABackendContext;
+  hostEvents?: HostEventScope;
   ready: boolean;
   stopping: boolean;
 }
 
 function runtimeGlobal(): typeof globalThis & { [FIA_RUNTIME]?: SharedBackendRuntime } {
   return globalThis as typeof globalThis & { [FIA_RUNTIME]?: SharedBackendRuntime };
+}
+
+async function deactivateDefinition(runtime: SharedBackendRuntime): Promise<void> {
+  const definition = runtime.definition;
+  const context = runtime.context;
+  const hostEvents = runtime.hostEvents;
+  runtime.definition = undefined;
+  runtime.context = undefined;
+  runtime.hostEvents = undefined;
+  try {
+    if (definition !== undefined && context !== undefined) await definition.stop?.(context);
+  } finally {
+    hostEvents?.dispose();
+  }
 }
 
 async function sharedRuntime(): Promise<SharedBackendRuntime> {
@@ -746,9 +789,7 @@ async function sharedRuntime(): Promise<SharedBackendRuntime> {
     current.stopping = true;
     void (async () => {
       try {
-        if (current.definition !== undefined && current.context !== undefined) {
-          await current.definition.stop?.(current.context);
-        }
+        await deactivateDefinition(current);
       } catch (error) {
         process.stderr.write(
           `FIA Backend stop hook failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
@@ -766,9 +807,7 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   if (!isDefinedBackend(definition))
     throw new TypeError("Backend entry must default-export defineBackend({...})");
   const runtime = await sharedRuntime();
-  if (runtime.definition !== undefined && runtime.context !== undefined) {
-    await runtime.definition.stop?.(runtime.context);
-  }
+  await deactivateDefinition(runtime);
   const { initialize, peer, session } = runtime;
   let port = runtime.server?.port ?? initialize.preferredPort;
   const publicRoutes = definition.http.publicRoutes ?? {};
@@ -811,7 +850,8 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   port = server.port ?? 0;
   const origin = `http://127.0.0.1:${port}`;
   session.setOrigin(origin);
-  const host = createHost(peer, session);
+  const hostEvents = new HostEventScope();
+  const host = createHost(peer, session, hostEvents);
   const context: FIABackendContext = {
     host,
     server,
@@ -822,6 +862,7 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   runtime.server = server;
   runtime.definition = definition;
   runtime.context = context;
+  runtime.hostEvents = hostEvents;
   await definition.start?.(context);
   if (!runtime.ready) {
     runtime.ready = true;

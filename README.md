@@ -59,6 +59,9 @@ export default defineBackend({
 });
 ```
 
+在 `start` 中通过 Host API 注册的事件监听器会随当前 Backend 生命周期自动清理，热重载和退出时
+不需要手动保存注销函数。
+
 网页不导入 FIA 包，只使用 `fetch`、WebSocket 和普通 URL。原生 API 仅存在于 Backend。
 
 ## 开发与构建

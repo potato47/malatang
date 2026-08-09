@@ -18,6 +18,7 @@ bun run run
 
 Backend 可通过 `host.application`、`host.statusItem`、`host.webviews` 和 `host.system` 使用原生能力。
 浏览器和 WebView 必须由 Backend 调用安全打开接口建立会话，前端不能直接访问原生接口。
+在 `start` 中注册的 Host 事件监听器会由 FIA 在热重载和退出时自动注销。
 
 ## UI 组件
 

@@ -29,3 +29,6 @@ export default defineBackend({
 
 `publicRoutes` 明确承载公开 HTML/静态资源；`routes`、`fetch` 与 WebSocket upgrade 默认要求
 FIA 会话。应用页面由 Host 安全打开时会自动建立 HttpOnly 会话，前端无需处理令牌。
+通过 `host.statusItem.onClick`、`host.statusItem.onAction` 和 `host.webviews.onEvent` 注册的监听器
+属于当前 `start` 生命周期，FIA 会在热重载或 Backend 停止时自动注销。`stop` 只需清理应用自行
+创建的定时器、连接等资源。

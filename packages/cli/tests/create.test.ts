@@ -45,6 +45,8 @@ describe("FIA project creation", () => {
     expect(backend).toContain("defineBackend");
     expect(backend).toContain("host.webviews.open");
     expect(backend).toContain("host.statusItem.setMenu");
+    expect(backend).not.toContain("globalThis");
+    expect(backend).not.toContain("stop()");
     const app = await readFile(resolve(root, "src/ui/App.tsx"), "utf8");
     expect(app).toContain('fetch("/api/greet")');
     expect(app).toContain("new WebSocket");
