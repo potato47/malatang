@@ -85,8 +85,9 @@ final class BackendSupervisor {
         try? write(frame)
     }
 
-    func stop() {
-        guard !stopping else { return }
+    @discardableResult
+    func stop() -> Bool {
+        guard !stopping else { return process?.isRunning == true }
         stopping = true
         retryTask?.cancel()
         stableTask?.cancel()
@@ -94,7 +95,7 @@ final class BackendSupervisor {
         guard let process, process.isRunning else {
             cleanup()
             onState(.stopped)
-            return
+            return false
         }
         sendEvent("host.shutdown")
         shutdownTask?.cancel()
@@ -105,6 +106,7 @@ final class BackendSupervisor {
             try? await Task.sleep(for: .seconds(2))
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
+        return true
     }
 
     private func launch() {
@@ -127,8 +129,12 @@ final class BackendSupervisor {
         process.environment = configuration.development
             ? ProcessInfo.processInfo.environment
             : ["PATH": "/usr/bin:/bin", "TMPDIR": FileManager.default.temporaryDirectory.path]
+        diagnostic(
+            "launching Backend: \(executableURL.path) "
+                + configuration.backend.arguments.map { String(reflecting: $0) }.joined(separator: " ")
+        )
         process.terminationHandler = { [weak self] process in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.terminated(process: process, generation: currentGeneration)
             }
         }
@@ -145,10 +151,12 @@ final class BackendSupervisor {
         do {
             try process.run()
         } catch {
+            diagnostic("Backend launch failed: \(error.localizedDescription)")
             cleanup(process: process)
             scheduleRetry(reason: "could not start Backend: \(error.localizedDescription)")
             return
         }
+        diagnostic("Backend launched with pid \(process.processIdentifier)")
         self.process = process
         self.stdinPipe = stdinPipe
         do {
@@ -161,20 +169,26 @@ final class BackendSupervisor {
                 "applicationSupport": workingDirectoryURL.path,
                 "app": ["name": configuration.app.name, "identifier": configuration.app.identifier],
             ])
+            diagnostic("sent Backend initialize frame")
         } catch {
+            diagnostic("could not send Backend initialize frame: \(error.localizedDescription)")
             process.terminate()
             return
         }
         startupTask?.cancel()
         startupTask = Task { @MainActor [weak self, weak process] in
             try? await Task.sleep(for: .seconds(10))
-            guard let self, let process, process.isRunning, self.generation == currentGeneration else { return }
+            guard !Task.isCancelled,
+                  let self, let process, process.isRunning,
+                  self.generation == currentGeneration else { return }
+            self.diagnostic("Backend readiness timed out for pid \(process.processIdentifier)")
             self.failCurrent("Backend readiness timed out")
         }
     }
 
     private func consumeStdout(_ data: Data, generation: UUID) {
         guard self.generation == generation else { return }
+        diagnostic("received \(data.count) Backend stdout bytes")
         do {
             for frame in try stdoutDecoder.append(data) { try consume(frame) }
         } catch {
@@ -190,6 +204,7 @@ final class BackendSupervisor {
                   let port = frame["port"] as? Int, (1 ... 65_535).contains(port),
                   frame["origin"] as? String == "http://127.0.0.1:\(port)"
             else { throw BackendProtocolError.invalidFrame }
+            diagnostic("Backend ready on port \(port)")
             startupTask?.cancel()
             preferredPort = port
             onState(.ready(port: port))
@@ -239,6 +254,7 @@ final class BackendSupervisor {
     }
 
     private func failCurrent(_ reason: String) {
+        diagnostic("failing Backend: \(reason)")
         startupTask?.cancel()
         stableTask?.cancel()
         guard let process else {
@@ -254,6 +270,7 @@ final class BackendSupervisor {
     private func terminated(process: Process, generation: UUID) {
         guard self.generation == generation else { return }
         let status = process.terminationStatus
+        diagnostic("Backend pid \(process.processIdentifier) exited with status \(status)")
         cleanup(process: process)
         if stopping {
             onState(.stopped)
@@ -267,6 +284,7 @@ final class BackendSupervisor {
         startupTask?.cancel()
         stableTask?.cancel()
         guard retryAttempt < retryDelays.count else {
+            diagnostic("Backend retries exhausted: \(reason)")
             onState(.failed(reason: reason))
             return
         }
@@ -279,6 +297,11 @@ final class BackendSupervisor {
             guard let self, !Task.isCancelled, !self.stopping else { return }
             self.launch()
         }
+    }
+
+    private func diagnostic(_ message: String) {
+        guard ProcessInfo.processInfo.environment["FIA_INTERNAL_DIAGNOSTICS"] == "1" else { return }
+        try? FileHandle.standardError.write(contentsOf: Data("FIAHost Backend: \(message)\n".utf8))
     }
 
     private func cleanup(process: Process? = nil) {

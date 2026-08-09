@@ -58,9 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         hostController?.flushSettings()
         guard supervisor != nil else { return .terminateNow }
+        guard !terminationPending else { return .terminateCancel }
+        guard supervisor?.stop() == true else { return .terminateNow }
         terminationPending = true
-        supervisor?.stop()
-        return .terminateLater
+        return .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -82,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .stopped:
             guard terminationPending else { return }
             terminationPending = false
-            DispatchQueue.main.async { NSApp.reply(toApplicationShouldTerminate: true) }
+            NSApp.terminate(nil)
         }
     }
 
