@@ -32,5 +32,5 @@ Backend 决定打开哪个本机或外部 URL，Host 只保留 Quit/Retry 安全
 
 ## ADR-007：不兼容旧架构
 
-config 4、Host schema 6 和 stdio 1 精确匹配。静态 UI、MCP bridge、Native MCP、外部 Server、
+config 4、Host schema 7 和 stdio 2 精确匹配。静态 UI、MCP bridge、Native MCP、外部 Server、
 UI-only 配置及其导出全部删除，不提供 shim 或迁移模式。

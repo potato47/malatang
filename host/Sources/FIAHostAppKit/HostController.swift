@@ -9,6 +9,10 @@ final class HostController {
 
     private let statusItem: StatusBarController
     private let webviews: WebViewRegistry
+    private let notifications: NotificationController
+    private let dialogs: DialogController
+    private let clipboard: ClipboardController
+    private let keychain: KeychainController
     private let settingsStore: HostSettingsStore?
     private var settings: HostSettings
 
@@ -25,11 +29,19 @@ final class HostController {
             inspectable: configuration.development,
             storedFrames: settings.windowFrames
         )
+        notifications = NotificationController(diagnostic: { message in
+            guard ProcessInfo.processInfo.environment["FIA_INTERNAL_DIAGNOSTICS"] == "1" else { return }
+            try? FileHandle.standardError.write(contentsOf: Data("FIAHost: \(message)\n".utf8))
+        })
+        dialogs = DialogController()
+        clipboard = ClipboardController()
+        keychain = KeychainController(service: configuration.app.identifier)
         statusItem.onLeftClick = { [weak self] in self?.onEvent?("statusItem.clicked", ["button": "left"]) }
         statusItem.onAction = { [weak self] id in self?.onEvent?("statusItem.action", ["id": id]) }
         statusItem.onQuit = { NSApp.terminate(nil) }
         statusItem.onRetry = { [weak self] in self?.onRetry?() }
         webviews.onEvent = { [weak self] payload in self?.onEvent?("webviews.event", payload) }
+        notifications.onEvent = { [weak self] payload in self?.onEvent?("notifications.clicked", payload) }
         webviews.onFramesChanged = { [weak self] frames in
             self?.settings.windowFrames = frames
             self?.persist()
@@ -48,16 +60,19 @@ final class HostController {
     }
 
     func showStarting() {
+        notifications.setBackendReady(false)
         statusItem.showStarting()
         statusItem.setVisible(true)
     }
 
     func showReady() {
+        notifications.setBackendReady(true)
         statusItem.showReadyIfStarting()
         statusItem.setVisible(settings.statusItemVisible)
     }
 
     func showFailure(_ reason: String) {
+        notifications.setBackendReady(false)
         statusItem.showFailure(reason)
         statusItem.setVisible(true)
     }
@@ -67,8 +82,14 @@ final class HostController {
         _ = webviews.focusFirstWindow()
     }
 
-    func execute(method: String, params: [String: Any]) throws -> Any? {
+    func execute(method: String, params: [String: Any]) async throws -> Any? {
         if method.hasPrefix("webviews.") { return try webviews.execute(method: method, params: params) }
+        if method.hasPrefix("notifications.") {
+            return try await notifications.execute(method: method, params: params)
+        }
+        if method.hasPrefix("dialogs.") { return try await dialogs.execute(method: method, params: params) }
+        if method.hasPrefix("clipboard.") { return try clipboard.execute(method: method, params: params) }
+        if method.hasPrefix("keychain.") { return try keychain.execute(method: method, params: params) }
         switch method {
         case "application.getState": return applicationState()
         case "application.quit":

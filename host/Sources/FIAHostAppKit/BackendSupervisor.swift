@@ -14,7 +14,7 @@ final class BackendSupervisor {
         case stopped
     }
 
-    typealias RequestHandler = (_ method: String, _ params: [String: Any]) throws -> Any?
+    typealias RequestHandler = @MainActor (_ method: String, _ params: [String: Any]) async throws -> Any?
 
     private let configuration: HostConfiguration
     private let executableURL: URL
@@ -30,7 +30,7 @@ final class BackendSupervisor {
     private var generation = UUID()
     private var preferredPort = 0
     private var retryAttempt = 0
-    private var activeRequests = 0
+    private var requestTasks: [Int: Task<Void, Never>] = [:]
     private var stopping = false
     private var startupTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
@@ -64,6 +64,7 @@ final class BackendSupervisor {
         retryTask?.cancel()
         stableTask?.cancel()
         shutdownTask?.cancel()
+        requestTasks.values.forEach { $0.cancel() }
     }
 
     func start() {
@@ -91,6 +92,7 @@ final class BackendSupervisor {
         stopping = true
         retryTask?.cancel()
         stableTask?.cancel()
+        Array(requestTasks.keys).forEach { cancelRequest($0) }
         onState(.stopping)
         guard let process, process.isRunning else {
             cleanup()
@@ -110,6 +112,8 @@ final class BackendSupervisor {
     }
 
     private func launch() {
+        requestTasks.values.forEach { $0.cancel() }
+        requestTasks.removeAll()
         generation = UUID()
         let currentGeneration = generation
         stdoutDecoder.reset()
@@ -219,30 +223,96 @@ final class BackendSupervisor {
                   let id = frame["id"] as? Int, id > 0,
                   let method = frame["method"] as? String, !method.isEmpty,
                   let params = frame["params"] as? [String: Any],
-                  activeRequests < FIAMaximumPendingRequests
+                  requestTasks[id] == nil,
+                  requestTasks.count < FIAMaximumPendingRequests
             else { throw BackendProtocolError.invalidFrame }
-            activeRequests += 1
-            defer { activeRequests -= 1 }
-            do {
-                let result = try onRequest(method, params)
-                try write(["v": FIAStdioProtocolVersion, "type": "response", "id": id, "result": result ?? NSNull()])
-            } catch let error as HostRequestExecutionError {
-                try write([
-                    "v": FIAStdioProtocolVersion,
-                    "type": "response",
-                    "id": id,
-                    "error": ["code": error.code.rawValue, "message": error.message],
-                ])
-            } catch {
-                try write([
-                    "v": FIAStdioProtocolVersion,
-                    "type": "response",
-                    "id": id,
-                    "error": ["code": HostRequestErrorCode.nativeFailure.rawValue, "message": error.localizedDescription],
-                ])
+            let requestGeneration = generation
+            requestTasks[id] = Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let result = try await self.onRequest(method, params)
+                    try Task.checkCancellation()
+                    self.finishRequest(id: id, generation: requestGeneration, result: result)
+                } catch is CancellationError {
+                    self.finishRequest(
+                        id: id,
+                        generation: requestGeneration,
+                        error: .cancelled,
+                        message: "Host request was cancelled"
+                    )
+                } catch let error as HostRequestExecutionError {
+                    if Task.isCancelled {
+                        self.finishRequest(
+                            id: id,
+                            generation: requestGeneration,
+                            error: .cancelled,
+                            message: "Host request was cancelled"
+                        )
+                    } else {
+                        self.finishRequest(
+                            id: id,
+                            generation: requestGeneration,
+                            error: error.code,
+                            message: error.message
+                        )
+                    }
+                } catch {
+                    self.finishRequest(
+                        id: id,
+                        generation: requestGeneration,
+                        error: Task.isCancelled ? .cancelled : .nativeFailure,
+                        message: Task.isCancelled ? "Host request was cancelled" : error.localizedDescription
+                    )
+                }
             }
+        case "cancel":
+            guard Set(frame.keys) == ["v", "type", "id"],
+                  let id = frame["id"] as? Int, id > 0
+            else { throw BackendProtocolError.invalidFrame }
+            cancelRequest(id)
         default: throw BackendProtocolError.invalidFrame
         }
+    }
+
+    private func cancelRequest(_ id: Int) {
+        guard let task = requestTasks.removeValue(forKey: id) else { return }
+        task.cancel()
+        try? write([
+            "v": FIAStdioProtocolVersion,
+            "type": "response",
+            "id": id,
+            "error": [
+                "code": HostRequestErrorCode.cancelled.rawValue,
+                "message": "Host request was cancelled",
+            ],
+        ])
+    }
+
+    private func finishRequest(id: Int, generation: UUID, result: Any?) {
+        guard self.generation == generation, requestTasks.removeValue(forKey: id) != nil else { return }
+        do {
+            try write(["v": FIAStdioProtocolVersion, "type": "response", "id": id, "result": result ?? NSNull()])
+        } catch {
+            try? write([
+                "v": FIAStdioProtocolVersion,
+                "type": "response",
+                "id": id,
+                "error": [
+                    "code": HostRequestErrorCode.invalidArgument.rawValue,
+                    "message": "Host response exceeds the protocol frame limit",
+                ],
+            ])
+        }
+    }
+
+    private func finishRequest(id: Int, generation: UUID, error: HostRequestErrorCode, message: String) {
+        guard self.generation == generation, requestTasks.removeValue(forKey: id) != nil else { return }
+        try? write([
+            "v": FIAStdioProtocolVersion,
+            "type": "response",
+            "id": id,
+            "error": ["code": error.rawValue, "message": message],
+        ])
     }
 
     private func write(_ frame: [String: Any]) throws {
@@ -305,6 +375,8 @@ final class BackendSupervisor {
     }
 
     private func cleanup(process: Process? = nil) {
+        requestTasks.values.forEach { $0.cancel() }
+        requestTasks.removeAll()
         let target = process ?? self.process
         if let output = target?.standardOutput as? Pipe { output.fileHandleForReading.readabilityHandler = nil }
         if let error = target?.standardError as? Pipe { error.fileHandleForReading.readabilityHandler = nil }

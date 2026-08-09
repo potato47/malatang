@@ -57,7 +57,7 @@ describe("published FIA resident backend shape", () => {
     }
   });
 
-  test("packages a schema-6 Host manifest with stdio capabilities", async () => {
+  test("packages a schema-7 Host manifest with stdio capabilities", async () => {
     const host = resolve(packageRoot, "assets/host/darwin-arm64/FIAHost");
     await access(host, constants.X_OK);
     const manifest = JSON.parse(
@@ -69,9 +69,18 @@ describe("published FIA resident backend shape", () => {
       schemaVersion: 3,
       cliVersion: CLI_VERSION,
       hostVersion: CLI_VERSION,
-      configurationSchema: 6,
-      stdioProtocol: 1,
-      hostCapabilities: ["application", "statusItem", "webviews", "system"],
+      configurationSchema: 7,
+      stdioProtocol: 2,
+      hostCapabilities: [
+        "application",
+        "statusItem",
+        "webviews",
+        "system",
+        "notifications",
+        "dialogs",
+        "clipboard",
+        "keychain",
+      ],
       sha256: hasher.digest("hex"),
     });
   });

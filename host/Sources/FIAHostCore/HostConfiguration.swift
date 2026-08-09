@@ -1,7 +1,7 @@
 import Foundation
 
-public let FIAHostSchemaVersion = 6
-public let FIAStdioProtocolVersion = 1
+public let FIAHostSchemaVersion = 7
+public let FIAStdioProtocolVersion = 2
 public let FIAMaximumStdioFrameBytes = 1024 * 1024
 public let FIAMaximumPendingRequests = 128
 
@@ -134,7 +134,10 @@ public struct HostConfiguration: Codable, Equatable, Sendable {
 }
 
 public enum HostCapabilityManifest {
-    public static let values = ["application", "statusItem", "webviews", "system"]
+    public static let values = [
+        "application", "statusItem", "webviews", "system",
+        "notifications", "dialogs", "clipboard", "keychain",
+    ]
 }
 
 public enum HostConfigurationError: Error, Equatable, LocalizedError, Sendable {

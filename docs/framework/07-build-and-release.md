@@ -20,7 +20,7 @@ load config 4 → typecheck → validate defineBackend → generate runner
 ```
 
 不存在独立 UI 目录：通过 Backend HTML imports 引用的 HTML、JS、CSS 和资源由 Bun 编入
-standalone executable。配置记录 Host schema 6、stdio protocol 1、Backend 固定路径、参数和
+standalone executable。配置记录 Host schema 7、stdio protocol 2、Backend 固定路径、参数和
 签名后 hash。
 
 npm 包只发布 CLI、`config`、`backend`、模板和预编译 Host；发布门禁同步校验 CLI 版本、

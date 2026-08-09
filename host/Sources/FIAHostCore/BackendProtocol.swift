@@ -47,6 +47,7 @@ public enum HostRequestErrorCode: String, Sendable {
     case nativeFailure = "NATIVE_FAILURE"
     case protocolFailure = "PROTOCOL_FAILURE"
     case timeout = "TIMEOUT"
+    case cancelled = "CANCELLED"
 }
 
 public struct HostRequestExecutionError: Error, LocalizedError, Sendable {

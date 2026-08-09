@@ -21,6 +21,8 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Security"),
+                .linkedFramework("UniformTypeIdentifiers"),
+                .linkedFramework("UserNotifications"),
                 .linkedFramework("WebKit"),
             ]
         ),

@@ -10,5 +10,8 @@ Backend 异常退出后按 0.5、1、2、4、8 秒退避重启；稳定运行 60
 失败时 Host 显示原因、Retry 和 Quit。Retry 清零计数。首次随机端口会在同一 Host 生命周期
 内复用。
 
+Host 原生请求按 ID 异步执行。普通请求 30 秒超时；交互式文件面板和通知授权等待用户完成，
+可由 Backend 的 AbortSignal 取消。Backend 退出或重启会取消全部尚未完成的原生请求。
+
 正常退出时 Host 发送 `host.shutdown`，runtime 调用 `stop` 并关闭 HTTP/WS；五秒未退出则
 SIGTERM，再等待两秒后 SIGKILL。Host 自身退出始终回收 Backend。

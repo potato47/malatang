@@ -29,6 +29,21 @@ export default defineBackend({
 
 `publicRoutes` 明确承载公开 HTML/静态资源；`routes`、`fetch` 与 WebSocket upgrade 默认要求
 FIA 会话。应用页面由 Host 安全打开时会自动建立 HttpOnly 会话，前端无需处理令牌。
-通过 `host.statusItem.onClick`、`host.statusItem.onAction` 和 `host.webviews.onEvent` 注册的监听器
-属于当前 `start` 生命周期，FIA 会在热重载或 Backend 停止时自动注销。`stop` 只需清理应用自行
-创建的定时器、连接等资源。
+通知、文件面板、剪贴板和 Keychain 也只存在于 Backend：
+
+```ts
+const status = await host.notifications.requestAuthorization();
+if (status === "authorized") {
+  await host.notifications.send({ title: "FIA is ready" });
+}
+const files = await host.dialogs.openFile({ allowedExtensions: ["json"], multiple: true });
+await host.clipboard.writeText(files?.join("\n") ?? "");
+await host.keychain.set("api-token", "secret");
+```
+
+所有 Promise 方法都接受可选的 `{ signal: AbortSignal }` 尾参数。文件面板和通知授权没有固定
+超时；AbortSignal 会取消等待，文件面板也会被关闭。
+
+通过 `host.statusItem.onClick`、`host.statusItem.onAction`、`host.webviews.onEvent` 和
+`host.notifications.onClick` 注册的监听器属于当前 `start` 生命周期，FIA 会在热重载或 Backend
+停止时自动注销。`stop` 只需清理应用自行创建的定时器、连接等资源。

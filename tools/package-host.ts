@@ -47,13 +47,21 @@ const manifest = {
   sha256: hasher.digest("hex"),
   architecture: "arm64",
   minimumSystemVersion: "14.0",
-  configurationSchema: 6,
-  stdioProtocol: 1,
-  hostCapabilities: ["application", "statusItem", "webviews", "system"],
+  configurationSchema: 7,
+  stdioProtocol: 2,
+  hostCapabilities: [
+    "application",
+    "statusItem",
+    "webviews",
+    "system",
+    "notifications",
+    "dialogs",
+    "clipboard",
+    "keychain",
+  ],
 };
-const serializedManifest = JSON.stringify(manifest, null, 2).replace(
-  /"hostCapabilities": \[\n(?:    "[^"]+",?\n)+  \]/u,
-  `"hostCapabilities": ${JSON.stringify(manifest.hostCapabilities).replaceAll(",", ", ")}`,
+await Bun.write(
+  resolve(destinationDirectory, "manifest.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
 );
-await Bun.write(resolve(destinationDirectory, "manifest.json"), `${serializedManifest}\n`);
 console.log(`Packaged Host ${cliPackage.version} at ${destination}`);

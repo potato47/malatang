@@ -136,9 +136,10 @@ export async function validateReleaseMetadata(): Promise<void> {
     manifest.hostVersion !== CLI_VERSION ||
     manifest.architecture !== "arm64" ||
     manifest.minimumSystemVersion !== "14.0" ||
-    manifest.configurationSchema !== 6 ||
-    manifest.stdioProtocol !== 1 ||
-    JSON.stringify(manifest.hostCapabilities) !== '["application","statusItem","webviews","system"]'
+    manifest.configurationSchema !== 7 ||
+    manifest.stdioProtocol !== 2 ||
+    JSON.stringify(manifest.hostCapabilities) !==
+      '["application","statusItem","webviews","system","notifications","dialogs","clipboard","keychain"]'
   ) {
     throw new Error(
       `Host manifest is not release-compatible with ${CLI_PACKAGE_NAME}@${CLI_VERSION}`,

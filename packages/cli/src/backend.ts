@@ -5,6 +5,7 @@ const FIA_RUNTIME = Symbol.for("@semicoder/fia/backend-runtime");
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_PENDING_REQUESTS = 128;
 const REQUEST_TIMEOUT_MS = 30_000;
+const STDIO_PROTOCOL_VERSION = 2 as const;
 const BOOTSTRAP_TTL_MS = 30_000;
 const COOKIE_NAME = "fia_session";
 const RESERVED_PATH_PREFIX = "/_fia/";
@@ -16,6 +17,7 @@ const HOST_ERROR_CODES = new Set<FIAHostErrorCode>([
   "NATIVE_FAILURE",
   "PROTOCOL_FAILURE",
   "TIMEOUT",
+  "CANCELLED",
 ]);
 
 export type FIAHostErrorCode =
@@ -25,7 +27,8 @@ export type FIAHostErrorCode =
   | "UNSAFE_STATE"
   | "NATIVE_FAILURE"
   | "PROTOCOL_FAILURE"
-  | "TIMEOUT";
+  | "TIMEOUT"
+  | "CANCELLED";
 
 export class FIAHostError extends Error {
   readonly code: FIAHostErrorCode;
@@ -130,6 +133,55 @@ export interface FIAWebViewEvent {
   readonly window: FIAWebViewState;
 }
 
+export interface FIAHostCallOptions {
+  readonly signal?: AbortSignal;
+}
+
+export type FIANotificationAuthorizationStatus =
+  | "notDetermined"
+  | "denied"
+  | "authorized"
+  | "provisional"
+  | "ephemeral"
+  | "unknown";
+
+export interface FIANotificationSendOptions {
+  id?: string;
+  title: string;
+  subtitle?: string;
+  body?: string;
+  sound?: boolean;
+}
+
+export interface FIANotificationReceipt {
+  readonly id: string;
+}
+
+export interface FIANotificationClickEvent {
+  readonly id: string;
+}
+
+export interface FIAFileDialogOptions {
+  title?: string;
+  directory?: string;
+  showHiddenFiles?: boolean;
+}
+
+export interface FIAOpenFileDialogOptions extends FIAFileDialogOptions {
+  allowedExtensions?: readonly string[];
+  multiple?: boolean;
+}
+
+export interface FIAOpenDirectoryDialogOptions extends FIAFileDialogOptions {
+  multiple?: boolean;
+}
+
+export interface FIASaveFileDialogOptions extends FIAFileDialogOptions {
+  allowedExtensions?: readonly string[];
+  name?: string;
+  canCreateDirectories?: boolean;
+}
+
 type MaybePromise<Value> = Value | Promise<Value>;
 export type FIARouteHandler<WebSocketData = unknown> = (
   request: Bun.BunRequest,
@@ -191,7 +243,7 @@ export function isDefinedBackend(value: unknown): value is FIABackendDefinition 
 }
 
 interface InitializeFrame {
-  readonly v: 1;
+  readonly v: typeof STDIO_PROTOCOL_VERSION;
   readonly type: "initialize";
   readonly sessionSecret: string;
   readonly preferredPort: number;
@@ -201,15 +253,21 @@ interface InitializeFrame {
 }
 
 interface RequestFrame {
-  readonly v: 1;
+  readonly v: typeof STDIO_PROTOCOL_VERSION;
   readonly type: "request";
   readonly id: number;
   readonly method: string;
   readonly params: Record<string, unknown>;
 }
 
+interface CancelFrame {
+  readonly v: typeof STDIO_PROTOCOL_VERSION;
+  readonly type: "cancel";
+  readonly id: number;
+}
+
 interface ResponseFrame {
-  readonly v: 1;
+  readonly v: typeof STDIO_PROTOCOL_VERSION;
   readonly type: "response";
   readonly id: number;
   readonly result?: unknown;
@@ -221,13 +279,25 @@ interface ResponseFrame {
 }
 
 interface EventFrame {
-  readonly v: 1;
+  readonly v: typeof STDIO_PROTOCOL_VERSION;
   readonly type: "event";
   readonly event: string;
   readonly payload?: unknown;
 }
 
 type IncomingFrame = InitializeFrame | ResponseFrame | EventFrame;
+
+interface StdioCallOptions extends FIAHostCallOptions {
+  readonly timeout?: boolean;
+}
+
+interface PendingHostRequest {
+  resolve(value: unknown): void;
+  reject(error: unknown): void;
+  timer?: ReturnType<typeof setTimeout>;
+  removeAbortListener?: () => void;
+  retired: boolean;
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -279,14 +349,7 @@ async function* readFrames(stream: ReadableStream<Uint8Array>): AsyncGenerator<u
 
 class StdioPeer {
   readonly #iterator: AsyncIterator<unknown>;
-  readonly #pending = new Map<
-    number,
-    {
-      resolve(value: unknown): void;
-      reject(error: unknown): void;
-      timer: ReturnType<typeof setTimeout>;
-    }
-  >();
+  readonly #pending = new Map<number, PendingHostRequest>();
   readonly #listeners = new Map<string, Set<(payload: unknown) => void>>();
   #nextID = 1;
   #closed = false;
@@ -309,24 +372,67 @@ class StdioPeer {
     return () => listeners.delete(listener);
   }
 
-  async call<Result>(method: string, params: Record<string, unknown> = {}): Promise<Result> {
+  async call<Result>(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: StdioCallOptions = {},
+  ): Promise<Result> {
     if (this.#closed) throw new FIAHostError("PROTOCOL_FAILURE", "The Host connection is closed");
+    if (options.signal?.aborted === true)
+      throw new DOMException("The Host request was aborted", "AbortError");
     if (this.#pending.size >= MAX_PENDING_REQUESTS) {
       throw new FIAHostError("UNSAFE_STATE", "The Host request concurrency limit was exceeded");
     }
     const id = this.#nextID++;
+    let resolveResult: (value: Result | PromiseLike<Result>) => void = () => {};
+    let rejectResult: (reason?: unknown) => void = () => {};
     const result = new Promise<Result>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#pending.delete(id);
-        reject(new FIAHostError("TIMEOUT", `Host request timed out: ${method}`));
-      }, REQUEST_TIMEOUT_MS);
-      this.#pending.set(id, {
-        resolve: (value) => resolve(value as Result),
-        reject,
-        timer,
-      });
+      resolveResult = resolve;
+      rejectResult = reject;
     });
-    this.write({ v: 1, type: "request", id, method, params } satisfies RequestFrame);
+    const pending: PendingHostRequest = {
+      resolve: (value) => resolveResult(value as Result),
+      reject: rejectResult,
+      retired: false,
+    };
+    this.#pending.set(id, pending);
+    const retire = (error: unknown): void => {
+      if (pending.retired || !this.#pending.has(id)) return;
+      pending.retired = true;
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
+      pending.removeAbortListener?.();
+      pending.reject(error);
+      try {
+        this.write({ v: STDIO_PROTOCOL_VERSION, type: "cancel", id } satisfies CancelFrame);
+      } catch (writeError) {
+        this.onProtocolFailure(writeError);
+      }
+    };
+    try {
+      this.write({
+        v: STDIO_PROTOCOL_VERSION,
+        type: "request",
+        id,
+        method,
+        params,
+      } satisfies RequestFrame);
+    } catch (error) {
+      this.#pending.delete(id);
+      pending.reject(error);
+      return await result;
+    }
+    if (options.signal !== undefined) {
+      const abort = (): void =>
+        retire(new DOMException("The Host request was aborted", "AbortError"));
+      options.signal.addEventListener("abort", abort, { once: true });
+      pending.removeAbortListener = () => options.signal?.removeEventListener("abort", abort);
+    }
+    if (options.timeout !== false) {
+      pending.timer = setTimeout(
+        () => retire(new FIAHostError("TIMEOUT", `Host request timed out: ${method}`)),
+        REQUEST_TIMEOUT_MS,
+      );
+    }
     return await result;
   }
 
@@ -340,7 +446,11 @@ class StdioPeer {
         const item = await this.#iterator.next();
         if (item.done) throw new FIAHostError("PROTOCOL_FAILURE", "Host stdin closed");
         const frame = item.value as IncomingFrame;
-        if (!isPlainObject(frame) || frame.v !== 1 || typeof frame.type !== "string") {
+        if (
+          !isPlainObject(frame) ||
+          frame.v !== STDIO_PROTOCOL_VERSION ||
+          typeof frame.type !== "string"
+        ) {
           throw new FIAHostError("PROTOCOL_FAILURE", "Invalid stdio envelope");
         }
         if (frame.type === "response") {
@@ -349,7 +459,9 @@ class StdioPeer {
           if (pending === undefined)
             throw new FIAHostError("PROTOCOL_FAILURE", "Unknown response ID");
           this.#pending.delete(frame.id);
-          clearTimeout(pending.timer);
+          if (pending.timer !== undefined) clearTimeout(pending.timer);
+          pending.removeAbortListener?.();
+          if (pending.retired) continue;
           if (frame.error !== undefined) {
             pending.reject(
               new FIAHostError(frame.error.code, frame.error.message, frame.error.details),
@@ -369,8 +481,9 @@ class StdioPeer {
     } catch (error) {
       this.#closed = true;
       for (const pending of this.#pending.values()) {
-        clearTimeout(pending.timer);
-        pending.reject(error);
+        if (pending.timer !== undefined) clearTimeout(pending.timer);
+        pending.removeAbortListener?.();
+        if (!pending.retired) pending.reject(error);
       }
       this.#pending.clear();
       this.onProtocolFailure(error);
@@ -530,7 +643,7 @@ function validateInitializeFrame(value: unknown): InitializeFrame {
       "applicationSupport",
       "app",
     ]) ||
-    value.v !== 1 ||
+    value.v !== STDIO_PROTOCOL_VERSION ||
     value.type !== "initialize" ||
     typeof value.sessionSecret !== "string" ||
     value.sessionSecret.length < 32 ||
@@ -559,7 +672,7 @@ function validateResponseFrame(
   const hasError = Object.hasOwn(value, "error");
   if (
     !hasExactKeys(value, ["v", "type", "id"], ["result", "error"]) ||
-    value.v !== 1 ||
+    value.v !== STDIO_PROTOCOL_VERSION ||
     value.type !== "response" ||
     !Number.isInteger(value.id) ||
     (value.id as number) <= 0 ||
@@ -587,7 +700,7 @@ function validateEventFrame(
 ): asserts value is Record<string, unknown> & EventFrame {
   if (
     !hasExactKeys(value, ["v", "type", "event"], ["payload"]) ||
-    value.v !== 1 ||
+    value.v !== STDIO_PROTOCOL_VERSION ||
     value.type !== "event" ||
     typeof value.event !== "string" ||
     value.event.length === 0
@@ -598,32 +711,85 @@ function validateEventFrame(
 
 export interface FIAHost {
   readonly application: {
-    getState(): Promise<FIAApplicationState>;
-    quit(): Promise<void>;
-    setDockVisible(visible: boolean): Promise<FIAApplicationState>;
+    getState(callOptions?: FIAHostCallOptions): Promise<FIAApplicationState>;
+    quit(callOptions?: FIAHostCallOptions): Promise<void>;
+    setDockVisible(
+      visible: boolean,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIAApplicationState>;
   };
   readonly statusItem: {
-    setVisible(visible: boolean): Promise<FIAApplicationState>;
-    setSymbol(symbol: string): Promise<void>;
-    setTooltip(tooltip: string): Promise<void>;
-    setMenu(menu: readonly FIAStatusMenuNode[]): Promise<void>;
-    updateMenuItem(id: string, patch: FIAStatusMenuItemPatch): Promise<void>;
+    setVisible(visible: boolean, callOptions?: FIAHostCallOptions): Promise<FIAApplicationState>;
+    setSymbol(symbol: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    setTooltip(tooltip: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    setMenu(menu: readonly FIAStatusMenuNode[], callOptions?: FIAHostCallOptions): Promise<void>;
+    updateMenuItem(
+      id: string,
+      patch: FIAStatusMenuItemPatch,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<void>;
     onClick(listener: (event: FIAStatusItemClickEvent) => void): () => void;
     onAction(listener: (event: FIAStatusItemActionEvent) => void): () => void;
   };
   readonly webviews: {
-    open(options: FIAWebViewOpenOptions): Promise<FIAWebViewState>;
-    navigate(id: string, url: string): Promise<FIAWebViewState>;
-    show(id: string): Promise<FIAWebViewState>;
-    hide(id: string): Promise<FIAWebViewState>;
-    focus(id: string): Promise<FIAWebViewState>;
-    close(id: string): Promise<void>;
-    update(id: string, options: FIAWebViewUpdateOptions): Promise<FIAWebViewState>;
-    list(): Promise<readonly FIAWebViewState[]>;
+    open(
+      options: FIAWebViewOpenOptions,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIAWebViewState>;
+    navigate(id: string, url: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
+    show(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
+    hide(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
+    focus(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
+    close(id: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    update(
+      id: string,
+      options: FIAWebViewUpdateOptions,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIAWebViewState>;
+    list(callOptions?: FIAHostCallOptions): Promise<readonly FIAWebViewState[]>;
     onEvent(listener: (event: FIAWebViewEvent) => void): () => void;
   };
   readonly system: {
-    openURL(url: string): Promise<void>;
+    openURL(url: string, callOptions?: FIAHostCallOptions): Promise<void>;
+  };
+  readonly notifications: {
+    getAuthorizationStatus(
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIANotificationAuthorizationStatus>;
+    requestAuthorization(
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIANotificationAuthorizationStatus>;
+    send(
+      options: FIANotificationSendOptions,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIANotificationReceipt>;
+    remove(id: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    removeAll(callOptions?: FIAHostCallOptions): Promise<void>;
+    onClick(listener: (event: FIANotificationClickEvent) => void): () => void;
+  };
+  readonly dialogs: {
+    openFile(
+      options?: FIAOpenFileDialogOptions,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<readonly string[] | null>;
+    openDirectory(
+      options?: FIAOpenDirectoryDialogOptions,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<readonly string[] | null>;
+    saveFile(
+      options?: FIASaveFileDialogOptions,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<string | null>;
+  };
+  readonly clipboard: {
+    readText(callOptions?: FIAHostCallOptions): Promise<string | null>;
+    writeText(text: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    clear(callOptions?: FIAHostCallOptions): Promise<void>;
+  };
+  readonly keychain: {
+    get(key: string, callOptions?: FIAHostCallOptions): Promise<string | null>;
+    set(key: string, value: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    delete(key: string, callOptions?: FIAHostCallOptions): Promise<boolean>;
   };
 }
 
@@ -666,36 +832,76 @@ class HostEventScope {
 function createHost(peer: StdioPeer, session: SessionGuard, events: HostEventScope): FIAHost {
   return {
     application: {
-      getState: () => peer.call("application.getState"),
-      quit: () => peer.call("application.quit"),
-      setDockVisible: (visible) => peer.call("application.setDockVisible", { visible }),
+      getState: (callOptions) => peer.call("application.getState", {}, callOptions),
+      quit: (callOptions) => peer.call("application.quit", {}, callOptions),
+      setDockVisible: (visible, callOptions) =>
+        peer.call("application.setDockVisible", { visible }, callOptions),
     },
     statusItem: {
-      setVisible: (visible) => peer.call("statusItem.setVisible", { visible }),
-      setSymbol: (symbol) => peer.call("statusItem.setSymbol", { symbol }),
-      setTooltip: (tooltip) => peer.call("statusItem.setTooltip", { tooltip }),
-      setMenu: async (menu) => {
+      setVisible: (visible, callOptions) =>
+        peer.call("statusItem.setVisible", { visible }, callOptions),
+      setSymbol: (symbol, callOptions) =>
+        peer.call("statusItem.setSymbol", { symbol }, callOptions),
+      setTooltip: (tooltip, callOptions) =>
+        peer.call("statusItem.setTooltip", { tooltip }, callOptions),
+      setMenu: async (menu, callOptions) => {
         validateMenu(menu);
-        await peer.call("statusItem.setMenu", { menu });
+        await peer.call("statusItem.setMenu", { menu }, callOptions);
       },
-      updateMenuItem: (id, patch) => peer.call("statusItem.updateMenuItem", { id, patch }),
+      updateMenuItem: (id, patch, callOptions) =>
+        peer.call("statusItem.updateMenuItem", { id, patch }, callOptions),
       onClick: (listener) => eventListener(peer, "statusItem.clicked", listener, events),
       onAction: (listener) => eventListener(peer, "statusItem.action", listener, events),
     },
     webviews: {
-      open: (options) =>
-        peer.call("webviews.open", { ...options, url: session.authorizeURL(options.url) }),
-      navigate: (id, url) => peer.call("webviews.navigate", { id, url: session.authorizeURL(url) }),
-      show: (id) => peer.call("webviews.show", { id }),
-      hide: (id) => peer.call("webviews.hide", { id }),
-      focus: (id) => peer.call("webviews.focus", { id }),
-      close: (id) => peer.call("webviews.close", { id }),
-      update: (id, options) => peer.call("webviews.update", { id, ...options }),
-      list: () => peer.call("webviews.list"),
+      open: (options, callOptions) =>
+        peer.call(
+          "webviews.open",
+          { ...options, url: session.authorizeURL(options.url) },
+          callOptions,
+        ),
+      navigate: (id, url, callOptions) =>
+        peer.call("webviews.navigate", { id, url: session.authorizeURL(url) }, callOptions),
+      show: (id, callOptions) => peer.call("webviews.show", { id }, callOptions),
+      hide: (id, callOptions) => peer.call("webviews.hide", { id }, callOptions),
+      focus: (id, callOptions) => peer.call("webviews.focus", { id }, callOptions),
+      close: (id, callOptions) => peer.call("webviews.close", { id }, callOptions),
+      update: (id, options, callOptions) =>
+        peer.call("webviews.update", { id, ...options }, callOptions),
+      list: (callOptions) => peer.call("webviews.list", {}, callOptions),
       onEvent: (listener) => eventListener(peer, "webviews.event", listener, events),
     },
     system: {
-      openURL: (url) => peer.call("system.openURL", { url: session.authorizeURL(url) }),
+      openURL: (url, callOptions) =>
+        peer.call("system.openURL", { url: session.authorizeURL(url) }, callOptions),
+    },
+    notifications: {
+      getAuthorizationStatus: (callOptions) =>
+        peer.call("notifications.getAuthorizationStatus", {}, callOptions),
+      requestAuthorization: (callOptions) =>
+        peer.call("notifications.requestAuthorization", {}, { ...callOptions, timeout: false }),
+      send: (options, callOptions) => peer.call("notifications.send", { ...options }, callOptions),
+      remove: (id, callOptions) => peer.call("notifications.remove", { id }, callOptions),
+      removeAll: (callOptions) => peer.call("notifications.removeAll", {}, callOptions),
+      onClick: (listener) => eventListener(peer, "notifications.clicked", listener, events),
+    },
+    dialogs: {
+      openFile: (options = {}, callOptions) =>
+        peer.call("dialogs.openFile", { ...options }, { ...callOptions, timeout: false }),
+      openDirectory: (options = {}, callOptions) =>
+        peer.call("dialogs.openDirectory", { ...options }, { ...callOptions, timeout: false }),
+      saveFile: (options = {}, callOptions) =>
+        peer.call("dialogs.saveFile", { ...options }, { ...callOptions, timeout: false }),
+    },
+    clipboard: {
+      readText: (callOptions) => peer.call("clipboard.readText", {}, callOptions),
+      writeText: (text, callOptions) => peer.call("clipboard.writeText", { text }, callOptions),
+      clear: (callOptions) => peer.call("clipboard.clear", {}, callOptions),
+    },
+    keychain: {
+      get: (key, callOptions) => peer.call("keychain.get", { key }, callOptions),
+      set: (key, value, callOptions) => peer.call("keychain.set", { key, value }, callOptions),
+      delete: (key, callOptions) => peer.call("keychain.delete", { key }, callOptions),
     },
   };
 }
@@ -765,7 +971,7 @@ async function sharedRuntime(): Promise<SharedBackendRuntime> {
   const frames = readFrames(Bun.stdin.stream())[Symbol.asyncIterator]();
   const first = await frames.next();
   if (first.done) {
-    throw new FIAHostError("PROTOCOL_FAILURE", "The first Host frame must be initialize v1");
+    throw new FIAHostError("PROTOCOL_FAILURE", "The first Host frame must be initialize v2");
   }
   const initialize = validateInitializeFrame(first.value);
   const peer = new StdioPeer(frames, (error) => {
@@ -866,6 +1072,6 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   await definition.start?.(context);
   if (!runtime.ready) {
     runtime.ready = true;
-    peer.write({ v: 1, type: "ready", port, origin });
+    peer.write({ v: STDIO_PROTOCOL_VERSION, type: "ready", port, origin });
   }
 }

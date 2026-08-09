@@ -14,12 +14,15 @@ Host 启动 Backend 后发送 `initialize`，包含 stdio 版本、宿主生命�
 后续帧统一为：
 
 ```json
-{"v":1,"type":"request","id":1,"method":"statusItem.setMenu","params":{}}
-{"v":1,"type":"response","id":1,"result":null}
-{"v":1,"type":"event","event":"statusItem.clicked","payload":{"button":"left"}}
+{"v":2,"type":"request","id":1,"method":"statusItem.setMenu","params":{}}
+{"v":2,"type":"cancel","id":1}
+{"v":2,"type":"response","id":1,"error":{"code":"CANCELLED","message":"Host request was cancelled"}}
+{"v":2,"type":"event","event":"statusItem.clicked","payload":{"button":"left"}}
 ```
 
-stdout 单帧上限 1 MiB，最多 128 个未完成调用，普通调用 30 秒，启动 10 秒。未知版本、
+stdout 单帧上限 1 MiB，最多 128 个未完成调用，普通调用 30 秒，启动 10 秒。文件面板和通知
+授权没有固定调用超时。AbortSignal 或超时发送 `cancel`，Host 取消对应异步任务并用
+`CANCELLED` response 确认；Backend 保留请求占位直到确认，以安全处理完成/取消竞态。未知版本、
 未知帧、日志污染、非法 JSON、重复响应或超限都会使当前 Backend 失败。
 
 ## 状态所有权

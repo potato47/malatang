@@ -98,7 +98,7 @@ async function packagedStylesheet(backend: string, projectRoot: string): Promise
   let origin: string | undefined;
   input.write(
     `${JSON.stringify({
-      v: 1,
+      v: 2,
       type: "initialize",
       sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
       preferredPort: 0,
@@ -127,7 +127,7 @@ async function packagedStylesheet(backend: string, projectRoot: string): Promise
         buffer = buffer.slice(newline + 1);
         if (frame.type === "request" && typeof frame.id === "number") {
           input.write(
-            `${JSON.stringify({ v: 1, type: "response", id: frame.id, result: null })}\n`,
+            `${JSON.stringify({ v: 2, type: "response", id: frame.id, result: null })}\n`,
           );
           input.flush();
         } else if (frame.type === "ready" && typeof frame.origin === "string") {
@@ -143,7 +143,7 @@ async function packagedStylesheet(backend: string, projectRoot: string): Promise
     const cssResponse = await fetch(new URL(stylesheet, origin));
     expect(cssResponse.status).toBe(200);
     const css = await cssResponse.text();
-    input.write(`${JSON.stringify({ v: 1, type: "event", event: "host.shutdown" })}\n`);
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
     input.flush();
     expect(await child.exited).toBe(0);
     return css;
@@ -184,10 +184,19 @@ describe("FIA resident Backend application packaging", () => {
       hostCapabilities: string[];
     };
     expect(config).toMatchObject({
-      schemaVersion: 6,
-      stdioProtocolVersion: 1,
+      schemaVersion: 7,
+      stdioProtocolVersion: 2,
       backend: { executable: "Helpers/FIABackend" },
-      hostCapabilities: ["application", "statusItem", "webviews", "system"],
+      hostCapabilities: [
+        "application",
+        "statusItem",
+        "webviews",
+        "system",
+        "notifications",
+        "dialogs",
+        "clipboard",
+        "keychain",
+      ],
     });
     const hasher = new Bun.CryptoHasher("sha256");
     hasher.update(await Bun.file(backend).arrayBuffer());

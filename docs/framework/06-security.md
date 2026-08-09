@@ -18,3 +18,11 @@
 - 生产 helper 路径固定，校验签名后文件的 SHA-256，并 inside-out codesign。
 - stdout 只允许协议；runner 在导入项目 entry 前把 `console.*` 重定向到 stderr。
 - 配置、菜单、窗口参数和 URL 均做严格形状、长度与 allowlist 校验。
+
+## 原生数据
+
+- 文件面板只返回用户选择的绝对路径；FIA 不扫描目录，也不持久化访问授权。
+- Keychain service 固定为 bundle identifier，使用不可同步、仅本机的
+  `afterFirstUnlockThisDeviceOnly` 可访问性；Backend 不能指定其他 service 或批量列举条目。
+- 剪贴板仅暴露文本，所有请求和结果仍受 1 MiB stdio 帧限制。
+- 通知权限只能由应用显式申请；`send` 不会隐式触发系统授权提示。

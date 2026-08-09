@@ -42,9 +42,18 @@ interface HostManifest {
   sha256: string;
   architecture: "arm64";
   minimumSystemVersion: "14.0";
-  configurationSchema: 6;
-  stdioProtocol: 1;
-  hostCapabilities: readonly ["application", "statusItem", "webviews", "system"];
+  configurationSchema: 7;
+  stdioProtocol: 2;
+  hostCapabilities: readonly [
+    "application",
+    "statusItem",
+    "webviews",
+    "system",
+    "notifications",
+    "dialogs",
+    "clipboard",
+    "keychain",
+  ];
 }
 
 interface BuildContext {
@@ -71,7 +80,16 @@ interface CommandResult {
 
 const HOST_EXECUTABLE = "FIAHost";
 const BACKEND_EXECUTABLE = "FIABackend";
-const HOST_CAPABILITIES = ["application", "statusItem", "webviews", "system"] as const;
+const HOST_CAPABILITIES = [
+  "application",
+  "statusItem",
+  "webviews",
+  "system",
+  "notifications",
+  "dialogs",
+  "clipboard",
+  "keychain",
+] as const;
 
 function commandText(command: readonly string[]): string {
   return command.map((part) => JSON.stringify(part)).join(" ");
@@ -199,8 +217,8 @@ async function verifyHostAsset(context: BuildContext): Promise<string> {
     manifest.hostVersion !== CLI_VERSION ||
     manifest.architecture !== "arm64" ||
     manifest.minimumSystemVersion !== "14.0" ||
-    manifest.configurationSchema !== 6 ||
-    manifest.stdioProtocol !== 1 ||
+    manifest.configurationSchema !== 7 ||
+    manifest.stdioProtocol !== 2 ||
     manifest.hostCapabilities.join(",") !== HOST_CAPABILITIES.join(",")
   ) {
     throw new Error("precompiled Host manifest is incompatible with this CLI");
@@ -355,6 +373,18 @@ function fakeNativeResult(method: string, params: Record<string, unknown>): unkn
       visibleOverFullScreen: false,
     };
   }
+  if (
+    method === "notifications.getAuthorizationStatus" ||
+    method === "notifications.requestAuthorization"
+  ) {
+    return "authorized";
+  }
+  if (method === "notifications.send") {
+    return { id: typeof params.id === "string" ? params.id : "smoke-notification" };
+  }
+  if (method.startsWith("dialogs.")) return null;
+  if (method === "clipboard.readText" || method === "keychain.get") return null;
+  if (method === "keychain.delete") return false;
   return null;
 }
 
@@ -376,7 +406,7 @@ async function smokeBackend(context: BuildContext, executable: string): Promise<
   let ready: { port: number; origin: string } | undefined;
   input.write(
     `${JSON.stringify({
-      v: 1,
+      v: 2,
       type: "initialize",
       sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
       preferredPort: 0,
@@ -418,7 +448,7 @@ async function smokeBackend(context: BuildContext, executable: string): Promise<
         ) {
           input.write(
             `${JSON.stringify({
-              v: 1,
+              v: 2,
               type: "response",
               id: frame.id,
               result: fakeNativeResult(frame.method, frame.params ?? {}),
@@ -438,7 +468,7 @@ async function smokeBackend(context: BuildContext, executable: string): Promise<
     }
     const health = await fetch(`${ready.origin}/_fia/health`);
     if (health.status !== 204) throw new Error(`Backend health check returned ${health.status}`);
-    input.write(`${JSON.stringify({ v: 1, type: "event", event: "host.shutdown" })}\n`);
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
     input.flush();
     const exitCode = await Promise.race([
       child.exited,
@@ -529,8 +559,8 @@ function hostConfiguration(
   backend: BackendArtifact,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 6,
-    stdioProtocolVersion: 1,
+    schemaVersion: 7,
+    stdioProtocolVersion: 2,
     development: backend.development,
     app: { name: config.app.name, identifier: config.app.identifier },
     statusItem: config.statusBar,
@@ -595,7 +625,7 @@ async function verifyApp(context: BuildContext, production: boolean): Promise<vo
   const configuration = JSON.parse(
     await readFile(resolve(contents, "Resources/fia-config.json"), "utf8"),
   ) as Record<string, unknown>;
-  if (configuration.schemaVersion !== 6 || configuration.stdioProtocolVersion !== 1) {
+  if (configuration.schemaVersion !== 7 || configuration.stdioProtocolVersion !== 2) {
     throw new Error("packaged Host configuration is incompatible");
   }
   if (production) {

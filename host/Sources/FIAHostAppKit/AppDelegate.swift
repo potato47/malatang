@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let hostController else {
                         throw HostRequestExecutionError(code: .nativeFailure, message: "Host controller is unavailable")
                     }
-                    return try hostController.execute(method: method, params: params)
+                    return try await hostController.execute(method: method, params: params)
                 },
                 onState: { [weak self, weak hostController] state in
                     self?.backendStateChanged(state, hostController: hostController)

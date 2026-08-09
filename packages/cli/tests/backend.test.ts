@@ -42,7 +42,7 @@ describe("resident Bun backend runtime", () => {
     if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
     input.write(
       `${JSON.stringify({
-        v: 1,
+        v: 2,
         type: "initialize",
         sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
         preferredPort: 0,
@@ -89,7 +89,7 @@ describe("resident Bun backend runtime", () => {
     if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
     input.write(
       `${JSON.stringify({
-        v: 1,
+        v: 2,
         type: "initialize",
         sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
         preferredPort: 0,
@@ -109,13 +109,13 @@ describe("resident Bun backend runtime", () => {
     await Bun.sleep(150);
     input.write(
       `${JSON.stringify({
-        v: 1,
+        v: 2,
         type: "event",
         event: "statusItem.clicked",
         payload: { button: "left" },
       })}\n`,
     );
-    input.write(`${JSON.stringify({ v: 1, type: "event", event: "host.shutdown" })}\n`);
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
     input.flush();
     const exitCode = await Promise.race([child.exited, Bun.sleep(5_000).then(() => undefined)]);
     if (exitCode === undefined) child.kill("SIGKILL");
@@ -166,7 +166,7 @@ describe("resident Bun backend runtime", () => {
     if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
     input.write(
       `${JSON.stringify({
-        v: 1,
+        v: 2,
         type: "initialize",
         sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
         preferredPort: 0,
@@ -201,7 +201,7 @@ describe("resident Bun backend runtime", () => {
           bootstrapURL = frame.params?.url;
           input.write(
             `${JSON.stringify({
-              v: 1,
+              v: 2,
               type: "response",
               id: frame.id,
               result: {
@@ -253,9 +253,218 @@ describe("resident Bun backend runtime", () => {
     });
     expect(wrongHost.status).toBe(401);
     expect((await fetch(bootstrapURL!, { redirect: "manual" })).status).toBe(403);
-    input.write(`${JSON.stringify({ v: 1, type: "event", event: "host.shutdown" })}\n`);
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
     input.flush();
     expect(await child.exited).toBe(0);
+    reader.releaseLock();
+    input.end();
+  });
+
+  test("maps native capability APIs and notification click events", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "fia-native-api-"));
+    temporaryDirectories.push(root);
+    const backendSource = pathToFileURL(resolve(import.meta.dir, "../src/backend.ts")).href;
+    const runner = resolve(root, "runner.ts");
+    await Bun.write(
+      runner,
+      `
+        import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
+        await runBackend(defineBackend({
+          http: {},
+          async start({ host }) {
+            host.notifications.onClick(({ id }) => process.stderr.write(id + "\\n"));
+            await host.notifications.getAuthorizationStatus();
+            await host.notifications.requestAuthorization();
+            await host.notifications.send({ id: "done", title: "Complete", sound: true });
+            await host.dialogs.openFile({ allowedExtensions: ["json"], multiple: true });
+            await host.clipboard.writeText("hello");
+            await host.clipboard.readText();
+            await host.keychain.set("token", "secret");
+            await host.keychain.get("token");
+            await host.keychain.delete("token");
+          },
+        }));
+      `,
+    );
+    const child = Bun.spawn([process.execPath, runner], {
+      cwd: root,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const input = child.stdin;
+    if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
+    const stderr = new Response(child.stderr).text();
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "initialize",
+        sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
+        preferredPort: 0,
+        development: false,
+        applicationSupport: root,
+        app: { name: "Native", identifier: "com.example.native" },
+      })}\n`,
+    );
+    input.flush();
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const methods: string[] = [];
+    while (true) {
+      const item = await reader.read();
+      if (item.done) throw new Error("Backend exited before ready");
+      buffer += decoder.decode(item.value, { stream: true });
+      let ready = false;
+      while (buffer.includes("\n")) {
+        const newline = buffer.indexOf("\n");
+        const frame = JSON.parse(buffer.slice(0, newline)) as {
+          type: string;
+          id?: number;
+          method?: string;
+          params?: Record<string, unknown>;
+        };
+        buffer = buffer.slice(newline + 1);
+        if (frame.type === "ready") {
+          ready = true;
+          break;
+        }
+        if (frame.type !== "request" || frame.id === undefined || frame.method === undefined) {
+          throw new Error(`unexpected frame: ${JSON.stringify(frame)}`);
+        }
+        methods.push(frame.method);
+        const result =
+          frame.method === "notifications.getAuthorizationStatus" ||
+          frame.method === "notifications.requestAuthorization"
+            ? "authorized"
+            : frame.method === "notifications.send"
+              ? { id: frame.params?.id }
+              : frame.method === "dialogs.openFile"
+                ? ["/tmp/input.json"]
+                : frame.method === "clipboard.readText" || frame.method === "keychain.get"
+                  ? "secret"
+                  : frame.method === "keychain.delete"
+                    ? true
+                    : null;
+        input.write(`${JSON.stringify({ v: 2, type: "response", id: frame.id, result })}\n`);
+        input.flush();
+      }
+      if (ready) break;
+    }
+    expect(methods).toEqual([
+      "notifications.getAuthorizationStatus",
+      "notifications.requestAuthorization",
+      "notifications.send",
+      "dialogs.openFile",
+      "clipboard.writeText",
+      "clipboard.readText",
+      "keychain.set",
+      "keychain.get",
+      "keychain.delete",
+    ]);
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "event",
+        event: "notifications.clicked",
+        payload: { id: "done" },
+      })}\n`,
+    );
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
+    input.flush();
+    expect(await child.exited).toBe(0);
+    expect(await stderr).toBe("done\n");
+    reader.releaseLock();
+    input.end();
+  });
+
+  test("cancels an interactive Host request with AbortSignal", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "fia-native-cancel-"));
+    temporaryDirectories.push(root);
+    const backendSource = pathToFileURL(resolve(import.meta.dir, "../src/backend.ts")).href;
+    const runner = resolve(root, "runner.ts");
+    await Bun.write(
+      runner,
+      `
+        import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
+        await runBackend(defineBackend({
+          http: {},
+          async start({ host }) {
+            const controller = new AbortController();
+            setTimeout(() => controller.abort(), 20);
+            try {
+              await host.dialogs.openFile({}, { signal: controller.signal });
+            } catch (error) {
+              process.stderr.write(error.name + "\\n");
+            }
+          },
+        }));
+      `,
+    );
+    const child = Bun.spawn([process.execPath, runner], {
+      cwd: root,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const input = child.stdin;
+    if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
+    const stderr = new Response(child.stderr).text();
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "initialize",
+        sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
+        preferredPort: 0,
+        development: false,
+        applicationSupport: root,
+        app: { name: "Cancel", identifier: "com.example.cancel" },
+      })}\n`,
+    );
+    input.flush();
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let requestID: number | undefined;
+    let sawCancel = false;
+    let sawReady = false;
+    while (!sawReady) {
+      const item = await reader.read();
+      if (item.done) throw new Error("Backend exited before ready");
+      buffer += decoder.decode(item.value, { stream: true });
+      while (buffer.includes("\n")) {
+        const newline = buffer.indexOf("\n");
+        const frame = JSON.parse(buffer.slice(0, newline)) as {
+          type: string;
+          id?: number;
+          method?: string;
+        };
+        buffer = buffer.slice(newline + 1);
+        if (frame.type === "request") {
+          requestID = frame.id;
+          expect(frame.method).toBe("dialogs.openFile");
+        } else if (frame.type === "cancel") {
+          expect(frame.id).toBe(requestID);
+          sawCancel = true;
+          input.write(
+            `${JSON.stringify({
+              v: 2,
+              type: "response",
+              id: frame.id,
+              error: { code: "CANCELLED", message: "Host request was cancelled" },
+            })}\n`,
+          );
+          input.flush();
+        } else if (frame.type === "ready") {
+          sawReady = true;
+        }
+      }
+    }
+    expect(sawCancel).toBe(true);
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
+    input.flush();
+    expect(await child.exited).toBe(0);
+    expect(await stderr).toBe("AbortError\n");
     reader.releaseLock();
     input.end();
   });

@@ -1,11 +1,20 @@
 {
   "schemaVersion": 3,
-  "cliVersion": "0.7.3",
-  "hostVersion": "0.7.3",
-  "sha256": "4729577dba54d93363400d9f027b71e7c7289a4f76fc434a16588088f8cda30f",
+  "cliVersion": "0.8.0",
+  "hostVersion": "0.8.0",
+  "sha256": "2745a1f8e95c355a389ae7ddbca7fdb8297314b482d57c23fcc746d311d66a97",
   "architecture": "arm64",
   "minimumSystemVersion": "14.0",
-  "configurationSchema": 6,
-  "stdioProtocol": 1,
-  "hostCapabilities": ["application", "statusItem", "webviews", "system"]
+  "configurationSchema": 7,
+  "stdioProtocol": 2,
+  "hostCapabilities": [
+    "application",
+    "statusItem",
+    "webviews",
+    "system",
+    "notifications",
+    "dialogs",
+    "clipboard",
+    "keychain"
+  ]
 }

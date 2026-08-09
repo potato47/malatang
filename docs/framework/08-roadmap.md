@@ -2,15 +2,15 @@
 
 ## 当前基线
 
-- config 4 / Host schema 6 / stdio protocol 1。
+- config 4 / Host schema 7 / stdio protocol 2。
 - 单一常驻 Bun Backend、HTTP/WS 和 secure bootstrap session。
-- Backend-only application/statusItem/webviews/system 能力。
+- Backend-only application/statusItem/webviews/system/notifications/dialogs/clipboard/keychain 能力。
+- Host 异步请求、AbortSignal、取消帧和交互式调用无限等待。
 - 多 WebView、完整动态菜单、退避恢复和 standalone 生产包。
 
 ## 下一阶段
 
-- 通知、文件面板、剪贴板、Keychain 等原生能力。
-- 调用取消、结构化 diagnostics 和 Backend 健康指标。
+- 结构化 diagnostics 和 Backend 健康指标。
 - Developer ID、notarization、universal binary 与自动更新。
 - 睡眠/唤醒、长连接、WebContent 崩溃和长时间稳定性测试。
 
