@@ -283,6 +283,57 @@ async function validateBackend(context: BuildContext, runner: string): Promise<v
   );
 }
 
+async function staticBuildPlugins(projectRoot: string): Promise<string[]> {
+  const bunfig = resolve(projectRoot, "bunfig.toml");
+  if (!(await existingFile(bunfig))) return [];
+  const config = Bun.TOML.parse(await readFile(bunfig, "utf8")) as {
+    serve?: { static?: { plugins?: unknown } };
+  };
+  const plugins = config.serve?.static?.plugins;
+  if (plugins === undefined) return [];
+  if (!Array.isArray(plugins) || plugins.some((plugin) => typeof plugin !== "string")) {
+    throw new Error("bunfig.toml serve.static.plugins must be an array of package names");
+  }
+  return plugins as string[];
+}
+
+function generatedStandaloneBuild(
+  projectRoot: string,
+  runner: string,
+  executable: string,
+  pluginSpecifiers: readonly string[],
+): string {
+  return `
+    const pluginSpecifiers = ${JSON.stringify(pluginSpecifiers)};
+    const plugins = await Promise.all(pluginSpecifiers.map(async (specifier) => {
+      const module = await import(specifier);
+      const plugin = module.default ?? module;
+      if (typeof plugin?.setup !== "function") {
+        throw new Error(\`Build plugin \${specifier} does not export a Bun plugin\`);
+      }
+      return plugin;
+    }));
+    const result = await Bun.build({
+      entrypoints: [${JSON.stringify(runner)}],
+      target: "bun",
+      root: ${JSON.stringify(projectRoot)},
+      minify: true,
+      plugins,
+      throw: false,
+      compile: {
+        target: "bun-darwin-arm64",
+        outfile: ${JSON.stringify(executable)},
+        autoloadDotenv: false,
+        autoloadBunfig: false,
+      },
+    });
+    if (!result.success) {
+      for (const log of result.logs) console.error(log);
+      process.exit(1);
+    }
+  `;
+}
+
 function fakeNativeResult(method: string, params: Record<string, unknown>): unknown {
   if (
     method === "application.getState" ||
@@ -416,20 +467,19 @@ async function buildProductionBackend(
   runner: string,
 ): Promise<BackendArtifact> {
   const executable = resolve(context.stagingRoot, BACKEND_EXECUTABLE);
+  const builder = resolve(context.stagingRoot, "build-backend.ts");
+  await Bun.write(
+    builder,
+    generatedStandaloneBuild(
+      context.config.projectRoot,
+      runner,
+      executable,
+      await staticBuildPlugins(context.config.projectRoot),
+    ),
+  );
   await checked(
     "Backend standalone build",
-    [
-      process.execPath,
-      "build",
-      "--compile",
-      "--target=bun-darwin-arm64",
-      "--minify",
-      "--no-compile-autoload-dotenv",
-      "--no-compile-autoload-bunfig",
-      runner,
-      "--outfile",
-      executable,
-    ],
+    [process.execPath, builder],
     context.config.projectRoot,
     context.debug,
     context.io,
