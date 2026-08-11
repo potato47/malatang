@@ -1,6 +1,8 @@
 # Host 原生能力
 
 原生能力只通过 `defineBackend` 上下文中的 `host` 暴露，浏览器 bundle 没有对应导出。
+生命周期上下文以及受保护 route/fetch 的第三参数同时提供 `app`；其中 `dataDirectory` 是 Host
+预先创建并通过 initialize 帧传入的绝对持久化目录。
 
 - `host.application`：读取 Dock/状态栏可见性、退出、切换 Dock。
 - `host.statusItem`：可见性、SF Symbol、tooltip、完整动态菜单、左键与 action 事件。

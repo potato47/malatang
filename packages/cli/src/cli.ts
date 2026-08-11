@@ -18,6 +18,7 @@ export interface CLIDependencies {
   doctorProbe?: DoctorProbe;
   create?: CreateProjectDependencies;
   application?: ApplicationCommandDependencies;
+  applicationExecutor?: typeof executeApplicationCommand;
   workingDirectory?: string;
 }
 
@@ -78,11 +79,13 @@ const applicationHelp: Record<ApplicationCommand, string> = {
   dev: `Launch the FIA application with hot module replacement
 
 Usage:
-  fia [--debug] dev
+  fia [--debug] dev [--print-session-url] [--emit-action <id>]
 
 Options:
-  -h, --help   Show help for dev
-  --debug      Include diagnostic command details
+  -h, --help          Show help for dev
+  --print-session-url Print a one-time development session URL
+  --emit-action <id>  Emit one status menu action after Backend readiness
+  --debug             Include diagnostic command details
 `,
   build: `Build and ad-hoc sign a production FIA application
 
@@ -195,14 +198,48 @@ export async function runCLI(
       io.stdout(applicationHelp[command]);
       return 0;
     }
-    if (flags.length > 0) return usageError(io, `unknown ${command} option: ${flags[0]}`);
+    let printSessionURL = false;
+    let emitAction: string | undefined;
+    if (command === "dev") {
+      for (let index = 0; index < flags.length; index += 1) {
+        const flag = flags[index];
+        if (flag === "--print-session-url") {
+          if (printSessionURL)
+            return usageError(io, "dev --print-session-url may only be specified once");
+          printSessionURL = true;
+          continue;
+        }
+        if (flag === "--emit-action") {
+          if (emitAction !== undefined)
+            return usageError(io, "dev --emit-action may only be specified once");
+          const id = flags[index + 1];
+          if (id === undefined || id.startsWith("-")) {
+            return usageError(io, "dev --emit-action requires a menu ID");
+          }
+          if (
+            id.length > 128 ||
+            !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) ||
+            id.startsWith("fia.")
+          ) {
+            return usageError(io, `invalid dev action ID: ${id}`);
+          }
+          emitAction = id;
+          index += 1;
+          continue;
+        }
+        return usageError(io, `unknown dev option: ${flag}`);
+      }
+    } else if (flags.length > 0) {
+      return usageError(io, `unknown ${command} option: ${flags[0]}`);
+    }
     try {
-      await executeApplicationCommand({
+      await (dependencies.applicationExecutor ?? executeApplicationCommand)({
         command,
         cwd: dependencies.workingDirectory ?? process.cwd(),
         debug,
         io,
         dependencies: dependencies.application,
+        ...(command === "dev" ? { developmentAutomation: { printSessionURL, emitAction } } : {}),
       });
       return 0;
     } catch (error) {

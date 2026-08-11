@@ -68,6 +68,57 @@ struct HostWindowControllerTests {
         }
     }
 
+    @Test func reportsInvalidMenuSymbolsWithItemContext() {
+        let controller = StatusBarController(symbol: "bolt.fill", tooltip: "Desktop")
+        do {
+            try controller.setMenu([
+                ["type": "item", "id": "compose-note", "title": "Compose", "symbol": "fia.not-a-real-symbol"],
+            ])
+            Issue.record("Expected an invalid SF Symbol error")
+        } catch let error as HostRequestExecutionError {
+            #expect(error.message == #"invalid SF Symbol name "fia.not-a-real-symbol" on item "compose-note""#)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test func developmentActionsRequireAnActionableMenuLeaf() throws {
+        let controller = StatusBarController(symbol: "bolt.fill", tooltip: "Desktop")
+        var actions: [String] = []
+        controller.onAction = { actions.append($0) }
+        try controller.setMenu([
+            ["type": "item", "id": "open", "title": "Open"],
+            ["type": "item", "id": "disabled", "title": "Disabled", "enabled": false],
+            ["type": "item", "id": "hidden", "title": "Hidden", "hidden": true],
+            ["type": "item", "id": "parent", "title": "Parent", "children": [
+                ["type": "item", "id": "child", "title": "Child"],
+            ]],
+            ["type": "item", "id": "disabled-parent", "title": "Disabled Parent", "enabled": false, "children": [
+                ["type": "item", "id": "blocked-child", "title": "Blocked Child"],
+            ]],
+        ])
+
+        try controller.emitActionForDevelopment(id: "open")
+        try controller.emitActionForDevelopment(id: "child")
+        #expect(actions == ["open", "child"])
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.emitActionForDevelopment(id: "missing")
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.emitActionForDevelopment(id: "disabled")
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.emitActionForDevelopment(id: "hidden")
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.emitActionForDevelopment(id: "parent")
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.emitActionForDevelopment(id: "blocked-child")
+        }
+        #expect(actions == ["open", "child"])
+    }
+
     @Test func menuUpdatesAreAtomicAndStartingClearsOnReady() throws {
         let controller = StatusBarController(symbol: "bolt.fill", tooltip: "Desktop")
         try controller.setMenu([["type": "item", "id": "open", "title": "Open"]])

@@ -129,6 +129,44 @@ describe("fia command routing", () => {
     }
   });
 
+  test("parses one-time development automation options", async () => {
+    const output = capture();
+    const calls: Array<{
+      developmentAutomation?: { printSessionURL?: boolean; emitAction?: string };
+    }> = [];
+    expect(
+      await runCLI(["dev", "--print-session-url", "--emit-action", "compose-note"], {
+        io: output.io,
+        workingDirectory: "/project",
+        applicationExecutor: async (options) => {
+          calls.push(options);
+        },
+      }),
+    ).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.developmentAutomation).toEqual({
+      printSessionURL: true,
+      emitAction: "compose-note",
+    });
+    expect(output.stderr).toEqual([]);
+  });
+
+  test("rejects invalid development automation options", async () => {
+    for (const args of [
+      ["dev", "--print-session-url", "--print-session-url"],
+      ["dev", "--emit-action"],
+      ["dev", "--emit-action", "fia.retry"],
+      ["dev", "--emit-action", "bad action"],
+      ["dev", "--emit-action", "open", "--emit-action", "again"],
+      ["build", "--print-session-url"],
+      ["run", "--emit-action", "open"],
+    ]) {
+      const output = capture();
+      expect(await runCLI(args, { io: output.io })).toBe(2);
+      expect(output.stderr.join("")).toContain("fia: error:");
+    }
+  });
+
   test("uses exit 1 for failed required diagnostics", async () => {
     const output = capture();
     const probe = new FakeDoctorProbe();

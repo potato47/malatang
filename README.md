@@ -45,10 +45,15 @@ Backend 直接声明 Bun HTTP/WS handlers，并在启动钩子中使用 Host API
 import { defineBackend } from "@semicoder/fia/backend";
 import page from "./ui/index.html";
 
-export default defineBackend({
+export default defineBackend()({
   http: {
     publicRoutes: { "/": page },
-    routes: { "/api/health": { GET: () => Response.json({ ok: true }) } },
+    routes: {
+      "/api/items/:id": {
+        GET: (request, _server, { app }) =>
+          Response.json({ id: request.params.id, dataDirectory: app.dataDirectory }),
+      },
+    },
   },
   async start({ host, url }) {
     await host.statusItem.setMenu([{ type: "item", id: "open", title: "Open" }]);
@@ -61,6 +66,9 @@ export default defineBackend({
 
 在 `start` 中通过 Host API 注册的事件监听器会随当前 Backend 生命周期自动清理，热重载和退出时
 不需要手动保存注销函数。
+
+受保护 route 与 fallback `fetch` 的第三参数提供 `host` 和只读 `app` 信息，其中
+`app.dataDirectory` 是 Host 按应用 identifier 创建的绝对持久化目录。
 
 Host API 还提供显式授权的系统通知、打开/保存文件面板、文本剪贴板和按 bundle identifier
 隔离的 Keychain。所有 Promise 方法都接受可选的 `{ signal }` 尾参数；取消文件面板会同时关闭
@@ -79,6 +87,7 @@ bun run check
 ```
 
 - `dev`：临时状态栏 App + Bun full-stack HMR。
+- `dev --print-session-url --emit-action <id>`：输出一次性开发会话并模拟一次状态栏菜单 action。
 - `run`：构建临时生产 App 并启动。
 - `build`：生成并 ad-hoc 签名 `dist/<App>.app`。
 

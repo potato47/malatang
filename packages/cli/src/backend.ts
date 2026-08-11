@@ -183,20 +183,36 @@ export interface FIASaveFileDialogOptions extends FIAFileDialogOptions {
 }
 
 type MaybePromise<Value> = Value | Promise<Value>;
-export type FIARouteHandler<WebSocketData = unknown> = (
-  request: Bun.BunRequest,
-  server: Bun.Server<WebSocketData>,
+export type FIAServer<WebSocketData = unknown> = Bun.Server<WebSocketData>;
+
+export interface FIAAppContext {
+  readonly name: string;
+  readonly identifier: string;
+  readonly dataDirectory: string;
+}
+
+export interface FIARouteContext {
+  readonly host: FIAHost;
+  readonly app: FIAAppContext;
+}
+
+export type FIARouteHandler<WebSocketData = unknown, Path extends string = string> = (
+  request: Bun.BunRequest<Path>,
+  server: FIAServer<WebSocketData>,
+  context: FIARouteContext,
 ) => MaybePromise<Response | undefined | void>;
 
-export type FIAProtectedRoute<WebSocketData = unknown> =
-  | FIARouteHandler<WebSocketData>
-  | Partial<Record<Bun.Serve.HTTPMethod, FIARouteHandler<WebSocketData>>>;
+export type FIAProtectedRoute<WebSocketData = unknown, Path extends string = string> =
+  | FIARouteHandler<WebSocketData, Path>
+  | Partial<Record<Bun.Serve.HTTPMethod, FIARouteHandler<WebSocketData, Path>>>;
 
 export type FIAPublicRoute = Response | false | Bun.HTMLBundle | Bun.BunFile;
 
-export interface FIAHTTPDefinition<WebSocketData = unknown> {
+export interface FIAHTTPDefinition<WebSocketData = unknown, RoutePaths extends string = string> {
   publicRoutes?: Readonly<Record<string, FIAPublicRoute>>;
-  routes?: Readonly<Record<string, FIAProtectedRoute<WebSocketData>>>;
+  routes?: Readonly<{
+    [Path in RoutePaths]: FIAProtectedRoute<WebSocketData, Path>;
+  }>;
   fetch?: FIARouteHandler<WebSocketData>;
   websocket?: Bun.WebSocketHandler<WebSocketData>;
   error?: (error: Error) => MaybePromise<Response | undefined | void>;
@@ -204,34 +220,47 @@ export interface FIAHTTPDefinition<WebSocketData = unknown> {
   idleTimeout?: number;
 }
 
-export interface FIABackendContext<WebSocketData = unknown> {
-  readonly host: FIAHost;
-  readonly server: Bun.Server<WebSocketData>;
+export interface FIABackendContext<WebSocketData = unknown> extends FIARouteContext {
+  readonly server: FIAServer<WebSocketData>;
   url(path?: string): URL;
 }
 
-export interface FIABackendDefinition<WebSocketData = unknown> {
+export interface FIABackendDefinition<WebSocketData = unknown, RoutePaths extends string = string> {
   readonly [FIA_BACKEND]: true;
-  readonly http: FIAHTTPDefinition<WebSocketData>;
+  readonly http: FIAHTTPDefinition<WebSocketData, RoutePaths>;
   readonly start?: (context: FIABackendContext<WebSocketData>) => MaybePromise<void>;
   readonly stop?: (context: FIABackendContext<WebSocketData>) => MaybePromise<void>;
 }
 
-export function defineBackend<WebSocketData = unknown>(definition: {
-  http: FIAHTTPDefinition<WebSocketData>;
+interface FIABackendInput<WebSocketData, RoutePaths extends string> {
+  http: FIAHTTPDefinition<WebSocketData, RoutePaths>;
   start?: (context: FIABackendContext<WebSocketData>) => MaybePromise<void>;
   stop?: (context: FIABackendContext<WebSocketData>) => MaybePromise<void>;
-}): FIABackendDefinition<WebSocketData> {
-  if (!isPlainObject(definition) || !isPlainObject(definition.http)) {
-    throw new TypeError("defineBackend expects an object with an http definition");
+}
+
+export function defineBackend<WebSocketData = unknown>(): <const RoutePaths extends string>(
+  definition: FIABackendInput<WebSocketData, RoutePaths>,
+) => FIABackendDefinition<WebSocketData, RoutePaths>;
+export function defineBackend<WebSocketData = unknown>(...unexpected: never[]) {
+  if (unexpected.length !== 0) {
+    throw new TypeError(
+      "defineBackend now uses defineBackend<SocketData>()({...}) or defineBackend()({...})",
+    );
   }
-  Object.defineProperty(definition, FIA_BACKEND, {
-    value: true,
-    configurable: false,
-    enumerable: false,
-    writable: false,
-  });
-  return definition as FIABackendDefinition<WebSocketData>;
+  return <const RoutePaths extends string>(
+    definition: FIABackendInput<WebSocketData, RoutePaths>,
+  ): FIABackendDefinition<WebSocketData, RoutePaths> => {
+    if (!isPlainObject(definition) || !isPlainObject(definition.http)) {
+      throw new TypeError("defineBackend expects an object with an http definition");
+    }
+    Object.defineProperty(definition, FIA_BACKEND, {
+      value: true,
+      configurable: false,
+      enumerable: false,
+      writable: false,
+    });
+    return definition as unknown as FIABackendDefinition<WebSocketData, RoutePaths>;
+  };
 }
 
 export function isDefinedBackend(value: unknown): value is FIABackendDefinition {
@@ -906,9 +935,14 @@ function createHost(peer: StdioPeer, session: SessionGuard, events: HostEventSco
   };
 }
 
-function wrapProtectedRoutes<WebSocketData>(
-  routes: Readonly<Record<string, FIAProtectedRoute<WebSocketData>>> | undefined,
+function wrapProtectedRoutes<WebSocketData, RoutePaths extends string>(
+  routes:
+    | Readonly<{
+        [Path in RoutePaths]: FIAProtectedRoute<WebSocketData, Path>;
+      }>
+    | undefined,
   authorized: (request: Request) => boolean,
+  context: FIARouteContext,
 ): Record<string, unknown> {
   const output: Record<string, unknown> = {};
   for (const [path, route] of Object.entries(routes ?? {})) {
@@ -916,18 +950,21 @@ function wrapProtectedRoutes<WebSocketData>(
       throw new FIAHostError("INVALID_ARGUMENT", `${RESERVED_PATH_PREFIX} routes are reserved`);
     }
     if (typeof route === "function") {
-      output[path] = (request: Bun.BunRequest, server: Bun.Server<WebSocketData>) =>
+      output[path] = (request: Bun.BunRequest, server: FIAServer<WebSocketData>) =>
         authorized(request)
-          ? route(request, server)
+          ? route(request as never, server, context)
           : new Response("Unauthorized", { status: 401 });
       continue;
     }
     const methods: Record<string, unknown> = {};
-    for (const [method, handler] of Object.entries(route)) {
+    const routeMethods = route as unknown as Partial<
+      Record<Bun.Serve.HTTPMethod, FIARouteHandler<WebSocketData>>
+    >;
+    for (const [method, handler] of Object.entries(routeMethods)) {
       if (handler === undefined) continue;
-      methods[method] = (request: Bun.BunRequest, server: Bun.Server<WebSocketData>) =>
+      methods[method] = (request: Bun.BunRequest, server: FIAServer<WebSocketData>) =>
         authorized(request)
-          ? handler(request, server)
+          ? handler(request as never, server, context)
           : new Response("Unauthorized", { status: 401 });
     }
     output[path] = methods;
@@ -939,7 +976,7 @@ interface SharedBackendRuntime {
   readonly initialize: InitializeFrame;
   readonly peer: StdioPeer;
   readonly session: SessionGuard;
-  server?: Bun.Server<unknown>;
+  server?: FIAServer<unknown>;
   definition?: FIABackendDefinition;
   context?: FIABackendContext;
   hostEvents?: HostEventScope;
@@ -1011,10 +1048,20 @@ async function sharedRuntime(): Promise<SharedBackendRuntime> {
 
 export async function runBackend(definition: FIABackendDefinition): Promise<void> {
   if (!isDefinedBackend(definition))
-    throw new TypeError("Backend entry must default-export defineBackend({...})");
+    throw new TypeError("Backend entry must default-export defineBackend()({...})");
   const runtime = await sharedRuntime();
   await deactivateDefinition(runtime);
   const { initialize, peer, session } = runtime;
+  const hostEvents = new HostEventScope();
+  const host = createHost(peer, session, hostEvents);
+  const routeContext: FIARouteContext = {
+    host,
+    app: {
+      name: initialize.app.name,
+      identifier: initialize.app.identifier,
+      dataDirectory: initialize.applicationSupport,
+    },
+  };
   let port = runtime.server?.port ?? initialize.preferredPort;
   const publicRoutes = definition.http.publicRoutes ?? {};
   for (const path of Object.keys(publicRoutes)) {
@@ -1025,7 +1072,7 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   const authorize = (request: Request): boolean => session.isAuthorized(request, port);
   const routes: Record<string, unknown> = {
     ...publicRoutes,
-    ...wrapProtectedRoutes(definition.http.routes, authorize),
+    ...wrapProtectedRoutes(definition.http.routes, authorize, routeContext),
     [`${RESERVED_PATH_PREFIX}bootstrap`]: (request: Request) =>
       session.bootstrap(request, port) ?? new Response("Not Found", { status: 404 }),
     [`${RESERVED_PATH_PREFIX}health`]: new Response(null, { status: 204 }),
@@ -1040,9 +1087,9 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
     fetch:
       definition.http.fetch === undefined
         ? () => new Response("Not Found", { status: 404 })
-        : (request: Request, server: Bun.Server<unknown>) =>
+        : (request: Request, server: FIAServer<unknown>) =>
             authorize(request)
-              ? definition.http.fetch!(request as Bun.BunRequest, server)
+              ? definition.http.fetch!(request as Bun.BunRequest, server, routeContext)
               : new Response("Unauthorized", { status: 401 }),
     ...(definition.http.websocket === undefined ? {} : { websocket: definition.http.websocket }),
     ...(definition.http.error === undefined ? {} : { error: definition.http.error }),
@@ -1052,14 +1099,12 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
     ...(definition.http.idleTimeout === undefined
       ? {}
       : { idleTimeout: definition.http.idleTimeout }),
-  } as never) as Bun.Server<unknown>;
+  } as never) as FIAServer<unknown>;
   port = server.port ?? 0;
   const origin = `http://127.0.0.1:${port}`;
   session.setOrigin(origin);
-  const hostEvents = new HostEventScope();
-  const host = createHost(peer, session, hostEvents);
   const context: FIABackendContext = {
-    host,
+    ...routeContext,
     server,
     url(path = "/") {
       return new URL(path, origin);
@@ -1071,6 +1116,9 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   runtime.hostEvents = hostEvents;
   await definition.start?.(context);
   if (!runtime.ready) {
+    if (initialize.development && process.env.FIA_INTERNAL_PRINT_SESSION_URL === "1") {
+      process.stderr.write(`FIA_DEV_SESSION_URL=${session.authorizeURL(context.url("/").href)}\n`);
+    }
     runtime.ready = true;
     peer.write({ v: STDIO_PROTOCOL_VERSION, type: "ready", port, origin });
   }

@@ -73,12 +73,19 @@ final class StatusBarController: NSObject {
     }
 
     func updateMenuItem(id: String, patch: Any?) throws {
-        guard !id.hasPrefix("fia."), let patch = patch as? [String: Any] else {
-            throw HostRequestExecutionError(code: .invalidArgument, message: "invalid menu item patch")
+        guard !id.hasPrefix("fia.") else {
+            throw HostRequestExecutionError(code: .invalidArgument, message: "reserved status menu item ID: \(id)")
+        }
+        guard let patch = patch as? [String: Any] else {
+            throw HostRequestExecutionError(code: .invalidArgument, message: "status menu item patch must be an object: \(id)")
         }
         let allowed = Set(["title", "enabled", "hidden", "checked", "symbol", "shortcut"])
-        guard Set(patch.keys).isSubset(of: allowed) else {
-            throw HostRequestExecutionError(code: .invalidArgument, message: "unknown menu item patch field")
+        let unknown = Set(patch.keys).subtracting(allowed).sorted()
+        guard unknown.isEmpty else {
+            throw HostRequestExecutionError(
+                code: .invalidArgument,
+                message: "unknown status menu item patch field \(unknown.joined(separator: ", ")): \(id)"
+            )
         }
         var candidate = menuDefinition
         guard update(id: id, patch: patch, nodes: &candidate) else {
@@ -88,6 +95,25 @@ final class StatusBarController: NSObject {
         var count = 0
         try validate(candidate, depth: 1, ids: &ids, count: &count)
         menuDefinition = candidate
+    }
+
+    func emitActionForDevelopment(id: String) throws {
+        guard let path = findItemPath(id: id, nodes: menuDefinition), let item = path.last else {
+            throw HostRequestExecutionError(code: .notFound, message: "status menu item not found: \(id)")
+        }
+        guard item["children"] == nil else {
+            throw HostRequestExecutionError(code: .unsafeState, message: "status menu item is a submenu: \(id)")
+        }
+        for node in path {
+            let nodeID = node["id"] as? String ?? id
+            guard node["hidden"] as? Bool != true else {
+                throw HostRequestExecutionError(code: .unsafeState, message: "status menu item path is hidden at: \(nodeID)")
+            }
+            guard node["enabled"] as? Bool != false else {
+                throw HostRequestExecutionError(code: .unsafeState, message: "status menu item path is disabled at: \(nodeID)")
+            }
+        }
+        onAction?(id)
     }
 
     func makeMenu() -> NSMenu {
@@ -182,10 +208,16 @@ final class StatusBarController: NSObject {
         count: inout Int
     ) throws {
         guard depth <= 8 else { throw HostRequestExecutionError(code: .invalidArgument, message: "menu exceeds eight levels") }
-        for node in nodes {
+        for (index, node) in nodes.enumerated() {
             count += 1
-            guard count <= 256, let type = node["type"] as? String else {
-                throw HostRequestExecutionError(code: .invalidArgument, message: "menu exceeds 256 nodes or has an invalid node")
+            guard count <= 256 else {
+                throw HostRequestExecutionError(code: .invalidArgument, message: "menu exceeds 256 nodes")
+            }
+            guard let type = node["type"] as? String else {
+                throw HostRequestExecutionError(
+                    code: .invalidArgument,
+                    message: "status menu node \(index) at depth \(depth) must have a string type"
+                )
             }
             if type == "separator" {
                 guard Set(node.keys) == ["type"] else {
@@ -193,45 +225,90 @@ final class StatusBarController: NSObject {
                 }
                 continue
             }
+            guard type == "item" else {
+                throw HostRequestExecutionError(
+                    code: .invalidArgument,
+                    message: "unknown status menu node type \"\(type)\" at depth \(depth)"
+                )
+            }
             let allowed = Set(["type", "id", "title", "enabled", "hidden", "checked", "symbol", "shortcut", "children"])
-            guard type == "item", Set(node.keys).isSubset(of: allowed),
-                  let id = node["id"] as? String, let title = node["title"] as? String,
-                  id.count <= 128,
-                  id.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#, options: .regularExpression) != nil,
-                  !id.hasPrefix("fia."), !ids.contains(id), !title.isEmpty, title.count <= 256,
-                  optionalBooleanFieldsAreValid(node),
-                  symbolIsValid(node)
-            else { throw HostRequestExecutionError(code: .invalidArgument, message: "invalid status menu item") }
+            let unknown = Set(node.keys).subtracting(allowed).sorted()
+            guard unknown.isEmpty else {
+                let itemID = node["id"] as? String ?? "<missing ID>"
+                throw HostRequestExecutionError(
+                    code: .invalidArgument,
+                    message: "unknown status menu item field \(unknown.joined(separator: ", ")) on item \"\(itemID)\""
+                )
+            }
+            guard let id = node["id"] as? String else {
+                throw HostRequestExecutionError(code: .invalidArgument, message: "status menu item ID must be a string")
+            }
+            guard id.count <= 128,
+                  id.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#, options: .regularExpression) != nil
+            else {
+                throw HostRequestExecutionError(code: .invalidArgument, message: "invalid status menu item ID: \(id)")
+            }
+            guard !id.hasPrefix("fia.") else {
+                throw HostRequestExecutionError(code: .invalidArgument, message: "reserved status menu item ID: \(id)")
+            }
+            guard !ids.contains(id) else {
+                throw HostRequestExecutionError(code: .invalidArgument, message: "duplicate status menu item ID: \(id)")
+            }
+            guard let title = node["title"] as? String, !title.isEmpty, title.count <= 256 else {
+                throw HostRequestExecutionError(code: .invalidArgument, message: "invalid title on status menu item: \(id)")
+            }
+            for field in ["enabled", "hidden", "checked"] where node[field] != nil && !(node[field] is Bool) {
+                throw HostRequestExecutionError(
+                    code: .invalidArgument,
+                    message: "\(field) must be a boolean on status menu item: \(id)"
+                )
+            }
+            if node["symbol"] != nil {
+                guard let symbol = node["symbol"] as? String, !symbol.isEmpty, symbol.count <= 128 else {
+                    throw HostRequestExecutionError(
+                        code: .invalidArgument,
+                        message: "symbol must be a non-empty string on status menu item: \(id)"
+                    )
+                }
+                guard NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil else {
+                    throw HostRequestExecutionError(
+                        code: .invalidArgument,
+                        message: "invalid SF Symbol name \"\(symbol)\" on item \"\(id)\""
+                    )
+                }
+            }
             ids.insert(id)
             if let shortcut = node["shortcut"] as? [String: Any] {
                 let modifiers = shortcut["modifiers"] as? [String]
-                guard Set(shortcut.keys).isSubset(of: ["key", "modifiers"]),
-                      let key = shortcut["key"] as? String, key.count == 1,
-                      shortcut["modifiers"] == nil || modifiers != nil,
+                guard Set(shortcut.keys).isSubset(of: ["key", "modifiers"]) else {
+                    throw HostRequestExecutionError(code: .invalidArgument, message: "unknown shortcut field on status menu item: \(id)")
+                }
+                guard let key = shortcut["key"] as? String, key.count == 1 else {
+                    throw HostRequestExecutionError(code: .invalidArgument, message: "shortcut key must be one character on status menu item: \(id)")
+                }
+                guard shortcut["modifiers"] == nil || modifiers != nil,
                       (modifiers ?? []).allSatisfy({ ["command", "option", "control", "shift"].contains($0) })
-                else { throw HostRequestExecutionError(code: .invalidArgument, message: "invalid status menu shortcut") }
+                else {
+                    throw HostRequestExecutionError(code: .invalidArgument, message: "invalid shortcut modifiers on status menu item: \(id)")
+                }
             } else if node["shortcut"] != nil {
-                throw HostRequestExecutionError(code: .invalidArgument, message: "invalid status menu shortcut")
+                throw HostRequestExecutionError(code: .invalidArgument, message: "shortcut must be an object on status menu item: \(id)")
             }
             if let children = node["children"] as? [[String: Any]] {
                 try validate(children, depth: depth + 1, ids: &ids, count: &count)
             } else if node["children"] != nil {
-                throw HostRequestExecutionError(code: .invalidArgument, message: "menu children must be an array")
+                throw HostRequestExecutionError(code: .invalidArgument, message: "children must be an array on status menu item: \(id)")
             }
         }
     }
 
-    private func optionalBooleanFieldsAreValid(_ node: [String: Any]) -> Bool {
-        for field in ["enabled", "hidden", "checked"] where node[field] != nil && !(node[field] is Bool) {
-            return false
+    private func findItemPath(id: String, nodes: [[String: Any]]) -> [[String: Any]]? {
+        for node in nodes {
+            if node["id"] as? String == id { return [node] }
+            if let children = node["children"] as? [[String: Any]],
+               let found = findItemPath(id: id, nodes: children) { return [node] + found }
         }
-        return true
-    }
-
-    private func symbolIsValid(_ node: [String: Any]) -> Bool {
-        guard node["symbol"] != nil else { return true }
-        guard let symbol = node["symbol"] as? String, !symbol.isEmpty, symbol.count <= 128 else { return false }
-        return NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil
+        return nil
     }
 
     private func update(id: String, patch: [String: Any], nodes: inout [[String: Any]]) -> Bool {

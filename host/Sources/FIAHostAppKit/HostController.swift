@@ -104,8 +104,12 @@ final class HostController {
             try setStatusItemVisible(visible)
             return applicationState()
         case "statusItem.setSymbol":
-            guard let symbol = params["symbol"] as? String, !symbol.isEmpty, symbol.count <= 128,
-                  statusItem.setSymbol(symbol) else { throw invalid("symbol must name an existing SF Symbol") }
+            guard let symbol = params["symbol"] as? String, !symbol.isEmpty, symbol.count <= 128 else {
+                throw invalid("status item symbol must be a non-empty string of at most 128 characters")
+            }
+            guard statusItem.setSymbol(symbol) else {
+                throw invalid("invalid SF Symbol name \"\(symbol)\" for status item")
+            }
             settings.statusItemSymbol = symbol
             persist()
             return nil
@@ -137,6 +141,10 @@ final class HostController {
     func flushSettings() {
         settings.windowFrames = webviews.currentFrames()
         settingsStore?.flush(settings)
+    }
+
+    func emitStatusItemActionForDevelopment(id: String) throws {
+        try statusItem.emitActionForDevelopment(id: id)
     }
 
     private func applicationState() -> [String: Any] {

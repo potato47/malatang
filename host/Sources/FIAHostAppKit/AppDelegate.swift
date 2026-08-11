@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationSignalSources: [DispatchSourceSignal] = []
     private var terminationPending = false
     private var autoQuitScheduled = false
+    private var developmentActionID: String?
+    private var developmentActionHandled = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installTerminationSignalHandlers()
@@ -18,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 throw HostStartupError.missingConfiguration
             }
             let configuration = try HostConfiguration.load(from: configurationURL)
+            if configuration.development {
+                developmentActionID = ProcessInfo.processInfo.environment["FIA_INTERNAL_EMIT_ACTION"]
+            }
             installMainMenu(applicationName: configuration.app.name)
             let settingsStore = try? HostSettingsStore(
                 identifier: configuration.app.identifier,
@@ -76,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hostController?.showStarting()
         case .ready:
             hostController?.showReady()
+            emitDevelopmentActionIfRequested(hostController)
         case let .failed(reason):
             hostController?.showFailure(reason)
         case .stopping:
@@ -96,6 +102,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Quit")
         alert.runModal()
         NSApp.terminate(nil)
+    }
+
+    private func emitDevelopmentActionIfRequested(_ hostController: HostController?) {
+        guard !developmentActionHandled, let id = developmentActionID else { return }
+        developmentActionHandled = true
+        do {
+            guard let hostController else {
+                throw HostRequestExecutionError(code: .nativeFailure, message: "Host controller is unavailable")
+            }
+            try hostController.emitStatusItemActionForDevelopment(id: id)
+            writeDevelopmentMarker("FIA_DEV_ACTION_EMITTED=\(id)")
+        } catch {
+            let reason = error.localizedDescription.replacingOccurrences(of: "\n", with: " ")
+            writeDevelopmentMarker("FIA_DEV_ACTION_ERROR=\(id): \(reason)")
+        }
+    }
+
+    private func writeDevelopmentMarker(_ value: String) {
+        try? FileHandle.standardError.write(contentsOf: Data("\(value)\n".utf8))
     }
 
     private func installMainMenu(applicationName: String) {

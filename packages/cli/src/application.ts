@@ -27,12 +27,18 @@ export interface ApplicationCommandDependencies {
   hostAssetDirectory?: string;
 }
 
+export interface DevelopmentAutomationOptions {
+  readonly printSessionURL?: boolean;
+  readonly emitAction?: string;
+}
+
 export interface ApplicationCommandOptions {
   command: ApplicationCommand;
   cwd: string;
   debug: boolean;
   io: ApplicationIO;
   dependencies?: ApplicationCommandDependencies;
+  developmentAutomation?: DevelopmentAutomationOptions;
 }
 
 interface HostManifest {
@@ -257,7 +263,7 @@ export function generatedBackendRunner(entry: string): string {
     console.error = writeLog;
     const module = await import(${JSON.stringify(absoluteEntry)});
     if (!isDefinedBackend(module.default)) {
-      process.stderr.write("Backend entry must default-export defineBackend({...}).\\n");
+      process.stderr.write("Backend entry must default-export defineBackend()({...}).\\n");
       process.exit(65);
     }
     await runBackend(module.default);
@@ -276,7 +282,7 @@ async function validateBackend(context: BuildContext, runner: string): Promise<v
     validator,
     `import backend from ${JSON.stringify(pathToFileURL(context.config.backend.entry).href)};\n` +
       `import { isDefinedBackend } from "@semicoder/fia/backend";\n` +
-      `if (!isDefinedBackend(backend)) throw new Error("Backend entry must default-export defineBackend({...})");\n`,
+      `if (!isDefinedBackend(backend)) throw new Error("Backend entry must default-export defineBackend()({...})");\n`,
   );
   await checked(
     "Backend definition validation",
@@ -676,12 +682,27 @@ async function streamToIO(
   }
 }
 
-async function launchHost(context: BuildContext): Promise<void> {
+async function launchHost(
+  context: BuildContext,
+  developmentAutomation?: DevelopmentAutomationOptions,
+): Promise<void> {
   const executable = resolve(context.appPath, "Contents/MacOS", HOST_EXECUTABLE);
   context.io.stdout(`Launching ${context.config.app.name}\n`);
+  const environment: NodeJS.ProcessEnv = {
+    ...process.env,
+    FIA_INTERNAL_DIAGNOSTICS: "1",
+  };
+  delete environment.FIA_INTERNAL_PRINT_SESSION_URL;
+  delete environment.FIA_INTERNAL_EMIT_ACTION;
+  if (developmentAutomation?.printSessionURL === true) {
+    environment.FIA_INTERNAL_PRINT_SESSION_URL = "1";
+  }
+  if (developmentAutomation?.emitAction !== undefined) {
+    environment.FIA_INTERNAL_EMIT_ACTION = developmentAutomation.emitAction;
+  }
   const child = Bun.spawn([executable], {
     cwd: context.config.projectRoot,
-    env: { ...process.env, FIA_INTERNAL_DIAGNOSTICS: "1" },
+    env: environment,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -771,7 +792,7 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
     await validateBackend(context, runner);
     if (options.command === "dev") {
       await assembleApp(context, await developmentBackend(context, runner));
-      await launchHost(context);
+      await launchHost(context, options.developmentAutomation);
       return;
     }
     await assembleApp(context, await buildProductionBackend(context, runner));

@@ -10,13 +10,15 @@ bun run build
 bun run run
 ```
 
-- `src/backend.ts` 使用 `defineBackend` 声明页面、API、WebSocket 和原生宿主交互。
+- `src/backend.ts` 使用 `defineBackend<SocketData>()({...})` 声明页面、API、WebSocket 和原生宿主交互。
 - `src/ui/` 是普通 React 前端，只使用相对 `fetch` 和 WebSocket，不依赖 FIA 浏览器 SDK。
 - `fia.config.ts` 使用严格的 `configVersion: 4`，Backend 是必选项。
 - `bun run dev` 使用 Bun 全栈 HMR，并由 Swift Host 监管常驻 Backend。
 - `bun run build` 生成包含 Swift Host 与单个 standalone `FIABackend` 的 macOS 应用；目标机器无需安装 Bun。
 
-Backend 可通过 `host.application`、`host.statusItem`、`host.webviews` 和 `host.system` 使用原生能力。
+Backend 可通过 `host.application`、`host.statusItem`、`host.webviews`、`host.system`、
+`host.notifications`、`host.dialogs`、`host.clipboard` 和 `host.keychain` 使用原生能力；生命周期及
+route/fetch 上下文的 `app.dataDirectory` 是 Host 预先创建的持久化目录。
 浏览器和 WebView 必须由 Backend 调用安全打开接口建立会话，前端不能直接访问原生接口。
 在 `start` 中注册的 Host 事件监听器会由 FIA 在热重载和退出时自动注销。
 

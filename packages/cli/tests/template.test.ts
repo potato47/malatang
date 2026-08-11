@@ -91,6 +91,63 @@ describe("generated resident backend React template", () => {
       throw new Error(`Generated template did not typecheck:\n${stdout}${stderr}`);
   });
 
+  test("preserves route literals and exposes the shared runtime context", async () => {
+    const project = await generatedProject();
+    await Bun.write(
+      resolve(project, "src/backend-contract.ts"),
+      `
+        import { defineBackend, type FIAServer } from "@semicoder/fia/backend";
+
+        interface SocketData { connectedAt: number }
+        declare const defaultServer: FIAServer;
+        defaultServer.publish("events", "ready");
+
+        export const backend = defineBackend<SocketData>()({
+          http: {
+            routes: {
+              "/api/cards/:id": (request, server, { host, app }) => {
+                const id: string = request.params.id;
+                const directory: string = app.dataDirectory;
+                const identifier: string = app.identifier;
+                void host.clipboard.writeText(id);
+                server.publish("events", directory + identifier);
+                // @ts-expect-error The route does not declare a missing parameter.
+                request.params.missing;
+                return Response.json({ id });
+              },
+            },
+          },
+          start({ host, app, server, url }) {
+            void host.application.getState();
+            server.publish("events", app.name);
+            url("/");
+          },
+        });
+
+        // @ts-expect-error defineBackend is now a zero-argument builder.
+        defineBackend({ http: {} });
+      `,
+    );
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
+        "--noEmit",
+        "-p",
+        resolve(project, "tsconfig.json"),
+      ],
+      { cwd: project, stdout: "pipe", stderr: "pipe" },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    if (exitCode !== 0) {
+      throw new Error(`Backend contract did not typecheck:\n${stdout}${stderr}`);
+    }
+  });
+
   test("exports a marked backend definition", async () => {
     const project = await generatedProject();
     const module = (await import(

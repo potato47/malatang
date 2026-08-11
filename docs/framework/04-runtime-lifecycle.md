@@ -15,3 +15,6 @@ Host 原生请求按 ID 异步执行。普通请求 30 秒超时；交互式文�
 
 正常退出时 Host 发送 `host.shutdown`，runtime 调用 `stop` 并关闭 HTTP/WS；五秒未退出则
 SIGTERM，再等待两秒后 SIGKILL。Host 自身退出始终回收 Backend。
+
+热重载也会先调用旧定义的 `stop`。若 `stop` 关闭了模块级单例持有的数据库、连接或其他资源，
+必须同时把模块级引用清空；只调用 `close()` 会让新定义继续取得已经关闭的 handle。

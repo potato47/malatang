@@ -13,10 +13,15 @@ Backend 通过 stdio 调用原生能力，并向浏览器/WebView 提供普通 H
 ```ts
 import { defineBackend } from "@semicoder/fia/backend";
 
-export default defineBackend({
+export default defineBackend()({
   http: {
     routes: {
-      "/api/status": { GET: () => Response.json({ ok: true }) },
+      "/api/items/:id": {
+        GET: (request, _server, { host, app }) => {
+          void host.clipboard.writeText(request.params.id);
+          return Response.json({ id: request.params.id, dataDirectory: app.dataDirectory });
+        },
+      },
     },
   },
   async start({ host, url }) {
@@ -29,6 +34,10 @@ export default defineBackend({
 
 `publicRoutes` 明确承载公开 HTML/静态资源；`routes`、`fetch` 与 WebSocket upgrade 默认要求
 FIA 会话。应用页面由 Host 安全打开时会自动建立 HttpOnly 会话，前端无需处理令牌。
+route 和 fallback `fetch` 的第三参数提供当前 `host` 与 Host 权威的 `app` 元信息；
+`app.dataDirectory` 已创建且不依赖 Backend 的工作目录。
+需要跨模块保存 server 类型时可使用带默认参数的 `FIAServer<WebSocketData = unknown>`，无需直接
+书写缺少默认泛型的 `Bun.Server`。
 通知、文件面板、剪贴板和 Keychain 也只存在于 Backend：
 
 ```ts
@@ -47,3 +56,7 @@ await host.keychain.set("api-token", "secret");
 通过 `host.statusItem.onClick`、`host.statusItem.onAction`、`host.webviews.onEvent` 和
 `host.notifications.onClick` 注册的监听器属于当前 `start` 生命周期，FIA 会在热重载或 Backend
 停止时自动注销。`stop` 只需清理应用自行创建的定时器、连接等资源。
+如果资源保存在模块级变量中，关闭后也要把该引用清空，避免热重载取得已关闭的 handle。
+
+开发 E2E 可组合使用 `fia dev --print-session-url --emit-action <menu-id>`。前者输出一个 30 秒、
+单次消费的会话链接，后者在首次 ready 后通过真实 Host 事件链路触发菜单 action。

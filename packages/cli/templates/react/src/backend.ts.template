@@ -5,7 +5,7 @@ interface SocketData {
   connectedAt: number;
 }
 
-export default defineBackend<SocketData>({
+export default defineBackend<SocketData>()({
   http: {
     publicRoutes: { "/": index },
     routes: {

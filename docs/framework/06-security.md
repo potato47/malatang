@@ -12,6 +12,9 @@
 因此页面可以使用普通 `fetch`/WebSocket，JavaScript 无需读取密钥。外部网页即使在 WebView
 中加载，也得不到应用 cookie 或任何原生桥。
 
+只有显式使用 `fia dev --print-session-url` 时，runtime 才会把一个同样受 30 秒 TTL 和单次消费
+约束的 bootstrap URL 输出到 stderr，供本次开发进程的 E2E 工具使用；生产构建忽略该内部开关。
+
 ## 进程与包
 
 - Host 不通过 shell、PATH 或运行时下载启动生产 Backend。
