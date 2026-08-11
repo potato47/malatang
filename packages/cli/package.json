@@ -1,6 +1,6 @@
 {
   "name": "@semicoder/fia",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Build resident Bun services hosted by a native macOS status bar application",
   "bin": {
     "fia": "bin/fia"

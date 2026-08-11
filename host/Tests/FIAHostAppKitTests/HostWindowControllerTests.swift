@@ -8,6 +8,36 @@ import WebKit
 @MainActor
 @Suite("AppKit host primitives")
 struct HostWindowControllerTests {
+    @Test func mainMenuProvidesStandardEditingCommands() throws {
+        let menu = AppDelegate.makeMainMenu(applicationName: "Desktop")
+        #expect(menu.items.count == 2)
+        #expect(menu.items[0].submenu?.title == "Desktop")
+
+        let editMenu = try #require(menu.items[1].submenu)
+        #expect(editMenu.title == "Edit")
+        #expect(editMenu.items.map(\.title) == ["Undo", "Redo", "", "Cut", "Copy", "Paste", "Select All"])
+
+        let commands = editMenu.items.filter { !$0.isSeparatorItem }
+        #expect(commands.map(\.action) == [
+            Selector(("undo:")),
+            Selector(("redo:")),
+            #selector(NSText.cut(_:)),
+            #selector(NSText.copy(_:)),
+            #selector(NSText.paste(_:)),
+            #selector(NSText.selectAll(_:)),
+        ])
+        #expect(commands.map(\.keyEquivalent) == ["z", "z", "x", "c", "v", "a"])
+        #expect(commands.map(\.keyEquivalentModifierMask) == [
+            [.command],
+            [.command, .shift],
+            [.command],
+            [.command],
+            [.command],
+            [.command],
+        ])
+        #expect(commands.allSatisfy { $0.target == nil })
+    }
+
     @Test func constrainsRestoredFramesToAVisibleScreen() throws {
         let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
         let restored = DesktopWindowFrame(x: 1200, y: 700, width: 500, height: 400)

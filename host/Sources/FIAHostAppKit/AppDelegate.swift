@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if configuration.development {
                 developmentActionID = ProcessInfo.processInfo.environment["FIA_INTERNAL_EMIT_ACTION"]
             }
-            installMainMenu(applicationName: configuration.app.name)
+            NSApp.mainMenu = Self.makeMainMenu(applicationName: configuration.app.name)
             let settingsStore = try? HostSettingsStore(
                 identifier: configuration.app.identifier,
                 diagnostic: { [weak self] message in self?.diagnostic(message) }
@@ -123,7 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? FileHandle.standardError.write(contentsOf: Data("\(value)\n".utf8))
     }
 
-    private func installMainMenu(applicationName: String) {
+    static func makeMainMenu(applicationName: String) -> NSMenu {
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu(title: applicationName)
@@ -135,7 +135,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(quit)
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
-        NSApp.mainMenu = mainMenu
+
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addCommand(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addCommand(
+            title: "Redo",
+            action: Selector(("redo:")),
+            keyEquivalent: "z",
+            modifiers: [.command, .shift]
+        )
+        editMenu.addItem(.separator())
+        editMenu.addCommand(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addCommand(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addCommand(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addCommand(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+
+        return mainMenu
     }
 
     private func installTerminationSignalHandlers() {
@@ -162,6 +180,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func diagnostic(_ message: String) {
         guard ProcessInfo.processInfo.environment["FIA_INTERNAL_DIAGNOSTICS"] == "1" else { return }
         try? FileHandle.standardError.write(contentsOf: Data("FIAHost: \(message)\n".utf8))
+    }
+}
+
+private extension NSMenu {
+    func addCommand(
+        title: String,
+        action: Selector,
+        keyEquivalent: String,
+        modifiers: NSEvent.ModifierFlags = [.command]
+    ) {
+        let item = addItem(withTitle: title, action: action, keyEquivalent: keyEquivalent)
+        item.keyEquivalentModifierMask = modifiers
     }
 }
 
