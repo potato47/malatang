@@ -1,8 +1,8 @@
 {
   "schemaVersion": 3,
-  "cliVersion": "0.9.1",
-  "hostVersion": "0.9.1",
-  "sha256": "dcd5f73419b4c8577498f3df90cc2ca5f71881a98442304b6e9679e7342a4ef5",
+  "cliVersion": "0.10.0",
+  "hostVersion": "0.10.0",
+  "sha256": "4e9c99bb7961e83c9e5778a701f865d9ed98720ee40b93e0ed2bde664ed71347",
   "architecture": "arm64",
   "minimumSystemVersion": "14.0",
   "configurationSchema": 7,

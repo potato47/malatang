@@ -50,6 +50,30 @@ await host.clipboard.writeText(files?.join("\n") ?? "");
 await host.keychain.set("api-token", "secret");
 ```
 
+搜索框、截图遮罩等浮层可以创建完全无边框的 WebView：
+
+```ts
+await host.webviews.open({
+  id: "launcher",
+  url: url("/launcher").href,
+  width: 640,
+  height: 360,
+  x: 120,
+  y: 80,
+  restoreFrame: false,
+  windowStyle: "borderless",
+  transparent: true,
+  shadow: true,
+  resizable: false,
+  dragRegion: { height: 32, leftInset: 12, rightInset: 48 },
+  alwaysOnTop: true,
+});
+```
+
+`x/y` 是以主屏左上角为原点的逻辑点坐标；窗口状态的 `frame` 返回实际外框。无边框窗口的
+透明页面背景和圆角由 CSS 绘制，拖动带覆盖范围不接收网页左键交互。窗口外观字段只能在首次
+`open` 时确定，同 ID upsert 时不能切换。
+
 所有 Promise 方法都接受可选的 `{ signal: AbortSignal }` 尾参数。文件面板和通知授权没有固定
 超时；AbortSignal 会取消等待，文件面板也会被关闭。
 

@@ -47,12 +47,33 @@ export interface FIAApplicationState {
   readonly statusItemVisible: boolean;
 }
 
+export type FIAWebViewWindowStyle = "native" | "borderless";
+
+export interface FIAWebViewDragRegion {
+  height: number;
+  leftInset?: number;
+  rightInset?: number;
+}
+
+export interface FIAWebViewFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface FIAWebViewState {
   readonly id: string;
   readonly url: string;
   readonly title: string;
   readonly visible: boolean;
   readonly focused: boolean;
+  readonly windowStyle: FIAWebViewWindowStyle;
+  readonly transparent: boolean;
+  readonly shadow: boolean;
+  readonly resizable: boolean;
+  readonly dragRegion: FIAWebViewDragRegion | null;
+  readonly frame: FIAWebViewFrame;
   readonly alwaysOnTop: boolean;
   readonly visibleOnAllSpaces: boolean;
   readonly visibleOverFullScreen: boolean;
@@ -66,6 +87,13 @@ export interface FIAWebViewOpenOptions {
   height?: number;
   minWidth?: number;
   minHeight?: number;
+  x?: number;
+  y?: number;
+  windowStyle?: FIAWebViewWindowStyle;
+  transparent?: boolean;
+  shadow?: boolean;
+  resizable?: boolean;
+  dragRegion?: FIAWebViewDragRegion;
   closeBehavior?: "hide" | "close";
   restoreFrame?: boolean;
   alwaysOnTop?: boolean;
@@ -80,6 +108,8 @@ export interface FIAWebViewUpdateOptions {
   height?: number;
   minWidth?: number;
   minHeight?: number;
+  x?: number;
+  y?: number;
   closeBehavior?: "hide" | "close";
   alwaysOnTop?: boolean;
   visibleOnAllSpaces?: boolean;

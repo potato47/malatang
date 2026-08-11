@@ -181,7 +181,19 @@ describe("resident Bun backend runtime", () => {
           async start(context) {
             activeContext = context;
             const { host, url } = context;
-            await host.webviews.open({ id: "main", url: url("/").href });
+            await host.webviews.open({
+              id: "main",
+              url: url("/").href,
+              x: 120,
+              y: 80,
+              width: 640,
+              height: 360,
+              windowStyle: "borderless",
+              transparent: true,
+              shadow: false,
+              resizable: false,
+              dragRegion: { height: 32, leftInset: 12, rightInset: 48 },
+            });
           },
           stop(context) {
             if (context !== activeContext) throw new Error("stop received a different context");
@@ -237,13 +249,35 @@ describe("resident Bun backend runtime", () => {
           type: string;
           id?: number;
           method?: string;
-          params?: { url?: string };
+          params?: {
+            url?: string;
+            x?: number;
+            y?: number;
+            width?: number;
+            height?: number;
+            windowStyle?: string;
+            transparent?: boolean;
+            shadow?: boolean;
+            resizable?: boolean;
+            dragRegion?: { height: number; leftInset?: number; rightInset?: number };
+          };
           origin?: string;
         };
         buffer = buffer.slice(newline + 1);
         if (frame.type === "request") {
           expect(frame.method).toBe("webviews.open");
           bootstrapURL = frame.params?.url;
+          expect(frame.params).toMatchObject({
+            x: 120,
+            y: 80,
+            width: 640,
+            height: 360,
+            windowStyle: "borderless",
+            transparent: true,
+            shadow: false,
+            resizable: false,
+            dragRegion: { height: 32, leftInset: 12, rightInset: 48 },
+          });
           input.write(
             `${JSON.stringify({
               v: 2,
@@ -255,6 +289,12 @@ describe("resident Bun backend runtime", () => {
                 title: "Test",
                 visible: true,
                 focused: true,
+                windowStyle: "borderless",
+                transparent: true,
+                shadow: false,
+                resizable: false,
+                dragRegion: { height: 32, leftInset: 12, rightInset: 48 },
+                frame: { x: 120, y: 80, width: 640, height: 360 },
                 alwaysOnTop: false,
                 visibleOnAllSpaces: false,
                 visibleOverFullScreen: false,

@@ -49,6 +49,62 @@ struct HostWindowControllerTests {
         #expect(screen.contains(frame))
     }
 
+    @Test func convertsFramesUsingPrimaryScreenTopLeftCoordinates() {
+        let primary = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let native = NSRect(x: -800, y: 900, width: 800, height: 600)
+        let publicFrame = HostWindowController.publicFrame(native, primaryScreen: primary)
+        #expect(publicFrame == NSRect(x: -800, y: -600, width: 800, height: 600))
+        #expect(HostWindowController.positionedFrame(
+            NSRect(x: 200, y: 100, width: 800, height: 600),
+            x: publicFrame.origin.x,
+            y: publicFrame.origin.y,
+            primaryScreen: primary
+        ) == native)
+
+        let oneAxis = HostWindowController.positionedFrame(
+            NSRect(x: 200, y: 100, width: 500, height: 300),
+            x: nil,
+            y: 40,
+            primaryScreen: primary
+        )
+        #expect(oneAxis.origin == NSPoint(x: 200, y: 560))
+    }
+
+    @Test func recognizesOnlyTheConfiguredTopDragStrip() {
+        let bounds = NSRect(x: 0, y: 0, width: 600, height: 400)
+        let region = HostWindowDragRegion(height: 32, leftInset: 12, rightInset: 48)
+        #expect(FIAHostWindow.containsDragPoint(
+            NSPoint(x: 20, y: 390),
+            bounds: bounds,
+            flipped: false,
+            region: region
+        ))
+        #expect(!FIAHostWindow.containsDragPoint(
+            NSPoint(x: 8, y: 390),
+            bounds: bounds,
+            flipped: false,
+            region: region
+        ))
+        #expect(!FIAHostWindow.containsDragPoint(
+            NSPoint(x: 580, y: 390),
+            bounds: bounds,
+            flipped: false,
+            region: region
+        ))
+        #expect(!FIAHostWindow.containsDragPoint(
+            NSPoint(x: 20, y: 350),
+            bounds: bounds,
+            flipped: false,
+            region: region
+        ))
+        #expect(FIAHostWindow.containsDragPoint(
+            NSPoint(x: 20, y: 10),
+            bounds: bounds,
+            flipped: true,
+            region: region
+        ))
+    }
+
     @Test func hideCloseBehaviorKeepsWindowAlive() throws {
         _ = NSApplication.shared
         let controller = HostWindowController(
@@ -69,6 +125,177 @@ struct HostWindowControllerTests {
         )
         #expect(!controller.windowShouldClose(controller.window!))
         #expect(controller.window != nil)
+        #expect(controller.window?.styleMask.contains(.titled) == true)
+        #expect(controller.window?.styleMask.contains(.resizable) == true)
+        #expect(controller.state()["windowStyle"] as? String == "native")
+        #expect(controller.state()["transparent"] as? Bool == false)
+        #expect(controller.state()["shadow"] as? Bool == true)
+        #expect(controller.state()["resizable"] as? Bool == true)
+        #expect(controller.state()["dragRegion"] is NSNull)
+        #expect(controller.state()["frame"] is [String: Any])
+    }
+
+    @Test func configuresFocusableTransparentBorderlessWindows() throws {
+        _ = NSApplication.shared
+        let dragRegion = HostWindowDragRegion(height: 32, leftInset: 12, rightInset: 48)
+        let controller = HostWindowController(
+            id: "launcher",
+            url: URL(string: "https://example.com")!,
+            title: "Launcher",
+            width: 640,
+            height: 360,
+            minWidth: 320,
+            minHeight: 180,
+            restoredFrame: nil,
+            dataStore: .nonPersistent(),
+            closeBehavior: .hide,
+            windowStyle: .borderless,
+            transparent: true,
+            shadow: false,
+            resizable: false,
+            dragRegion: dragRegion,
+            alwaysOnTop: true,
+            visibleOnAllSpaces: true,
+            visibleOverFullScreen: true,
+            inspectable: false
+        )
+        let window = try #require(controller.window as? FIAHostWindow)
+        let webView = try #require(window.contentView as? WKWebView)
+        #expect(!window.styleMask.contains(.titled))
+        #expect(!window.styleMask.contains(.resizable))
+        #expect(window.canBecomeKey)
+        #expect(window.canBecomeMain)
+        #expect(!window.isOpaque)
+        #expect(window.backgroundColor == .clear)
+        #expect(!window.hasShadow)
+        #expect(webView.underPageBackgroundColor.alphaComponent == 0)
+        #expect(window.dragRegion == dragRegion)
+
+        let state = controller.state()
+        #expect(state["windowStyle"] as? String == "borderless")
+        #expect(state["transparent"] as? Bool == true)
+        #expect(state["shadow"] as? Bool == false)
+        #expect(state["resizable"] as? Bool == false)
+        #expect((state["dragRegion"] as? [String: Any])?["height"] as? Double == 32)
+
+        var changes = 0
+        controller.onStateChanged = { changes += 1 }
+        window.onDragEnded?()
+        #expect(changes == 1)
+        controller.windowDidEndLiveResize(Notification(name: NSWindow.didEndLiveResizeNotification))
+        #expect(changes == 2)
+    }
+
+    @Test func rejectsChangesToCreationOnlyWindowOptions() throws {
+        _ = NSApplication.shared
+        let controller = HostWindowController(
+            id: "immutable",
+            url: URL(string: "https://example.com")!,
+            title: "Immutable",
+            width: 640,
+            height: 360,
+            minWidth: 320,
+            minHeight: 180,
+            restoredFrame: nil,
+            dataStore: .nonPersistent(),
+            closeBehavior: .hide,
+            windowStyle: .borderless,
+            transparent: true,
+            shadow: true,
+            resizable: false,
+            alwaysOnTop: false,
+            visibleOnAllSpaces: false,
+            visibleOverFullScreen: false,
+            inspectable: false
+        )
+        try controller.validateCreationOptions(
+            windowStyle: .borderless,
+            transparent: true,
+            shadow: true,
+            resizable: false,
+            dragRegion: nil
+        )
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.validateCreationOptions(
+                windowStyle: .native,
+                transparent: true,
+                shadow: true,
+                resizable: false,
+                dragRegion: nil
+            )
+        }
+    }
+
+    @Test func coalescesFrameChangesAndFlushesInteractionEnd() async throws {
+        _ = NSApplication.shared
+        let controller = HostWindowController(
+            id: "events",
+            url: URL(string: "http://127.0.0.1:1")!,
+            title: "Events",
+            width: 640,
+            height: 360,
+            minWidth: 320,
+            minHeight: 180,
+            restoredFrame: nil,
+            dataStore: .nonPersistent(),
+            closeBehavior: .hide,
+            alwaysOnTop: false,
+            visibleOnAllSpaces: false,
+            visibleOverFullScreen: false,
+            inspectable: false
+        )
+        (controller.window?.contentView as? WKWebView)?.navigationDelegate = nil
+        try await Task.sleep(for: .milliseconds(150))
+        var changes = 0
+        controller.onStateChanged = { changes += 1 }
+        controller.windowDidMove(Notification(name: NSWindow.didMoveNotification))
+        controller.windowDidMove(Notification(name: NSWindow.didMoveNotification))
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(changes == 1)
+
+        controller.windowDidResize(Notification(name: NSWindow.didResizeNotification))
+        controller.windowDidEndLiveResize(Notification(name: NSWindow.didEndLiveResizeNotification))
+        #expect(changes == 2)
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(changes == 2)
+    }
+
+    @Test func registryRejectsInvalidAndMutableBorderlessOptions() throws {
+        _ = NSApplication.shared
+        let registry = WebViewRegistry(appName: "Desktop", inspectable: false, storedFrames: [:])
+        #expect(throws: HostRequestExecutionError.self) {
+            try registry.execute(method: "webviews.open", params: [
+                "id": "invalid", "url": "https://example.com", "transparent": true,
+            ])
+        }
+
+        _ = try registry.execute(method: "webviews.open", params: [
+            "id": "main", "url": "https://example.com", "focus": false,
+            "windowStyle": "borderless", "transparent": true, "shadow": false,
+            "resizable": false, "x": -120, "y": 80,
+            "dragRegion": ["height": 30, "leftInset": 8, "rightInset": 40],
+        ])
+        #expect(throws: HostRequestExecutionError.self) {
+            try registry.execute(method: "webviews.open", params: [
+                "id": "main", "url": "https://example.com", "windowStyle": "native",
+            ])
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try registry.execute(method: "webviews.update", params: [
+                "id": "main", "transparent": false,
+            ])
+        }
+        let updated = try #require(try registry.execute(method: "webviews.update", params: [
+            "id": "main", "x": -80, "y": 60,
+        ]) as? [String: Any])
+        let updatedFrame = try #require(updated["frame"] as? [String: Any])
+        #expect(updatedFrame["x"] as? Double == -80)
+        #expect(updatedFrame["y"] as? Double == 60)
+        let windows = try #require(try registry.execute(method: "webviews.list", params: [:]) as? [[String: Any]])
+        #expect(windows.count == 1)
+        #expect(windows[0]["windowStyle"] as? String == "borderless")
+        #expect(windows[0]["transparent"] as? Bool == true)
+        _ = try registry.execute(method: "webviews.close", params: ["id": "main"])
     }
 
     @Test func buildsNestedDynamicMenuAndKeepsQuit() throws {

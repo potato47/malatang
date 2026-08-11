@@ -20,6 +20,16 @@ WebView 默认 1024×700、最小 720×480、关闭时隐藏并恢复按 ID 保�
 任意 HTTP(S) URL，但 WebView 没有 script message handler；用户点击的跨 origin 主框架链接
 交给系统浏览器。
 
+`webviews.open` 可用 `windowStyle: "borderless"` 创建完全无系统装饰的窗口，并在创建时配置
+`transparent`、`shadow`、`resizable` 和顶部原生 `dragRegion`。这些外观字段创建后不可更改；
+同 ID upsert 省略字段会保留原值，传入不同值会返回 `INVALID_ARGUMENT`。透明窗口还需要页面
+CSS 将 `html`/`body` 背景设为透明。拖动带拦截覆盖区域内的网页左键交互，可用左右 inset
+为页面按钮留出区域。
+
+`open` 和 `update` 的 `x/y` 使用以主屏左上角为原点、向右/向下递增的逻辑点坐标，多屏可以
+出现负值。状态中的 `frame` 返回实际窗口外框；原生标题栏窗口的外框尺寸可能大于传入的内容
+`width/height`。显式坐标允许位于屏幕外，只有历史恢复位置会被约束到可见屏幕。
+
 Dock 和状态栏不能同时隐藏，以保证故障后仍有恢复入口。
 
 通知不会在 `send` 时隐式申请权限；应用应在合适的用户操作后调用

@@ -41,6 +41,7 @@ final class WebViewRegistry {
             emit(type: "closed", state: controller.state())
             return nil
         case "webviews.update":
+            try rejectCreationOnlyOptions(params)
             let controller = try controller(params)
             try controller.update(
                 title: try optionalString(params["title"], field: "title"),
@@ -48,6 +49,8 @@ final class WebViewRegistry {
                 height: try optionalDimension(params["height"], field: "height"),
                 minWidth: try optionalDimension(params["minWidth"], field: "minWidth"),
                 minHeight: try optionalDimension(params["minHeight"], field: "minHeight"),
+                x: try optionalCoordinate(params["x"], field: "x"),
+                y: try optionalCoordinate(params["y"], field: "y"),
                 closeBehavior: try optionalCloseBehavior(params["closeBehavior"]),
                 alwaysOnTop: try optionalBool(params["alwaysOnTop"], field: "alwaysOnTop"),
                 visibleOnAllSpaces: try optionalBool(params["visibleOnAllSpaces"], field: "visibleOnAllSpaces"),
@@ -76,20 +79,48 @@ final class WebViewRegistry {
         let targetURL = try url(params["url"])
         let title = try optionalString(params["title"], field: "title") ?? appName
         let focus = try optionalBool(params["focus"], field: "focus") ?? true
+        let windowStyle = try optionalWindowStyle(params["windowStyle"])
+        let transparent = try optionalBool(params["transparent"], field: "transparent")
+        let shadow = try optionalBool(params["shadow"], field: "shadow")
+        let resizable = try optionalBool(params["resizable"], field: "resizable")
+        let dragRegion = try optionalDragRegion(params["dragRegion"])
+        let x = try optionalCoordinate(params["x"], field: "x")
+        let y = try optionalCoordinate(params["y"], field: "y")
         if let existing = controllers[id] {
+            let updateTitle = try optionalString(params["title"], field: "title")
+            let width = try optionalDimension(params["width"], field: "width")
+            let height = try optionalDimension(params["height"], field: "height")
+            let minWidth = try optionalDimension(params["minWidth"], field: "minWidth")
+            let minHeight = try optionalDimension(params["minHeight"], field: "minHeight")
+            let closeBehavior = try optionalCloseBehavior(params["closeBehavior"])
+            let alwaysOnTop = try optionalBool(params["alwaysOnTop"], field: "alwaysOnTop")
+            let visibleOnAllSpaces = try optionalBool(params["visibleOnAllSpaces"], field: "visibleOnAllSpaces")
+            let visibleOverFullScreen = try optionalBool(
+                params["visibleOverFullScreen"],
+                field: "visibleOverFullScreen"
+            )
+            try existing.validateCreationOptions(
+                windowStyle: windowStyle,
+                transparent: transparent,
+                shadow: shadow,
+                resizable: resizable,
+                dragRegion: dragRegion
+            )
             try existing.update(
-                title: try optionalString(params["title"], field: "title"),
-                width: try optionalDimension(params["width"], field: "width"),
-                height: try optionalDimension(params["height"], field: "height"),
-                minWidth: try optionalDimension(params["minWidth"], field: "minWidth"),
-                minHeight: try optionalDimension(params["minHeight"], field: "minHeight"),
-                closeBehavior: try optionalCloseBehavior(params["closeBehavior"]),
-                alwaysOnTop: try optionalBool(params["alwaysOnTop"], field: "alwaysOnTop"),
-                visibleOnAllSpaces: try optionalBool(params["visibleOnAllSpaces"], field: "visibleOnAllSpaces"),
-                visibleOverFullScreen: try optionalBool(params["visibleOverFullScreen"], field: "visibleOverFullScreen")
+                title: updateTitle,
+                width: width,
+                height: height,
+                minWidth: minWidth,
+                minHeight: minHeight,
+                x: x,
+                y: y,
+                closeBehavior: closeBehavior,
+                alwaysOnTop: alwaysOnTop,
+                visibleOnAllSpaces: visibleOnAllSpaces,
+                visibleOverFullScreen: visibleOverFullScreen
             )
             existing.navigate(to: targetURL)
-            existing.focus()
+            if focus { existing.focus() } else { existing.show() }
             return existing.state()
         }
         let width = try dimension(params["width"], field: "width", fallback: 1024)
@@ -103,6 +134,22 @@ final class WebViewRegistry {
         guard closeValue == "hide" || closeValue == "close" else {
             throw HostRequestExecutionError(code: .invalidArgument, message: "closeBehavior must be hide or close")
         }
+        let resolvedStyle = windowStyle ?? .native
+        let resolvedTransparent = transparent ?? false
+        let resolvedShadow = shadow ?? true
+        let resolvedResizable = resizable ?? true
+        guard resolvedStyle == .borderless || !resolvedTransparent else {
+            throw HostRequestExecutionError(
+                code: .invalidArgument,
+                message: "transparent requires windowStyle borderless"
+            )
+        }
+        guard resolvedStyle == .borderless || dragRegion == nil else {
+            throw HostRequestExecutionError(
+                code: .invalidArgument,
+                message: "dragRegion requires windowStyle borderless"
+            )
+        }
         let restoreFrame = try optionalBool(params["restoreFrame"], field: "restoreFrame") ?? true
         let controller = HostWindowController(
             id: id,
@@ -112,9 +159,16 @@ final class WebViewRegistry {
             height: height,
             minWidth: minWidth,
             minHeight: minHeight,
+            x: x,
+            y: y,
             restoredFrame: restoreFrame ? storedFrames[id] : nil,
             dataStore: dataStore,
             closeBehavior: closeValue == "hide" ? .hide : .close,
+            windowStyle: resolvedStyle,
+            transparent: resolvedTransparent,
+            shadow: resolvedShadow,
+            resizable: resolvedResizable,
+            dragRegion: dragRegion,
             alwaysOnTop: try optionalBool(params["alwaysOnTop"], field: "alwaysOnTop") ?? false,
             visibleOnAllSpaces: try optionalBool(params["visibleOnAllSpaces"], field: "visibleOnAllSpaces") ?? false,
             visibleOverFullScreen: try optionalBool(params["visibleOverFullScreen"], field: "visibleOverFullScreen") ?? false,
@@ -174,6 +228,67 @@ final class WebViewRegistry {
             throw HostRequestExecutionError(code: .invalidArgument, message: "\(field) must be greater than zero")
         }
         return number.doubleValue
+    }
+
+    private func optionalCoordinate(_ value: Any?, field: String) throws -> Double? {
+        guard let value else { return nil }
+        guard !(value is Bool), let number = value as? NSNumber,
+              number.doubleValue.isFinite, abs(number.doubleValue) <= 1_000_000 else {
+            throw HostRequestExecutionError(
+                code: .invalidArgument,
+                message: "\(field) must be a finite screen coordinate"
+            )
+        }
+        return number.doubleValue
+    }
+
+    private func optionalWindowStyle(_ value: Any?) throws -> HostWindowStyle? {
+        guard let value else { return nil }
+        guard let value = value as? String, let style = HostWindowStyle(rawValue: value) else {
+            throw HostRequestExecutionError(
+                code: .invalidArgument,
+                message: "windowStyle must be native or borderless"
+            )
+        }
+        return style
+    }
+
+    private func optionalDragRegion(_ value: Any?) throws -> HostWindowDragRegion? {
+        guard let value else { return nil }
+        guard let value = value as? [String: Any],
+              Set(value.keys).isSubset(of: ["height", "leftInset", "rightInset"]),
+              value["height"] != nil else {
+            throw HostRequestExecutionError(
+                code: .invalidArgument,
+                message: "dragRegion must contain height and optional leftInset/rightInset"
+            )
+        }
+        let height = try dimension(value["height"], field: "dragRegion.height", fallback: 0)
+        let leftInset = try optionalInset(value["leftInset"], field: "dragRegion.leftInset") ?? 0
+        let rightInset = try optionalInset(value["rightInset"], field: "dragRegion.rightInset") ?? 0
+        return HostWindowDragRegion(height: height, leftInset: leftInset, rightInset: rightInset)
+    }
+
+    private func optionalInset(_ value: Any?, field: String) throws -> Double? {
+        guard let value else { return nil }
+        guard !(value is Bool), let number = value as? NSNumber,
+              number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 16_384 else {
+            throw HostRequestExecutionError(
+                code: .invalidArgument,
+                message: "\(field) must be a non-negative finite number"
+            )
+        }
+        return number.doubleValue
+    }
+
+    private func rejectCreationOnlyOptions(_ params: [String: Any]) throws {
+        let creationOnly = ["windowStyle", "transparent", "shadow", "resizable", "dragRegion"]
+        guard creationOnly.allSatisfy({ params[$0] == nil }) else {
+            throw HostRequestExecutionError(
+                code: .invalidArgument,
+                message: "windowStyle, transparent, shadow, resizable, and dragRegion are creation-only"
+            )
+        }
     }
 
     private func optionalCloseBehavior(_ value: Any?) throws -> HostWindowController.CloseBehavior? {
