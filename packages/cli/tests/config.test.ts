@@ -45,6 +45,46 @@ describe("FIA configVersion 5", () => {
     expect(config.statusBar.symbol).toBe("circle.grid.2x2.fill");
     expect(config.statusBar.tooltip).toBe("Desktop");
     expect(config.signing).toBeUndefined();
+    expect(config.release).toBeUndefined();
+  });
+
+  test("resolves strict Developer ID release and notarization settings", async () => {
+    const root = await project();
+    const config = await resolveProjectConfig(
+      {
+        ...base(),
+        release: {
+          identity: "Developer ID Application: Example (TEAMID)",
+          notarization: { keychainProfile: "fia-notary" },
+        },
+      },
+      root,
+    );
+    expect(config.release).toEqual({
+      identity: "Developer ID Application: Example (TEAMID)",
+      notarization: { keychainProfile: "fia-notary" },
+    });
+    await expect(
+      resolveProjectConfig(
+        { ...base(), release: { identity: "Apple Development: Example (TEAMID)" } },
+        root,
+      ),
+    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "release.identity" });
+    await expect(
+      resolveProjectConfig(
+        {
+          ...base(),
+          release: {
+            identity: "Developer ID Application: Example (TEAMID)",
+            notarization: { keychainProfile: " fia-notary " },
+          },
+        },
+        root,
+      ),
+    ).rejects.toMatchObject({
+      code: "CONFIG_INVALID",
+      path: "release.notarization.keychainProfile",
+    });
   });
 
   test("resolves a strict code signing identity", async () => {

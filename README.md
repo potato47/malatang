@@ -38,6 +38,11 @@ export default defineConfig({
   statusBar: { symbol: "bolt.fill", tooltip: "Hello" },
   // 可选：为需要稳定隐私授权的开发构建指定本机签名 identity。
   // signing: { identity: "Apple Development: Example (TEAMID)" },
+  // 可选：为 FIA package/release 指定发布 identity 与钥匙串公证 profile。
+  // release: {
+  //   identity: "Developer ID Application: Example (TEAMID)",
+  //   notarization: { keychainProfile: "fia-notary" },
+  // },
 });
 ```
 
@@ -88,6 +93,8 @@ bun run fia -- doctor
 bun run fia -- dev
 bun run fia -- run
 bun run fia -- build
+bun run fia -- package
+bun run fia -- release
 bun run check
 ```
 
@@ -96,6 +103,17 @@ bun run check
 - `run`：构建临时生产 App 并启动。
 - `build`：生成 `dist/<App>.app`；配置 `signing.identity` 时使用该 identity 签名，缺省使用
   ad-hoc 签名。
+- `package`：使用 `release.identity`、Hardened Runtime 和安全时间戳生成待验证/公证的
+  Developer ID 签名 ZIP；该产物不是最终公开发布包。
+- `release`：提交公证、staple ticket、执行 Gatekeeper 验证，并生成最终 ZIP 与 SHA-256 文件。
+
+发布前先将公证凭据保存到登录钥匙串（交互式输入 App 专用密码）：
+
+```bash
+xcrun notarytool store-credentials "fia-notary" \
+  --apple-id "you@example.com" \
+  --team-id "TEAMID"
+```
 
 生产布局：
 

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "fia dev",
     "build": "fia build",
+    "package": "fia package",
+    "release": "fia release",
     "run": "fia run",
     "typecheck": "tsc --noEmit",
     "test": "bun test tests",

@@ -15,4 +15,8 @@ export default defineConfig({
     symbol: "square.grid.2x2.fill",
     tooltip: "FIA 工具箱",
   },
+  // release: {
+  //   identity: "Developer ID Application: Your Company (TEAMID)",
+  //   notarization: { keychainProfile: "fia-notary" },
+  // },
 });

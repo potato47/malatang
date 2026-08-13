@@ -7,6 +7,8 @@ HTTP 和 WebSocket 与 Backend 通信。
 bun run dev
 bun run typecheck
 bun run build
+bun run package
+bun run release
 bun run run
 ```
 
@@ -16,6 +18,8 @@ bun run run
   `signing.identity` 让开发与生产构建使用稳定的代码签名身份。
 - `bun run dev` 使用 Bun 全栈 HMR，并由 Swift Host 监管常驻 Backend。
 - `bun run build` 生成包含 Swift Host 与单个 standalone `FIABackend` 的 macOS 应用；目标机器无需安装 Bun。
+- `bun run package` 生成 Developer ID 签名的 arm64 预公证 ZIP；`bun run release` 进一步完成
+  Apple 公证、ticket stapling、Gatekeeper 验证和 SHA-256 checksum，生成可公开分发产物。
 
 Backend 可通过 `host.application`、`host.statusItem`、`host.webviews`、`host.system`、
 `host.notifications`、`host.dialogs`、`host.clipboard`、`host.keychain`、

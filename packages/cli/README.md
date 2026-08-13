@@ -18,8 +18,17 @@ Backend 通过 stdio 调用原生能力，并向浏览器/WebView 提供普通 H
 export default defineConfig({
   // ...
   signing: { identity: "Apple Development: Example (TEAMID)" },
+  release: {
+    identity: "Developer ID Application: Example (TEAMID)",
+    notarization: { keychainProfile: "fia-notary" },
+  },
 });
 ```
+
+`fia package` 使用 `release.identity` 生成启用 Hardened Runtime 与安全时间戳的 arm64
+预公证 ZIP 和 `.sha256`，该产物不作为最终公开发布包。`fia release` 还会通过 `notarytool`
+提交公证、staple ticket 并执行 Gatekeeper 验证。公证密码或 API key 不写入配置；先使用
+`xcrun notarytool store-credentials fia-notary` 保存到钥匙串。
 
 ```ts
 import { defineBackend } from "@semicoder/fia/backend";

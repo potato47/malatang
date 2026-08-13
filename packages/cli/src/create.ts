@@ -100,6 +100,8 @@ function packageMetadata(name: string, cliPackageSpec: string): Record<string, u
     scripts: {
       dev: "fia dev",
       build: "fia build",
+      package: "fia package",
+      release: "fia release",
       run: "fia run",
       typecheck: "tsc --noEmit",
     },

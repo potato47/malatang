@@ -5,7 +5,7 @@
 
 ## Project map
 
-- `fia.config.ts` 使用严格的 `configVersion: 5`，声明应用、必选 Backend、状态栏初始配置与可选签名身份。
+- `fia.config.ts` 使用严格的 `configVersion: 5`，声明应用、必选 Backend、状态栏初始配置，以及可选的开发与发布签名身份。
 - `src/backend.ts` 使用 `defineBackend<SocketData>()({...})` 声明 HTTP、WebSocket、生命周期与 Host 原生调用。
 - `src/ui/` 是普通 React 前端；不要导入 FIA 原生 API。
 - `src/ui/components/ui/` 是可编辑的 Tailwind CSS v4 组件库。
@@ -24,3 +24,4 @@ route/fetch 的第三参数以及 start/stop 上下文还提供 `app.dataDirecto
 stderr；Backend stdout 专用于 FIA JSONL 协议。
 
 修改 TypeScript 后运行 `bun run typecheck`，涉及生命周期、协议或打包时运行 `bun run build`。
+`bun run package` 和 `bun run release` 使用 Developer ID 发布配置，后者还会连接 Apple 公证服务。

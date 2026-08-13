@@ -53,6 +53,12 @@ export interface ResolvedFIAConfig {
   readonly signing?: {
     readonly identity: string;
   };
+  readonly release?: {
+    readonly identity: string;
+    readonly notarization?: {
+      readonly keychainProfile: string;
+    };
+  };
 }
 
 function invalid(path: string, message: string): never {
@@ -163,7 +169,7 @@ export async function resolveProjectConfig(
 ): Promise<ResolvedFIAConfig> {
   const projectRoot = resolve(projectDirectory);
   const root = objectAt(value, "config");
-  exactKeys(root, ["configVersion", "app", "backend", "statusBar", "signing"], "config");
+  exactKeys(root, ["configVersion", "app", "backend", "statusBar", "signing", "release"], "config");
   if (root.configVersion !== FIA_CONFIG_VERSION) {
     if (typeof root.configVersion === "number" && Number.isInteger(root.configVersion)) {
       throw new ProjectConfigError(
@@ -253,6 +259,38 @@ export async function resolveProjectConfig(
     signing = { identity };
   }
 
+  let release: ResolvedFIAConfig["release"];
+  if (root.release !== undefined) {
+    const value = objectAt(root.release, "release");
+    exactKeys(value, ["identity", "notarization"], "release");
+    const identity = requiredString(value, "identity", "release");
+    if (identity !== identity.trim()) {
+      invalid("release.identity", "must not have surrounding whitespace");
+    }
+    if (identity.length > 512) invalid("release.identity", "must be at most 512 characters");
+    if (!/^Developer ID Application: .+$/u.test(identity)) {
+      invalid("release.identity", "must be a Developer ID Application identity name");
+    }
+    let notarization: NonNullable<ResolvedFIAConfig["release"]>["notarization"];
+    if (value.notarization !== undefined) {
+      const notarizationValue = objectAt(value.notarization, "release.notarization");
+      exactKeys(notarizationValue, ["keychainProfile"], "release.notarization");
+      const keychainProfile = requiredString(
+        notarizationValue,
+        "keychainProfile",
+        "release.notarization",
+      );
+      if (keychainProfile !== keychainProfile.trim()) {
+        invalid("release.notarization.keychainProfile", "must not have surrounding whitespace");
+      }
+      if (keychainProfile.length > 256) {
+        invalid("release.notarization.keychainProfile", "must be at most 256 characters");
+      }
+      notarization = { keychainProfile };
+    }
+    release = { identity, ...(notarization === undefined ? {} : { notarization }) };
+  }
+
   return {
     configVersion: FIA_CONFIG_VERSION,
     projectRoot,
@@ -261,6 +299,7 @@ export async function resolveProjectConfig(
     backend: { entry, watch },
     statusBar: { symbol, tooltip },
     ...(signing === undefined ? {} : { signing }),
+    ...(release === undefined ? {} : { release }),
   };
 }
 

@@ -3,12 +3,17 @@ import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
+  backendDistributionEntitlements,
   codeSigningCommand,
   developmentBackendRunnerPath,
+  distributionArchiveCommand,
+  distributionArchiveName,
   executeApplicationCommand,
   generatedBackendRunner,
   hasCodeSigningIdentity,
   hasExpectedHostCapabilities,
+  notarizationSubmitCommand,
+  parseNotarizationResponse,
   parseCodeSigningIdentities,
 } from "../src/application.ts";
 import { createProject } from "../src/create.ts";
@@ -182,7 +187,7 @@ describe("FIA resident Backend application packaging", () => {
     );
   });
 
-  test("uses the configured identity for helper and deep application signing", () => {
+  test("builds explicit development and hardened distribution signing commands", () => {
     const identity = "Apple Development: Example (TEAMID)";
     expect(codeSigningCommand(identity, "/tmp/FIABackend")).toEqual([
       "/usr/bin/codesign",
@@ -191,14 +196,82 @@ describe("FIA resident Backend application packaging", () => {
       identity,
       "/tmp/FIABackend",
     ]);
-    expect(codeSigningCommand(identity, "/tmp/Example.app", { deep: true })).toEqual([
+    const distributionIdentity = "Developer ID Application: Example (TEAMID)";
+    expect(
+      codeSigningCommand(distributionIdentity, "/tmp/FIABackend", {
+        distribution: true,
+        entitlements: "/tmp/backend.entitlements",
+      }),
+    ).toEqual([
       "/usr/bin/codesign",
       "--force",
       "--sign",
-      identity,
-      "--deep",
+      distributionIdentity,
+      "--options",
+      "runtime",
+      "--timestamp",
+      "--entitlements",
+      "/tmp/backend.entitlements",
+      "/tmp/FIABackend",
+    ]);
+    expect(
+      codeSigningCommand(distributionIdentity, "/tmp/Example.app", { distribution: true }),
+    ).toEqual([
+      "/usr/bin/codesign",
+      "--force",
+      "--sign",
+      distributionIdentity,
+      "--options",
+      "runtime",
+      "--timestamp",
       "/tmp/Example.app",
     ]);
+  });
+
+  test("builds deterministic ZIP and notarytool commands", () => {
+    expect(distributionArchiveName({ app: { name: "Example", version: "1.2.3" } })).toBe(
+      "Example-1.2.3-mac-arm64.zip",
+    );
+    expect(distributionArchiveCommand("/tmp/Example.app", "/tmp/Example.zip")).toEqual([
+      "/usr/bin/ditto",
+      "-c",
+      "-k",
+      "--sequesterRsrc",
+      "--keepParent",
+      "/tmp/Example.app",
+      "/tmp/Example.zip",
+    ]);
+    expect(notarizationSubmitCommand("/tmp/Example.zip", "fia-notary")).toEqual([
+      "/usr/bin/xcrun",
+      "notarytool",
+      "submit",
+      "/tmp/Example.zip",
+      "--keychain-profile",
+      "fia-notary",
+      "--wait",
+      "--timeout",
+      "60m",
+      "--output-format",
+      "json",
+    ]);
+  });
+
+  test("parses structured notarytool results", () => {
+    expect(
+      parseNotarizationResponse(
+        JSON.stringify({ id: "submission-id", status: "Accepted", message: "success" }),
+      ),
+    ).toEqual({ id: "submission-id", status: "Accepted", message: "success" });
+    expect(parseNotarizationResponse(JSON.stringify({ status: 7, extra: true }))).toEqual({});
+    expect(() => parseNotarizationResponse("not-json")).toThrow("notarytool returned invalid JSON");
+  });
+
+  test("grants only the Bun JIT hardened-runtime exception to the Backend", () => {
+    const entitlements = backendDistributionEntitlements();
+    expect(entitlements).toContain("com.apple.security.cs.allow-jit");
+    expect(entitlements).not.toContain("get-task-allow");
+    expect(entitlements).not.toContain("disable-library-validation");
+    expect(entitlements).not.toContain("allow-unsigned-executable-memory");
   });
 
   test("requires the exact ordered Host capability array", () => {
@@ -234,6 +307,13 @@ describe("FIA resident Backend application packaging", () => {
   test("uses one stable development runner path across temporary app builds", () => {
     const root = "/project";
     expect(developmentBackendRunnerPath(root)).toBe("/project/.fia/dev/backend-runner.ts");
+  });
+
+  test("requires a separate Developer ID identity for package", async () => {
+    const root = await linkedProject();
+    await expect(
+      executeApplicationCommand({ command: "package", cwd: root, debug: false, io: output().io }),
+    ).rejects.toThrow("release.identity is required for fia package");
   });
 
   test("builds one signed standalone Backend without packaged UI or MCP directories", async () => {

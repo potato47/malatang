@@ -35,6 +35,8 @@ Usage:
   fia [--debug] create <name> [--no-install] [--git]
   fia [--debug] dev
   fia [--debug] build
+  fia [--debug] package
+  fia [--debug] release
   fia [--debug] run
   fia [--debug] doctor [--json]
 
@@ -42,6 +44,8 @@ Commands:
   create       Create a React FIA project with a resident Bun backend
   dev          Launch the application with Bun full-stack HMR
   build        Build and sign a production .app
+  package      Build a Developer ID-signed pre-notarization ZIP
+  release      Notarize and staple a distribution ZIP
   run          Build and launch the current source in production mode
   doctor       Check the local FIA development environment
 
@@ -97,6 +101,32 @@ Output:
 
 Options:
   -h, --help   Show help for build
+  --debug      Include diagnostic command details
+`,
+  package: `Build a Developer ID-signed FIA pre-notarization archive
+
+Usage:
+  fia [--debug] package
+
+Output:
+  dist/<application name>-<version>-mac-arm64.zip
+  dist/<application name>-<version>-mac-arm64.zip.sha256
+
+Options:
+  -h, --help   Show help for package
+  --debug      Include diagnostic command details
+`,
+  release: `Build, notarize and staple a FIA distribution archive
+
+Usage:
+  fia [--debug] release
+
+Output:
+  dist/<application name>-<version>-mac-arm64.zip
+  dist/<application name>-<version>-mac-arm64.zip.sha256
+
+Options:
+  -h, --help   Show help for release
   --debug      Include diagnostic command details
 `,
   run: `Build and launch the current source using the production protocol
@@ -190,7 +220,13 @@ export async function runCLI(
       return 1;
     }
   }
-  if (command === "dev" || command === "build" || command === "run") {
+  if (
+    command === "dev" ||
+    command === "build" ||
+    command === "package" ||
+    command === "release" ||
+    command === "run"
+  ) {
     const flags = remaining.slice(1);
     if (flags.includes("-h") || flags.includes("--help")) {
       if (flags.length !== 1)

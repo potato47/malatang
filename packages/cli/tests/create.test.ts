@@ -54,9 +54,12 @@ describe("FIA project creation", () => {
     const metadata = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
+      scripts: Record<string, string>;
     };
     expect(metadata.dependencies).not.toHaveProperty("zod");
     expect(metadata.devDependencies["@semicoder/fia"]).toBe("file:../cli");
+    expect(metadata.scripts.package).toBe("fia package");
+    expect(metadata.scripts.release).toBe("fia release");
   });
 
   test("installs and initializes git only when requested", async () => {

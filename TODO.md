@@ -20,5 +20,7 @@
 - [x] 增加全局快捷键、屏幕枚举/截图、Finder 路径操作和 PNG 剪贴板能力。
 - [x] 增加 FIA Toolbox 综合示例及其类型检查、单元测试、构建 smoke 和手工验收矩阵。
 - [x] 增加可选稳定开发签名 identity；缺省仍使用 ad-hoc 签名。
-- [ ] 增加 Developer ID、notarization 与 universal binary 发布流程。
+- [x] 实现 arm64 Developer ID、Hardened Runtime、notarization、stapling 与 ZIP 发布命令。
+- [ ] 使用真实 Developer ID 与 Apple 公证服务完成发布链路端到端验收。
+- [ ] 增加 universal binary、DMG、发布 CI 与自动更新流程。
 - [ ] 增加长期运行、休眠唤醒和网络切换压力测试。

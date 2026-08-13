@@ -21,12 +21,20 @@ export interface FIASigningConfig {
   identity: string;
 }
 
+export interface FIAReleaseConfig {
+  identity: string;
+  notarization?: {
+    keychainProfile: string;
+  };
+}
+
 export interface FIAConfig {
   configVersion: typeof FIA_CONFIG_VERSION;
   app: FIAAppConfig;
   backend: FIABackendConfig;
   statusBar?: FIAStatusBarConfig;
   signing?: FIASigningConfig;
+  release?: FIAReleaseConfig;
 }
 
 export function defineConfig<const Configuration extends FIAConfig>(

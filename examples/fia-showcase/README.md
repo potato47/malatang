@@ -15,6 +15,9 @@ bun run --cwd examples/fia-showcase test
 bun run --cwd examples/fia-showcase build
 ```
 
+配置 `fia.config.ts` 的 `release.identity` 后，可运行 `package` 生成预公证 ZIP；再配置
+`release.notarization.keychainProfile` 后，可运行 `release` 生成已公证的最终 ZIP。
+
 默认快捷键：
 
 - `Option + Space`：显示文件搜索窗口。

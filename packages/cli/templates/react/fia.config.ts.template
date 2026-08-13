@@ -19,4 +19,10 @@ export default defineConfig({
   // For stable macOS privacy grants, use the exact name reported by
   // `security find-identity -v -p codesigning`.
   // signing: { identity: "Apple Development: Your Name (TEAMID)" },
+  // For a distributable ZIP, configure a Developer ID identity separately.
+  // Store notarization credentials with `xcrun notarytool store-credentials`.
+  // release: {
+  //   identity: "Developer ID Application: Your Company (TEAMID)",
+  //   notarization: { keychainProfile: "fia-notary" },
+  // },
 });

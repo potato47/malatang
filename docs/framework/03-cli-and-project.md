@@ -10,6 +10,8 @@
   - `--emit-action <id>` 在首次 ready 后通过真实 Host 事件链路触发一个可点击菜单项。
 - `fia run`：构建临时生产 App 并启动。
 - `fia build`：生成 `dist/<App>.app`。
+- `fia package`：使用 Developer ID、Hardened Runtime 与安全时间戳生成待验证/公证 ZIP。
+- `fia release`：公证并 staple App，执行 Gatekeeper 验证，生成最终 ZIP 与 SHA-256。
 - `fia doctor`：检查 macOS、arm64、Bun、签名与可选 Swift 工具链。
 
 ## 配置
@@ -21,6 +23,17 @@
 Developer ID Application identity，并同时用于 Backend helper 与顶层 App。省略时继续 ad-hoc
 签名；CLI 会提示此模式下屏幕录制等 TCC 授权可能在重建后需要重新授予。该字段不启用 hardened
 runtime、公证或发布流程。
+
+`release.identity` 只接受 Developer ID Application identity。`fia package` 使用它对 Backend
+和 App 进行明确的 inside-out 发布签名；Backend 具有最小 JIT entitlement。`fia release` 还要求
+`release.notarization.keychainProfile`，该字段是 `notarytool store-credentials` 创建的钥匙串
+profile 名称，不存储 Apple 凭据。
+
+```bash
+xcrun notarytool store-credentials "fia-notary" \
+  --apple-id "you@example.com" \
+  --team-id "TEAMID"
+```
 
 背景参考：[Apple：为 Mac 创建分发签名代码](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac/)。
 

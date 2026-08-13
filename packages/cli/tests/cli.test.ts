@@ -36,6 +36,8 @@ describe("fia command routing", () => {
     expect(output.stdout.join("")).toContain("doctor");
     expect(output.stdout.join("")).toContain("dev");
     expect(output.stdout.join("")).toContain("build");
+    expect(output.stdout.join("")).toContain("package");
+    expect(output.stdout.join("")).toContain("release");
     expect(output.stdout.join("")).toContain("run");
     expect(output.stderr).toEqual([]);
   });
@@ -118,7 +120,7 @@ describe("fia command routing", () => {
   });
 
   test("shows application command help and rejects options", async () => {
-    for (const command of ["dev", "build", "run"] as const) {
+    for (const command of ["dev", "build", "package", "release", "run"] as const) {
       const help = capture();
       expect(await runCLI([command, "--help"], { io: help.io })).toBe(0);
       expect(help.stdout.join("")).toContain(`fia [--debug] ${command}`);
@@ -151,6 +153,24 @@ describe("fia command routing", () => {
     expect(output.stderr).toEqual([]);
   });
 
+  test("routes package and release to the application executor", async () => {
+    const commands: string[] = [];
+    for (const command of ["package", "release"] as const) {
+      const output = capture();
+      expect(
+        await runCLI([command], {
+          io: output.io,
+          workingDirectory: "/project",
+          applicationExecutor: async (options) => {
+            commands.push(options.command);
+          },
+        }),
+      ).toBe(0);
+      expect(output.stderr).toEqual([]);
+    }
+    expect(commands).toEqual(["package", "release"]);
+  });
+
   test("rejects invalid development automation options", async () => {
     for (const args of [
       ["dev", "--print-session-url", "--print-session-url"],
@@ -159,6 +179,8 @@ describe("fia command routing", () => {
       ["dev", "--emit-action", "bad action"],
       ["dev", "--emit-action", "open", "--emit-action", "again"],
       ["build", "--print-session-url"],
+      ["package", "--print-session-url"],
+      ["release", "--emit-action", "open"],
       ["run", "--emit-action", "open"],
     ]) {
       const output = capture();

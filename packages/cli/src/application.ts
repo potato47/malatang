@@ -21,7 +21,7 @@ export interface ApplicationIO {
   stderr(value: string): void;
 }
 
-export type ApplicationCommand = "dev" | "build" | "run";
+export type ApplicationCommand = "dev" | "build" | "package" | "release" | "run";
 
 export interface ApplicationCommandDependencies {
   hostAssetDirectory?: string;
@@ -72,6 +72,7 @@ interface BuildContext {
   appPath: string;
   hostAssetDirectory: string;
   signingIdentity: string;
+  distribution: boolean;
   debug: boolean;
   io: ApplicationIO;
 }
@@ -133,15 +134,48 @@ export function hasCodeSigningIdentity(output: string, identity: string): boolea
 export function codeSigningCommand(
   identity: string,
   path: string,
-  options: { deep?: boolean } = {},
+  options: { distribution?: boolean; entitlements?: string } = {},
 ): readonly string[] {
   return [
     "/usr/bin/codesign",
     "--force",
     "--sign",
     identity,
-    ...(options.deep === true ? ["--deep"] : []),
+    ...(options.distribution === true ? ["--options", "runtime", "--timestamp"] : []),
+    ...(options.entitlements === undefined ? [] : ["--entitlements", options.entitlements]),
     path,
+  ];
+}
+
+export function distributionArchiveName(config: {
+  readonly app: { readonly name: string; readonly version: string };
+}): string {
+  return `${config.app.name}-${config.app.version}-mac-arm64.zip`;
+}
+
+export function distributionArchiveCommand(
+  appPath: string,
+  archivePath: string,
+): readonly string[] {
+  return ["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", appPath, archivePath];
+}
+
+export function notarizationSubmitCommand(
+  archivePath: string,
+  keychainProfile: string,
+): readonly string[] {
+  return [
+    "/usr/bin/xcrun",
+    "notarytool",
+    "submit",
+    archivePath,
+    "--keychain-profile",
+    keychainProfile,
+    "--wait",
+    "--timeout",
+    "60m",
+    "--output-format",
+    "json",
   ];
 }
 
@@ -223,6 +257,24 @@ async function sha256(path: string): Promise<string> {
   return hasher.digest("hex");
 }
 
+export function backendDistributionEntitlements(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>
+`;
+}
+
+async function writeBackendDistributionEntitlements(context: BuildContext): Promise<string> {
+  const path = resolve(context.stagingRoot, "backend-distribution.entitlements");
+  await Bun.write(path, backendDistributionEntitlements());
+  return path;
+}
+
 async function verifyArm64MachO(
   label: string,
   executable: string,
@@ -285,8 +337,8 @@ async function verifyHostAsset(context: BuildContext): Promise<string> {
 }
 
 async function verifySigningIdentity(context: BuildContext): Promise<void> {
-  const identity = context.config.signing?.identity;
-  if (identity === undefined) {
+  const identity = context.signingIdentity;
+  if (identity === "-") {
     context.io.stderr(
       "fia: warning: signing.identity is not configured; using ad-hoc signing. " +
         "macOS privacy permissions may reset after rebuilding the application.\n",
@@ -714,9 +766,15 @@ async function assembleApp(context: BuildContext, backend: BackendArtifact): Pro
   await Bun.write(resolve(contents, "Info.plist"), infoPlist(context.config));
   let configuredBackend = backend;
   if (!backend.development) {
+    const entitlements = context.distribution
+      ? await writeBackendDistributionEntitlements(context)
+      : undefined;
     await checked(
       "Backend signing",
-      codeSigningCommand(context.signingIdentity, resolve(helpers, BACKEND_EXECUTABLE)),
+      codeSigningCommand(context.signingIdentity, resolve(helpers, BACKEND_EXECUTABLE), {
+        distribution: context.distribution,
+        ...(entitlements === undefined ? {} : { entitlements }),
+      }),
       context.config.projectRoot,
       context.debug,
       context.io,
@@ -732,12 +790,18 @@ async function assembleApp(context: BuildContext, backend: BackendArtifact): Pro
   );
   await checked(
     "Application signing",
-    codeSigningCommand(context.signingIdentity, context.appPath, { deep: true }),
+    codeSigningCommand(context.signingIdentity, context.appPath, {
+      distribution: context.distribution,
+    }),
     context.config.projectRoot,
     context.debug,
     context.io,
   );
   await verifyApp(context, !backend.development);
+  if (context.distribution) {
+    await verifyDistributionCodeSignature(context, "Backend", resolve(helpers, BACKEND_EXECUTABLE));
+    await verifyDistributionCodeSignature(context, "Application", context.appPath);
+  }
 }
 
 async function verifyApp(context: BuildContext, production: boolean): Promise<void> {
@@ -852,6 +916,146 @@ async function developmentBackend(context: BuildContext, runner: string): Promis
   };
 }
 
+export interface NotarizationResponse {
+  readonly id?: string;
+  readonly status?: string;
+  readonly message?: string;
+}
+
+export function parseNotarizationResponse(value: string): NotarizationResponse {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("expected a JSON object");
+    }
+    const object = parsed as Record<string, unknown>;
+    return {
+      ...(typeof object.id === "string" ? { id: object.id } : {}),
+      ...(typeof object.status === "string" ? { status: object.status } : {}),
+      ...(typeof object.message === "string" ? { message: object.message } : {}),
+    };
+  } catch (error) {
+    throw new Error(
+      `notarytool returned invalid JSON: ${error instanceof Error ? error.message : error}`,
+    );
+  }
+}
+
+async function verifyDistributionCodeSignature(
+  context: BuildContext,
+  label: string,
+  path: string,
+): Promise<void> {
+  const command = ["/usr/bin/codesign", "-d", "--verbose=4", path] as const;
+  const result = await run(command, context.config.projectRoot, context.debug, context.io);
+  const detail = `${result.stdout}\n${result.stderr}`;
+  if (result.exitCode !== 0) {
+    throw new Error(`${label} distribution signature inspection failed: ${detail.trim()}`);
+  }
+  if (!/\bflags=.*\bruntime\b/m.test(detail)) {
+    throw new Error(`${label} distribution signature does not enable the hardened runtime`);
+  }
+  if (!/^Timestamp=.+$/m.test(detail)) {
+    throw new Error(`${label} distribution signature does not include a secure timestamp`);
+  }
+}
+
+async function createDistributionArchive(
+  context: BuildContext,
+  archivePath: string,
+): Promise<void> {
+  await checked(
+    "Distribution archive creation",
+    distributionArchiveCommand(context.appPath, archivePath),
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  );
+}
+
+async function notarizeApplication(
+  context: BuildContext,
+  submissionArchive: string,
+): Promise<void> {
+  const keychainProfile = context.config.release?.notarization?.keychainProfile;
+  if (keychainProfile === undefined) {
+    throw new Error(
+      "release.notarization.keychainProfile is required for fia release; " +
+        "create one with xcrun notarytool store-credentials",
+    );
+  }
+  const command = notarizationSubmitCommand(submissionArchive, keychainProfile);
+  const result = await run(command, context.config.projectRoot, context.debug, context.io);
+  if (context.debug && result.stdout.length > 0) context.io.stderr(result.stdout);
+  let response: NotarizationResponse | undefined;
+  if (result.stdout.trim().length > 0) response = parseNotarizationResponse(result.stdout);
+  if (result.exitCode !== 0 || response?.status !== "Accepted") {
+    let detail =
+      typeof response?.message === "string"
+        ? response.message
+        : result.stderr.trim() || result.stdout.trim() || `exit code ${result.exitCode}`;
+    if (typeof response?.id === "string") {
+      const log = await run(
+        ["/usr/bin/xcrun", "notarytool", "log", response.id, "--keychain-profile", keychainProfile],
+        context.config.projectRoot,
+        context.debug,
+        context.io,
+      );
+      const logDetail = log.stdout.trim() || log.stderr.trim();
+      if (logDetail.length > 0) detail = `${detail}\n${logDetail}`;
+    }
+    throw new Error(`Notarization failed: ${detail}`);
+  }
+  await checked(
+    "Notarization ticket stapling",
+    ["/usr/bin/xcrun", "stapler", "staple", context.appPath],
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  );
+  await checked(
+    "Notarization ticket validation",
+    ["/usr/bin/xcrun", "stapler", "validate", context.appPath],
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  );
+  await verifyApp(context, true);
+  await checked(
+    "Gatekeeper assessment",
+    ["/usr/sbin/spctl", "--assess", "--type", "execute", "--verbose=4", context.appPath],
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  );
+}
+
+async function publishDistributionArchive(
+  context: BuildContext,
+  archivePath: string,
+): Promise<string> {
+  const distribution = resolve(context.config.projectRoot, "dist");
+  const name = distributionArchiveName(context.config);
+  const destination = resolve(distribution, name);
+  const stagedChecksum = `${archivePath}.sha256`;
+  await Bun.write(stagedChecksum, `${await sha256(archivePath)}  ${name}\n`);
+  await mkdir(distribution, { recursive: true });
+  await rename(archivePath, destination);
+  await rename(stagedChecksum, `${destination}.sha256`);
+  return destination;
+}
+
+async function buildDistribution(context: BuildContext): Promise<string> {
+  if (context.command === "release") {
+    const submissionArchive = resolve(context.stagingRoot, "notary-submission.zip");
+    await createDistributionArchive(context, submissionArchive);
+    await notarizeApplication(context, submissionArchive);
+  }
+  const archive = resolve(context.stagingRoot, distributionArchiveName(context.config));
+  await createDistributionArchive(context, archive);
+  return await publishDistributionArchive(context, archive);
+}
+
 async function replaceDistribution(context: BuildContext): Promise<string> {
   const distribution = resolve(context.config.projectRoot, "dist");
   const destination = resolve(distribution, `${context.config.app.name}.app`);
@@ -875,12 +1079,26 @@ async function replaceDistribution(context: BuildContext): Promise<string> {
 
 export async function executeApplicationCommand(options: ApplicationCommandOptions): Promise<void> {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
-    throw new Error("fia dev/build/run require macOS on Apple Silicon");
+    throw new Error("FIA application commands require macOS on Apple Silicon");
   }
   if (!isBunVersionSupported(Bun.version)) {
     throw new Error(`FIA requires Bun ${MINIMUM_BUN_VERSION} or newer; found ${Bun.version}`);
   }
   const config = await loadProjectConfig(options.cwd);
+  const distribution = options.command === "package" || options.command === "release";
+  const signingIdentity = distribution ? config.release?.identity : config.signing?.identity;
+  if (distribution && signingIdentity === undefined) {
+    throw new Error(
+      `release.identity is required for fia ${options.command}; ` +
+        "configure a Developer ID Application identity in fia.config.ts",
+    );
+  }
+  if (options.command === "release" && config.release?.notarization === undefined) {
+    throw new Error(
+      "release.notarization.keychainProfile is required for fia release; " +
+        "create one with xcrun notarytool store-credentials",
+    );
+  }
   const stagingRoot = resolve(
     config.projectRoot,
     `.fia/${options.command}/${Date.now()}-${crypto.randomUUID()}`,
@@ -896,7 +1114,8 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
     hostAssetDirectory: resolve(
       options.dependencies?.hostAssetDirectory ?? defaultHostAssetDirectory(),
     ),
-    signingIdentity: config.signing?.identity ?? "-",
+    signingIdentity: signingIdentity ?? "-",
+    distribution,
     debug: options.debug,
     io: options.io,
   };
@@ -915,6 +1134,13 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
     await assembleApp(context, await buildProductionBackend(context, runner));
     if (options.command === "run") {
       await launchHost(context);
+      return;
+    }
+    if (distribution) {
+      const destination = await buildDistribution(context);
+      options.io.stdout(
+        `${options.command === "release" ? "Released" : "Packaged"} ${destination}\n`,
+      );
       return;
     }
     const destination = await replaceDistribution(context);
