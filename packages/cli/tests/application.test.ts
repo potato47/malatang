@@ -2,7 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { executeApplicationCommand, generatedBackendRunner } from "../src/application.ts";
+import {
+  codeSigningCommand,
+  executeApplicationCommand,
+  generatedBackendRunner,
+  hasCodeSigningIdentity,
+  hasExpectedHostCapabilities,
+  parseCodeSigningIdentities,
+} from "../src/application.ts";
 import { createProject } from "../src/create.ts";
 
 const packageRoot = resolve(import.meta.dir, "..");
@@ -15,7 +22,7 @@ afterEach(async () => {
 });
 
 async function linkedProject(): Promise<string> {
-  const cwd = await mkdtemp(resolve(tmpdir(), "fia-application-v4-"));
+  const cwd = await mkdtemp(resolve(tmpdir(), "fia-application-v5-"));
   temporaryDirectories.push(cwd);
   const project = await createProject({
     name: "packaged-service",
@@ -158,6 +165,63 @@ async function packagedStylesheet(backend: string, projectRoot: string): Promise
 }
 
 describe("FIA resident Backend application packaging", () => {
+  test("matches configured code signing identities by exact allowed identity name", () => {
+    const output =
+      '  1) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Developer ID Application: Example (TEAMID)"\n' +
+      "     1 valid identities found\n";
+    expect(parseCodeSigningIdentities(output)).toEqual([
+      {
+        name: "Developer ID Application: Example (TEAMID)",
+      },
+    ]);
+    expect(hasCodeSigningIdentity(output, "Developer ID Application: Example (TEAMID)")).toBe(true);
+    expect(hasCodeSigningIdentity(output, "abcdef0123456789abcdef0123456789abcdef01")).toBe(false);
+    expect(hasCodeSigningIdentity(output, "Developer ID Application: Missing (TEAMID)")).toBe(
+      false,
+    );
+  });
+
+  test("uses the configured identity for helper and deep application signing", () => {
+    const identity = "Apple Development: Example (TEAMID)";
+    expect(codeSigningCommand(identity, "/tmp/FIABackend")).toEqual([
+      "/usr/bin/codesign",
+      "--force",
+      "--sign",
+      identity,
+      "/tmp/FIABackend",
+    ]);
+    expect(codeSigningCommand(identity, "/tmp/Example.app", { deep: true })).toEqual([
+      "/usr/bin/codesign",
+      "--force",
+      "--sign",
+      identity,
+      "--deep",
+      "/tmp/Example.app",
+    ]);
+  });
+
+  test("requires the exact ordered Host capability array", () => {
+    const expected = [
+      "application",
+      "statusItem",
+      "webviews",
+      "system",
+      "notifications",
+      "dialogs",
+      "clipboard",
+      "keychain",
+      "globalShortcuts",
+      "screens",
+      "screenCapture",
+    ];
+    expect(hasExpectedHostCapabilities(expected)).toBe(true);
+    expect(hasExpectedHostCapabilities(undefined)).toBe(false);
+    expect(hasExpectedHostCapabilities(expected.join(","))).toBe(false);
+    expect(hasExpectedHostCapabilities(["application,statusItem", ...expected.slice(2)])).toBe(
+      false,
+    );
+  });
+
   test("generates a protocol-clean dynamic Backend runner", () => {
     const runner = generatedBackendRunner("/project/src/backend.ts");
     expect(runner).toContain("runBackend");
@@ -184,7 +248,7 @@ describe("FIA resident Backend application packaging", () => {
       hostCapabilities: string[];
     };
     expect(config).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
       stdioProtocolVersion: 2,
       backend: { executable: "Helpers/FIABackend" },
       hostCapabilities: [
@@ -196,6 +260,9 @@ describe("FIA resident Backend application packaging", () => {
         "dialogs",
         "clipboard",
         "keychain",
+        "globalShortcuts",
+        "screens",
+        "screenCapture",
       ],
     });
     const hasher = new Bun.CryptoHasher("sha256");
@@ -208,5 +275,6 @@ describe("FIA resident Backend application packaging", () => {
     expect(css).toMatch(/\.flex\{/);
     expect(css).toMatch(/\.min-h-screen\{/);
     expect(messages.stdout.join("")).toContain("Built");
+    expect(messages.stderr.join("")).toContain("using ad-hoc signing");
   }, 60_000);
 });

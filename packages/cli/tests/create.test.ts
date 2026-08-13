@@ -11,7 +11,7 @@ afterEach(async () => {
   );
 });
 async function workspace(): Promise<string> {
-  const root = await mkdtemp(resolve(tmpdir(), "fia-create-v4-"));
+  const root = await mkdtemp(resolve(tmpdir(), "fia-create-v5-"));
   temporaryDirectories.push(root);
   return root;
 }
@@ -38,7 +38,7 @@ describe("FIA project creation", () => {
     ])
       expect(await Bun.file(resolve(root, file)).exists()).toBe(true);
     const config = await readFile(resolve(root, "fia.config.ts"), "utf8");
-    expect(config).toContain("configVersion: 4");
+    expect(config).toContain("configVersion: 5");
     expect(config).toContain('entry: "src/backend.ts"');
     expect(config).not.toContain("mcp:");
     const backend = await readFile(resolve(root, "src/backend.ts"), "utf8");

@@ -12,8 +12,15 @@
 
 ## 配置
 
-`fia.config.ts` 只允许 `configVersion`、`app`、`backend`、`statusBar`。Backend `entry` 必须是
-项目内可读文件；`watch` 默认是 entry 所在目录。所有未知字段和旧版本立即失败。
+`fia.config.ts` 只允许 `configVersion`、`app`、`backend`、`statusBar`、`signing`。Backend `entry`
+必须是项目内可读文件；`watch` 默认是 entry 所在目录。所有未知字段和旧版本立即失败。
+
+`signing.identity` 是可选的精确 codesigning identity 名称，只接受有效的 Apple Development 或
+Developer ID Application identity，并同时用于 Backend helper 与顶层 App。省略时继续 ad-hoc
+签名；CLI 会提示此模式下屏幕录制等 TCC 授权可能在重建后需要重新授予。该字段不启用 hardened
+runtime、公证或发布流程。
+
+背景参考：[Apple：为 Mac 创建分发签名代码](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac/)。
 
 项目的 `src/backend.ts` 默认导出 `defineBackend<SocketData>()({...})`；不使用 WebSocket data 时写
 `defineBackend()({...})`。React 只是模板选择，运行时不引用 React，

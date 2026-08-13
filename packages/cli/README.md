@@ -5,10 +5,21 @@ Backend 通过 stdio 调用原生能力，并向浏览器/WebView 提供普通 H
 
 ## 公共导出
 
-- `@semicoder/fia/config`：`configVersion: 4` 配置类型与 `defineConfig`。
+- `@semicoder/fia/config`：`configVersion: 5` 配置类型与 `defineConfig`。
 - `@semicoder/fia/backend`：Bun-only `defineBackend`、HTTP/WS runtime 和类型化 Host API。
 
 不存在浏览器 FIA runtime、Native bridge 或 MCP 导出。
+
+`fia.config.ts` 可用证书的完整名称配置稳定签名；仅接受 `Apple Development:` 或
+`Developer ID Application:` identity，且必须精确匹配
+`security find-identity -v -p codesigning` 的输出。省略时 FIA 会提示并使用 ad-hoc 签名：
+
+```ts
+export default defineConfig({
+  // ...
+  signing: { identity: "Apple Development: Example (TEAMID)" },
+});
+```
 
 ```ts
 import { defineBackend } from "@semicoder/fia/backend";
@@ -38,7 +49,7 @@ route 和 fallback `fetch` 的第三参数提供当前 `host` 与 Host 权威的
 `app.dataDirectory` 已创建且不依赖 Backend 的工作目录。
 需要跨模块保存 server 类型时可使用带默认参数的 `FIAServer<WebSocketData = unknown>`，无需直接
 书写缺少默认泛型的 `Bun.Server`。
-通知、文件面板、剪贴板和 Keychain 也只存在于 Backend：
+全局快捷键、屏幕截图、通知、文件面板、剪贴板和 Keychain 也只存在于 Backend：
 
 ```ts
 const status = await host.notifications.requestAuthorization();
@@ -48,6 +59,21 @@ if (status === "authorized") {
 const files = await host.dialogs.openFile({ allowedExtensions: ["json"], multiple: true });
 await host.clipboard.writeText(files?.join("\n") ?? "");
 await host.keychain.set("api-token", "secret");
+```
+
+截图结果以 Application Support 中的 PNG 路径返回，不通过 stdio 传输图片数据：
+
+```ts
+async start({ host, app }) {
+  const screen = (await host.screens.list()).find((item) => item.containsPointer);
+  if (screen !== undefined) {
+    const capture = await host.screenCapture.capture({
+      screenId: screen.id,
+      destination: `${app.dataDirectory}/capture.png`,
+    });
+    await host.clipboard.writeImage(capture.path);
+  }
+}
 ```
 
 搜索框、截图遮罩等浮层可以创建完全无边框的 WebView：
@@ -77,9 +103,10 @@ await host.webviews.open({
 所有 Promise 方法都接受可选的 `{ signal: AbortSignal }` 尾参数。文件面板和通知授权没有固定
 超时；AbortSignal 会取消等待，文件面板也会被关闭。
 
-通过 `host.statusItem.onClick`、`host.statusItem.onAction`、`host.webviews.onEvent` 和
-`host.notifications.onClick` 注册的监听器属于当前 `start` 生命周期，FIA 会在热重载或 Backend
-停止时自动注销。`stop` 只需清理应用自行创建的定时器、连接等资源。
+通过 `host.application.onReopen`、`host.statusItem.onClick`、`host.statusItem.onAction`、
+`host.globalShortcuts.onPressed`、`host.webviews.onEvent` 和 `host.notifications.onClick` 注册的
+监听器属于当前 `start` 生命周期，FIA 会在热重载或 Backend 停止时自动注销；全局快捷键集合
+也会随 definition 生命周期清空。`stop` 只需清理应用自行创建的定时器、连接等资源。
 如果资源保存在模块级变量中，关闭后也要把该引用清空，避免热重载取得已关闭的 handle。
 
 开发 E2E 可组合使用 `fia dev --print-session-url --emit-action <menu-id>`。前者输出一个 30 秒、

@@ -28,7 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 identifier: configuration.app.identifier,
                 diagnostic: { [weak self] message in self?.diagnostic(message) }
             )
-            let hostController = HostController(configuration: configuration, settingsStore: settingsStore)
+            let backendDirectory = try BackendSupervisor.workingDirectory(configuration: configuration)
+            let hostController = HostController(
+                configuration: configuration,
+                backendDirectory: backendDirectory,
+                settingsStore: settingsStore
+            )
             self.hostController = hostController
             let supervisor = try BackendSupervisor(
                 configuration: configuration,
@@ -73,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminationSignalSources.forEach { $0.cancel() }
         terminationSignalSources.removeAll()
         hostController?.flushSettings()
+        hostController?.clearBackendResources()
     }
 
     private func backendStateChanged(_ state: BackendSupervisor.State, hostController: HostController?) {
@@ -85,8 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case let .failed(reason):
             hostController?.showFailure(reason)
         case .stopping:
-            break
+            hostController?.clearBackendResources()
         case .stopped:
+            hostController?.clearBackendResources()
             guard terminationPending else { return }
             terminationPending = false
             NSApp.terminate(nil)

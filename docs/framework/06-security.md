@@ -27,5 +27,11 @@
 - 文件面板只返回用户选择的绝对路径；FIA 不扫描目录，也不持久化访问授权。
 - Keychain service 固定为 bundle identifier，使用不可同步、仅本机的
   `afterFirstUnlockThisDeviceOnly` 可访问性；Backend 不能指定其他 service 或批量列举条目。
-- 剪贴板仅暴露文本，所有请求和结果仍受 1 MiB stdio 帧限制。
+- PNG 剪贴板与截图 API 只通过受校验的本地文件路径交换数据，图片字节不进入 stdio；文本请求
+  和所有 JSON 结果仍受 1 MiB stdio 帧限制。
 - 通知权限只能由应用显式申请；`send` 不会隐式触发系统授权提示。
+- 屏幕捕获权限只能由应用显式申请；捕获目标限定为 Backend 的 Application Support 目录，
+  路径必须是尚不存在的 PNG，Host 默认排除自身窗口。
+- 打开、Finder 定位和废纸篓操作只接受存在的绝对路径；FIA 不提供通用文件读写 API，目录遍历
+  与业务文件操作仍由 Backend 负责。
+- 全局快捷键使用系统热键注册，不安装键盘 event tap，也不请求辅助功能或输入监控权限。

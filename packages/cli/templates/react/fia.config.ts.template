@@ -1,7 +1,7 @@
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 4,
+  configVersion: 5,
   app: {
     name: __FIA_APP_NAME_JSON__,
     identifier: __FIA_APP_IDENTIFIER_JSON__,
@@ -16,4 +16,7 @@ export default defineConfig({
     symbol: "circle.grid.2x2.fill",
     tooltip: __FIA_APP_NAME_JSON__,
   },
+  // For stable macOS privacy grants, use the exact name reported by
+  // `security find-identity -v -p codesigning`.
+  // signing: { identity: "Apple Development: Your Name (TEAMID)" },
 });

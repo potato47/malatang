@@ -21,13 +21,13 @@ bun install
 bun run dev
 ```
 
-配置使用严格的 `configVersion: 4`：
+配置使用严格的 `configVersion: 5`：
 
 ```ts
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 4,
+  configVersion: 5,
   app: {
     name: "Hello",
     identifier: "com.example.hello",
@@ -36,6 +36,8 @@ export default defineConfig({
   },
   backend: { entry: "src/backend.ts", watch: ["src"] },
   statusBar: { symbol: "bolt.fill", tooltip: "Hello" },
+  // 可选：为需要稳定隐私授权的开发构建指定本机签名 identity。
+  // signing: { identity: "Apple Development: Example (TEAMID)" },
 });
 ```
 
@@ -70,9 +72,9 @@ export default defineBackend()({
 受保护 route 与 fallback `fetch` 的第三参数提供 `host` 和只读 `app` 信息，其中
 `app.dataDirectory` 是 Host 按应用 identifier 创建的绝对持久化目录。
 
-Host API 还提供显式授权的系统通知、打开/保存文件面板、文本剪贴板和按 bundle identifier
-隔离的 Keychain。所有 Promise 方法都接受可选的 `{ signal }` 尾参数；取消文件面板会同时关闭
-原生面板。
+Host API 还提供全局快捷键、屏幕枚举与截图、系统通知、文件与目录操作、打开/保存文件面板、
+文本/PNG 剪贴板和按 bundle identifier 隔离的 Keychain。所有 Promise 方法都接受可选的
+`{ signal }` 尾参数；取消文件面板会同时关闭原生面板。
 
 WebView 支持原生窗口和完全无边框窗口。无边框模式可配置透明背景、阴影、用户缩放、顶部
 原生拖动带及主屏左上坐标，适合搜索框、HUD 和截图遮罩等浮层。
@@ -92,7 +94,8 @@ bun run check
 - `dev`：临时状态栏 App + Bun full-stack HMR。
 - `dev --print-session-url --emit-action <id>`：输出一次性开发会话并模拟一次状态栏菜单 action。
 - `run`：构建临时生产 App 并启动。
-- `build`：生成并 ad-hoc 签名 `dist/<App>.app`。
+- `build`：生成 `dist/<App>.app`；配置 `signing.identity` 时使用该 identity 签名，缺省使用
+  ad-hoc 签名。
 
 生产布局：
 
@@ -103,3 +106,6 @@ Contents/Resources/fia-config.json
 ```
 
 详细边界见[框架文档](./docs/framework/README.md)。
+
+仓库内的 [FIA Toolbox](./examples/fia-showcase/README.md) 是综合验证应用，使用一个常驻 Backend
+和多个 WebView 实现截图、Spotlight 式文件搜索、文件管理器与原生能力诊断。

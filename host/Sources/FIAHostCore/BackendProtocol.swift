@@ -48,6 +48,8 @@ public enum HostRequestErrorCode: String, Sendable {
     case protocolFailure = "PROTOCOL_FAILURE"
     case timeout = "TIMEOUT"
     case cancelled = "CANCELLED"
+    case conflict = "CONFLICT"
+    case permissionDenied = "PERMISSION_DENIED"
 }
 
 public struct HostRequestExecutionError: Error, LocalizedError, Sendable {

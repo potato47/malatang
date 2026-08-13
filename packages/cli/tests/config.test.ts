@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 async function project(): Promise<string> {
-  const root = await mkdtemp(resolve(tmpdir(), "fia-config-v4-"));
+  const root = await mkdtemp(resolve(tmpdir(), "fia-config-v5-"));
   temporaryDirectories.push(root);
   await mkdir(resolve(root, "src"));
   await writeFile(resolve(root, "src/backend.ts"), "export default {};\n");
@@ -23,17 +23,17 @@ async function project(): Promise<string> {
 
 function base() {
   return {
-    configVersion: 4 as const,
+    configVersion: 5 as const,
     app: { name: "Desktop", identifier: "com.example.desktop" },
     backend: { entry: "src/backend.ts" },
   };
 }
 
-describe("FIA configVersion 4", () => {
+describe("FIA configVersion 5", () => {
   test("exports a strict defineConfig helper", () => {
     const value = defineConfig(base());
-    expect(FIA_CONFIG_VERSION).toBe(4);
-    expect(value.configVersion).toBe(4);
+    expect(FIA_CONFIG_VERSION).toBe(5);
+    expect(value.configVersion).toBe(5);
   });
 
   test("resolves required backend and defaults", async () => {
@@ -44,6 +44,30 @@ describe("FIA configVersion 4", () => {
     expect(config.app.version).toBe("0.1.0");
     expect(config.statusBar.symbol).toBe("circle.grid.2x2.fill");
     expect(config.statusBar.tooltip).toBe("Desktop");
+    expect(config.signing).toBeUndefined();
+  });
+
+  test("resolves a strict code signing identity", async () => {
+    const root = await project();
+    const config = await resolveProjectConfig(
+      { ...base(), signing: { identity: "Developer ID Application: Example (TEAMID)" } },
+      root,
+    );
+    expect(config.signing).toEqual({
+      identity: "Developer ID Application: Example (TEAMID)",
+    });
+    await expect(
+      resolveProjectConfig({ ...base(), signing: { identity: "  Developer ID  " } }, root),
+    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "signing.identity" });
+    await expect(
+      resolveProjectConfig({ ...base(), signing: { identity: "Mac Developer: Example" } }, root),
+    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "signing.identity" });
+    await expect(
+      resolveProjectConfig(
+        { ...base(), signing: { identity: "Developer ID", team: "TEAMID" } },
+        root,
+      ),
+    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "signing.team" });
   });
 
   test("resolves explicit watch, icon and status item", async () => {
@@ -77,7 +101,7 @@ describe("FIA configVersion 4", () => {
         },
       );
     }
-    await expect(resolveProjectConfig({ ...base(), configVersion: 3 }, root)).rejects.toMatchObject(
+    await expect(resolveProjectConfig({ ...base(), configVersion: 4 }, root)).rejects.toMatchObject(
       {
         code: "CONFIG_UNSUPPORTED_VERSION",
       },

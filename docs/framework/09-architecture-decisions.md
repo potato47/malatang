@@ -32,5 +32,11 @@ Backend 决定打开哪个本机或外部 URL，Host 只保留 Quit/Retry 安全
 
 ## ADR-007：不兼容旧架构
 
-config 4、Host schema 7 和 stdio 2 精确匹配。静态 UI、MCP bridge、Native MCP、外部 Server、
+config 5、Host schema 8 和 stdio 2 精确匹配。静态 UI、MCP bridge、Native MCP、外部 Server、
 UI-only 配置及其导出全部删除，不提供 shim 或迁移模式。
+
+## ADR-008：综合示例只消费正式能力
+
+仓库内 FIA Toolbox 使用一个 Backend 和多个 WebView 验证框架。通用的屏幕截图、全局快捷键、
+屏幕布局、Finder 操作与图片剪贴板先成为严格版本化 Host API；`mdfind`/`mdls`、业务数据库和
+路径授权仍留在示例 Backend，不向浏览器暴露原生桥。

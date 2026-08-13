@@ -18,6 +18,8 @@ const HOST_ERROR_CODES = new Set<FIAHostErrorCode>([
   "PROTOCOL_FAILURE",
   "TIMEOUT",
   "CANCELLED",
+  "CONFLICT",
+  "PERMISSION_DENIED",
 ]);
 
 export type FIAHostErrorCode =
@@ -28,7 +30,9 @@ export type FIAHostErrorCode =
   | "NATIVE_FAILURE"
   | "PROTOCOL_FAILURE"
   | "TIMEOUT"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "CONFLICT"
+  | "PERMISSION_DENIED";
 
 export class FIAHostError extends Error {
   readonly code: FIAHostErrorCode;
@@ -60,6 +64,51 @@ export interface FIAWebViewFrame {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+}
+
+export interface FIAScreen {
+  readonly id: string;
+  readonly name: string;
+  readonly frame: FIAWebViewFrame;
+  readonly visibleFrame: FIAWebViewFrame;
+  readonly scaleFactor: number;
+  readonly main: boolean;
+  readonly containsPointer: boolean;
+}
+
+export type FIAGlobalShortcutModifier = "command" | "option" | "control" | "shift";
+
+export interface FIAGlobalShortcut {
+  id: string;
+  key: string;
+  modifiers: readonly FIAGlobalShortcutModifier[];
+}
+
+export interface FIAGlobalShortcutPressedEvent {
+  readonly id: string;
+}
+
+export interface FIAScreenCaptureRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type FIAScreenCaptureAuthorizationStatus = "authorized" | "notAuthorized";
+export type FIAScreenCaptureAuthorizationResult = "authorized" | "restartRequired" | "denied";
+
+export interface FIAScreenCaptureOptions {
+  screenId: string;
+  region?: FIAScreenCaptureRegion;
+  destination: string;
+  showsCursor?: boolean;
+}
+
+export interface FIAScreenCaptureReceipt {
+  readonly path: string;
+  readonly pixelWidth: number;
+  readonly pixelHeight: number;
 }
 
 export interface FIAWebViewState {
@@ -776,6 +825,7 @@ export interface FIAHost {
       visible: boolean,
       callOptions?: FIAHostCallOptions,
     ): Promise<FIAApplicationState>;
+    onReopen(listener: () => void): () => void;
   };
   readonly statusItem: {
     setVisible(visible: boolean, callOptions?: FIAHostCallOptions): Promise<FIAApplicationState>;
@@ -810,6 +860,28 @@ export interface FIAHost {
   };
   readonly system: {
     openURL(url: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    openPath(path: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    revealPath(path: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    trashPath(path: string, callOptions?: FIAHostCallOptions): Promise<string>;
+  };
+  readonly globalShortcuts: {
+    set(shortcuts: readonly FIAGlobalShortcut[], callOptions?: FIAHostCallOptions): Promise<void>;
+    onPressed(listener: (event: FIAGlobalShortcutPressedEvent) => void): () => void;
+  };
+  readonly screens: {
+    list(callOptions?: FIAHostCallOptions): Promise<readonly FIAScreen[]>;
+  };
+  readonly screenCapture: {
+    getAuthorizationStatus(
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIAScreenCaptureAuthorizationStatus>;
+    requestAuthorization(
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIAScreenCaptureAuthorizationResult>;
+    capture(
+      options: FIAScreenCaptureOptions,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIAScreenCaptureReceipt>;
   };
   readonly notifications: {
     getAuthorizationStatus(
@@ -843,6 +915,7 @@ export interface FIAHost {
   readonly clipboard: {
     readText(callOptions?: FIAHostCallOptions): Promise<string | null>;
     writeText(text: string, callOptions?: FIAHostCallOptions): Promise<void>;
+    writeImage(path: string, callOptions?: FIAHostCallOptions): Promise<void>;
     clear(callOptions?: FIAHostCallOptions): Promise<void>;
   };
   readonly keychain: {
@@ -895,6 +968,7 @@ function createHost(peer: StdioPeer, session: SessionGuard, events: HostEventSco
       quit: (callOptions) => peer.call("application.quit", {}, callOptions),
       setDockVisible: (visible, callOptions) =>
         peer.call("application.setDockVisible", { visible }, callOptions),
+      onReopen: (listener) => eventListener(peer, "application.reopen", () => listener(), events),
     },
     statusItem: {
       setVisible: (visible, callOptions) =>
@@ -933,6 +1007,24 @@ function createHost(peer: StdioPeer, session: SessionGuard, events: HostEventSco
     system: {
       openURL: (url, callOptions) =>
         peer.call("system.openURL", { url: session.authorizeURL(url) }, callOptions),
+      openPath: (path, callOptions) => peer.call("system.openPath", { path }, callOptions),
+      revealPath: (path, callOptions) => peer.call("system.revealPath", { path }, callOptions),
+      trashPath: (path, callOptions) => peer.call("system.trashPath", { path }, callOptions),
+    },
+    globalShortcuts: {
+      set: (shortcuts, callOptions) => peer.call("globalShortcuts.set", { shortcuts }, callOptions),
+      onPressed: (listener) => eventListener(peer, "globalShortcuts.pressed", listener, events),
+    },
+    screens: {
+      list: (callOptions) => peer.call("screens.list", {}, callOptions),
+    },
+    screenCapture: {
+      getAuthorizationStatus: (callOptions) =>
+        peer.call("screenCapture.getAuthorizationStatus", {}, callOptions),
+      requestAuthorization: (callOptions) =>
+        peer.call("screenCapture.requestAuthorization", {}, { ...callOptions, timeout: false }),
+      capture: (options, callOptions) =>
+        peer.call("screenCapture.capture", { ...options }, callOptions),
     },
     notifications: {
       getAuthorizationStatus: (callOptions) =>
@@ -955,6 +1047,7 @@ function createHost(peer: StdioPeer, session: SessionGuard, events: HostEventSco
     clipboard: {
       readText: (callOptions) => peer.call("clipboard.readText", {}, callOptions),
       writeText: (text, callOptions) => peer.call("clipboard.writeText", { text }, callOptions),
+      writeImage: (path, callOptions) => peer.call("clipboard.writeImage", { path }, callOptions),
       clear: (callOptions) => peer.call("clipboard.clear", {}, callOptions),
     },
     keychain: {
@@ -1018,17 +1111,27 @@ function runtimeGlobal(): typeof globalThis & { [FIA_RUNTIME]?: SharedBackendRun
   return globalThis as typeof globalThis & { [FIA_RUNTIME]?: SharedBackendRuntime };
 }
 
-async function deactivateDefinition(runtime: SharedBackendRuntime): Promise<void> {
+async function deactivateDefinition(
+  runtime: SharedBackendRuntime,
+  options: { clearGlobalShortcuts: boolean },
+): Promise<void> {
   const definition = runtime.definition;
   const context = runtime.context;
   const hostEvents = runtime.hostEvents;
+  const active = definition !== undefined && context !== undefined;
   runtime.definition = undefined;
   runtime.context = undefined;
   runtime.hostEvents = undefined;
+  hostEvents?.dispose();
+  if (active && options.clearGlobalShortcuts) {
+    await runtime.peer.call("globalShortcuts.set", { shortcuts: [] });
+  }
   try {
-    if (definition !== undefined && context !== undefined) await definition.stop?.(context);
+    if (active) await definition.stop?.(context);
   } finally {
-    hostEvents?.dispose();
+    if (active && options.clearGlobalShortcuts) {
+      await runtime.peer.call("globalShortcuts.set", { shortcuts: [] });
+    }
   }
 }
 
@@ -1062,7 +1165,7 @@ async function sharedRuntime(): Promise<SharedBackendRuntime> {
     current.stopping = true;
     void (async () => {
       try {
-        await deactivateDefinition(current);
+        await deactivateDefinition(current, { clearGlobalShortcuts: false });
       } catch (error) {
         process.stderr.write(
           `FIA Backend stop hook failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
@@ -1080,7 +1183,7 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   if (!isDefinedBackend(definition))
     throw new TypeError("Backend entry must default-export defineBackend()({...})");
   const runtime = await sharedRuntime();
-  await deactivateDefinition(runtime);
+  await deactivateDefinition(runtime, { clearGlobalShortcuts: true });
   const { initialize, peer, session } = runtime;
   const hostEvents = new HostEventScope();
   const host = createHost(peer, session, hostEvents);
@@ -1144,7 +1247,19 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   runtime.definition = definition;
   runtime.context = context;
   runtime.hostEvents = hostEvents;
-  await definition.start?.(context);
+  try {
+    await definition.start?.(context);
+  } catch (error) {
+    try {
+      await deactivateDefinition(runtime, { clearGlobalShortcuts: true });
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "Backend start failed and its Host resources could not be fully released",
+      );
+    }
+    throw error;
+  }
   if (!runtime.ready) {
     if (initialize.development && process.env.FIA_INTERNAL_PRINT_SESSION_URL === "1") {
       process.stderr.write(`FIA_DEV_SESSION_URL=${session.authorizeURL(context.url("/").href)}\n`);

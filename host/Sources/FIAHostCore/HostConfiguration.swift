@@ -1,6 +1,6 @@
 import Foundation
 
-public let FIAHostSchemaVersion = 7
+public let FIAHostSchemaVersion = 8
 public let FIAStdioProtocolVersion = 2
 public let FIAMaximumStdioFrameBytes = 1024 * 1024
 public let FIAMaximumPendingRequests = 128
@@ -137,6 +137,7 @@ public enum HostCapabilityManifest {
     public static let values = [
         "application", "statusItem", "webviews", "system",
         "notifications", "dialogs", "clipboard", "keychain",
+        "globalShortcuts", "screens", "screenCapture",
     ]
 }
 

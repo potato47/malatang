@@ -80,7 +80,7 @@ describe("resident Bun backend runtime", () => {
     input.end();
   });
 
-  test("scopes Host event listeners to the active Backend definition", async () => {
+  test("scopes events and unconditionally clears shortcuts when a definition is replaced", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "fia-backend-events-"));
     temporaryDirectories.push(root);
     const backendSource = pathToFileURL(resolve(import.meta.dir, "../src/backend.ts")).href;
@@ -91,8 +91,14 @@ describe("resident Bun backend runtime", () => {
         import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
         const backend = (label) => defineBackend()({
           http: {},
-          start({ host }) {
+          async start({ host }) {
             host.statusItem.onClick(() => process.stderr.write(label + "\\n"));
+            host.application.onReopen(() => process.stderr.write("reopen-" + label + "\\n"));
+            if (label === "stale") {
+              await host.globalShortcuts.set([
+                { id: "search", key: "space", modifiers: ["option"] },
+              ]);
+            }
           },
         });
         await runBackend(backend("stale"));
@@ -122,13 +128,58 @@ describe("resident Bun backend runtime", () => {
     );
     input.flush();
     const reader = child.stdout.getReader();
-    const ready = await Promise.race([reader.read(), Bun.sleep(5_000).then(() => undefined)]);
-    if (ready === undefined || ready.done) {
-      if (child.exitCode === null) child.kill("SIGKILL");
-      throw new Error("Backend did not become ready");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let sawReady = false;
+    let sawRegistration = false;
+    let lifecycleClears = 0;
+    const deadline = Date.now() + 3_000;
+    while ((!sawReady || lifecycleClears < 2) && Date.now() < deadline) {
+      const item = await Promise.race([
+        reader.read(),
+        Bun.sleep(Math.max(1, deadline - Date.now())).then(() => undefined),
+      ]);
+      if (item === undefined || item.done) break;
+      buffer += decoder.decode(item.value, { stream: true });
+      while (buffer.includes("\n")) {
+        const newline = buffer.indexOf("\n");
+        const frame = JSON.parse(buffer.slice(0, newline)) as {
+          type: string;
+          id?: number;
+          method?: string;
+          params?: { shortcuts?: unknown[] };
+        };
+        buffer = buffer.slice(newline + 1);
+        if (frame.type === "ready") {
+          sawReady = true;
+        } else if (frame.type === "request" && frame.method === "globalShortcuts.set") {
+          if (frame.params?.shortcuts?.length === 1) {
+            sawRegistration = true;
+            input.write(
+              `${JSON.stringify({ v: 2, type: "response", id: frame.id, result: null })}\n`,
+            );
+          } else {
+            expect(frame.params?.shortcuts).toEqual([]);
+            lifecycleClears += 1;
+            input.write(
+              `${JSON.stringify({ v: 2, type: "response", id: frame.id, result: null })}\n`,
+            );
+          }
+          input.flush();
+        }
+      }
     }
-    expect(new TextDecoder().decode(ready.value)).toContain('"type":"ready"');
-    await Bun.sleep(150);
+    if (!sawReady || !sawRegistration || lifecycleClears < 2) {
+      if (child.exitCode === null) child.kill("SIGKILL");
+      throw new Error(
+        `Backend lifecycle frames were incomplete: ${JSON.stringify({
+          sawReady,
+          sawRegistration,
+          lifecycleClears,
+        })}\n${await stderrText}`,
+      );
+    }
+    await Bun.sleep(50);
     input.write(
       `${JSON.stringify({
         v: 2,
@@ -137,13 +188,261 @@ describe("resident Bun backend runtime", () => {
         payload: { button: "left" },
       })}\n`,
     );
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "event",
+        event: "application.reopen",
+        payload: {},
+      })}\n`,
+    );
     input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
     input.flush();
     const exitCode = await Promise.race([child.exited, Bun.sleep(5_000).then(() => undefined)]);
     if (exitCode === undefined) child.kill("SIGKILL");
     const diagnostic = await stderrText;
     if (exitCode !== 0) throw new Error(`Backend exited with status ${exitCode}: ${diagnostic}`);
-    expect(diagnostic).toBe("active\n");
+    expect(diagnostic).toBe("active\nreopen-active\n");
+    reader.releaseLock();
+    input.end();
+  });
+
+  test("clears shortcuts and listeners before awaiting a stalled stop hook", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "fia-backend-stalled-stop-"));
+    temporaryDirectories.push(root);
+    const backendSource = pathToFileURL(resolve(import.meta.dir, "../src/backend.ts")).href;
+    const runner = resolve(root, "runner.ts");
+    await Bun.write(
+      runner,
+      `
+        import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
+        const stale = defineBackend()({
+          http: {},
+          async start({ host }) {
+            host.application.onReopen(() => process.stderr.write("stale-reopen\\n"));
+            await host.globalShortcuts.set([
+              { id: "search", key: "space", modifiers: ["option"] },
+            ]);
+          },
+          stop() {
+            process.stderr.write("stop-entered\\n");
+            return new Promise(() => {});
+          },
+        });
+        const active = defineBackend()({ http: {} });
+        await runBackend(stale);
+        void runBackend(active);
+      `,
+    );
+    const child = Bun.spawn([process.execPath, runner], {
+      cwd: root,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const input = child.stdin;
+    if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
+    const stderrText = new Response(child.stderr).text();
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "initialize",
+        sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
+        preferredPort: 0,
+        development: false,
+        applicationSupport: root,
+        app: { name: "Stalled Stop", identifier: "com.example.stalled-stop" },
+      })}\n`,
+    );
+    input.flush();
+
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let sawRegistration = false;
+    let sawReady = false;
+    let sawPreStopClear = false;
+    const deadline = Date.now() + 3_000;
+    while ((!sawReady || !sawPreStopClear) && Date.now() < deadline) {
+      const item = await Promise.race([
+        reader.read(),
+        Bun.sleep(Math.max(1, deadline - Date.now())).then(() => undefined),
+      ]);
+      if (item === undefined || item.done) break;
+      buffer += decoder.decode(item.value, { stream: true });
+      while (buffer.includes("\n")) {
+        const newline = buffer.indexOf("\n");
+        const frame = JSON.parse(buffer.slice(0, newline)) as {
+          type: string;
+          id?: number;
+          method?: string;
+          params?: { shortcuts?: unknown[] };
+        };
+        buffer = buffer.slice(newline + 1);
+        if (frame.type === "ready") {
+          sawReady = true;
+        } else if (frame.type === "request" && frame.method === "globalShortcuts.set") {
+          if (frame.params?.shortcuts?.length === 1) {
+            sawRegistration = true;
+          } else {
+            expect(frame.params?.shortcuts).toEqual([]);
+            sawPreStopClear = true;
+            input.write(
+              `${JSON.stringify({
+                v: 2,
+                type: "event",
+                event: "application.reopen",
+                payload: {},
+              })}\n`,
+            );
+          }
+          input.write(
+            `${JSON.stringify({ v: 2, type: "response", id: frame.id, result: null })}\n`,
+          );
+          input.flush();
+        }
+      }
+    }
+    if (!sawRegistration || !sawReady || !sawPreStopClear) {
+      if (child.exitCode === null) child.kill("SIGKILL");
+      throw new Error(
+        `Backend did not clear before its stop hook: ${JSON.stringify({
+          sawRegistration,
+          sawReady,
+          sawPreStopClear,
+        })}\n${await stderrText}`,
+      );
+    }
+    await Bun.sleep(50);
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
+    input.flush();
+    const exitCode = await Promise.race([child.exited, Bun.sleep(5_000).then(() => undefined)]);
+    if (exitCode === undefined) child.kill("SIGKILL");
+    const diagnostic = await stderrText;
+    if (exitCode !== 0) throw new Error(`Backend exited with status ${exitCode}: ${diagnostic}`);
+    expect(diagnostic).toBe("stop-entered\n");
+    reader.releaseLock();
+    input.end();
+  });
+
+  test("rolls back shortcuts and listeners when Backend start fails", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "fia-backend-start-rollback-"));
+    temporaryDirectories.push(root);
+    const backendSource = pathToFileURL(resolve(import.meta.dir, "../src/backend.ts")).href;
+    const runner = resolve(root, "runner.ts");
+    await Bun.write(
+      runner,
+      `
+        import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
+        const failing = defineBackend()({
+          http: {},
+          async start({ host }) {
+            host.application.onReopen(() => process.stderr.write("stale-reopen\\n"));
+            await host.globalShortcuts.set([
+              { id: "capture", key: "4", modifiers: ["control", "shift"] },
+            ]);
+            throw new Error("start exploded");
+          },
+          stop() {
+            process.stderr.write("rollback-stop\\n");
+          },
+        });
+        try {
+          await runBackend(failing);
+        } catch (error) {
+          process.stderr.write("caught:" + (error instanceof Error ? error.message : String(error)) + "\\n");
+        }
+        await runBackend(defineBackend()({
+          http: {},
+          start({ host }) {
+            host.application.onReopen(() => process.stderr.write("active-reopen\\n"));
+          },
+        }));
+      `,
+    );
+    const child = Bun.spawn([process.execPath, runner], {
+      cwd: root,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const input = child.stdin;
+    if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
+    const stderrText = new Response(child.stderr).text();
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "initialize",
+        sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
+        preferredPort: 0,
+        development: false,
+        applicationSupport: root,
+        app: { name: "Start Rollback", identifier: "com.example.start-rollback" },
+      })}\n`,
+    );
+    input.flush();
+
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let sawRegistration = false;
+    let clearCount = 0;
+    let sawReady = false;
+    const deadline = Date.now() + 3_000;
+    while ((!sawReady || clearCount < 2) && Date.now() < deadline) {
+      const item = await Promise.race([
+        reader.read(),
+        Bun.sleep(Math.max(1, deadline - Date.now())).then(() => undefined),
+      ]);
+      if (item === undefined || item.done) break;
+      buffer += decoder.decode(item.value, { stream: true });
+      while (buffer.includes("\n")) {
+        const newline = buffer.indexOf("\n");
+        const frame = JSON.parse(buffer.slice(0, newline)) as {
+          type: string;
+          id?: number;
+          method?: string;
+          params?: { shortcuts?: unknown[] };
+        };
+        buffer = buffer.slice(newline + 1);
+        if (frame.type === "ready") {
+          sawReady = true;
+        } else if (frame.type === "request" && frame.method === "globalShortcuts.set") {
+          if (frame.params?.shortcuts?.length === 1) {
+            sawRegistration = true;
+          } else {
+            expect(frame.params?.shortcuts).toEqual([]);
+            clearCount += 1;
+          }
+          input.write(
+            `${JSON.stringify({ v: 2, type: "response", id: frame.id, result: null })}\n`,
+          );
+          input.flush();
+        }
+      }
+    }
+    if (!sawRegistration || clearCount < 2 || !sawReady) {
+      if (child.exitCode === null) child.kill("SIGKILL");
+      throw new Error(
+        `Backend start rollback frames were incomplete: ${JSON.stringify({
+          sawRegistration,
+          clearCount,
+          sawReady,
+        })}\n${await stderrText}`,
+      );
+    }
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "event",
+        event: "application.reopen",
+        payload: {},
+      })}\n`,
+    );
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
+    input.flush();
+    expect(await child.exited).toBe(0);
+    expect(await stderrText).toBe("rollback-stop\ncaught:start exploded\nactive-reopen\n");
     reader.releaseLock();
     input.end();
   });
@@ -451,12 +750,30 @@ describe("resident Bun backend runtime", () => {
         await runBackend(defineBackend()({
           http: {},
           async start({ host }) {
+            host.application.onReopen(() => process.stderr.write("reopen\\n"));
             host.notifications.onClick(({ id }) => process.stderr.write(id + "\\n"));
+            host.globalShortcuts.onPressed(({ id }) => process.stderr.write(id + "\\n"));
+            await host.system.openPath("/tmp");
+            await host.system.revealPath("/tmp");
+            await host.system.trashPath("/tmp/old-file");
+            await host.globalShortcuts.set([
+              { id: "search", key: "space", modifiers: ["option"] },
+            ]);
+            await host.screens.list();
+            await host.screenCapture.getAuthorizationStatus();
+            await host.screenCapture.requestAuthorization();
+            await host.screenCapture.capture({
+              screenId: "main",
+              region: { x: 10, y: 20, width: 640, height: 480 },
+              destination: "/tmp/capture.png",
+              showsCursor: true,
+            });
             await host.notifications.getAuthorizationStatus();
             await host.notifications.requestAuthorization();
             await host.notifications.send({ id: "done", title: "Complete", sound: true });
             await host.dialogs.openFile({ allowedExtensions: ["json"], multiple: true });
             await host.clipboard.writeText("hello");
+            await host.clipboard.writeImage("/tmp/capture.png");
             await host.clipboard.readText();
             await host.keychain.set("token", "secret");
             await host.keychain.get("token");
@@ -513,29 +830,56 @@ describe("resident Bun backend runtime", () => {
         }
         methods.push(frame.method);
         const result =
-          frame.method === "notifications.getAuthorizationStatus" ||
-          frame.method === "notifications.requestAuthorization"
-            ? "authorized"
-            : frame.method === "notifications.send"
-              ? { id: frame.params?.id }
-              : frame.method === "dialogs.openFile"
-                ? ["/tmp/input.json"]
-                : frame.method === "clipboard.readText" || frame.method === "keychain.get"
-                  ? "secret"
-                  : frame.method === "keychain.delete"
-                    ? true
-                    : null;
+          frame.method === "system.trashPath"
+            ? "/Users/test/.Trash/old-file"
+            : frame.method === "screens.list"
+              ? [
+                  {
+                    id: "main",
+                    name: "Main Display",
+                    frame: { x: 0, y: 0, width: 1920, height: 1080 },
+                    visibleFrame: { x: 0, y: 25, width: 1920, height: 1055 },
+                    scaleFactor: 2,
+                    main: true,
+                    containsPointer: true,
+                  },
+                ]
+              : frame.method === "screenCapture.getAuthorizationStatus" ||
+                  frame.method === "screenCapture.requestAuthorization" ||
+                  frame.method === "notifications.getAuthorizationStatus" ||
+                  frame.method === "notifications.requestAuthorization"
+                ? "authorized"
+                : frame.method === "screenCapture.capture"
+                  ? { path: frame.params?.destination, pixelWidth: 1280, pixelHeight: 960 }
+                  : frame.method === "notifications.send"
+                    ? { id: frame.params?.id }
+                    : frame.method === "dialogs.openFile"
+                      ? ["/tmp/input.json"]
+                      : frame.method === "clipboard.readText" || frame.method === "keychain.get"
+                        ? "secret"
+                        : frame.method === "keychain.delete"
+                          ? true
+                          : null;
         input.write(`${JSON.stringify({ v: 2, type: "response", id: frame.id, result })}\n`);
         input.flush();
       }
       if (ready) break;
     }
     expect(methods).toEqual([
+      "system.openPath",
+      "system.revealPath",
+      "system.trashPath",
+      "globalShortcuts.set",
+      "screens.list",
+      "screenCapture.getAuthorizationStatus",
+      "screenCapture.requestAuthorization",
+      "screenCapture.capture",
       "notifications.getAuthorizationStatus",
       "notifications.requestAuthorization",
       "notifications.send",
       "dialogs.openFile",
       "clipboard.writeText",
+      "clipboard.writeImage",
       "clipboard.readText",
       "keychain.set",
       "keychain.get",
@@ -545,14 +889,30 @@ describe("resident Bun backend runtime", () => {
       `${JSON.stringify({
         v: 2,
         type: "event",
+        event: "application.reopen",
+        payload: {},
+      })}\n`,
+    );
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "event",
         event: "notifications.clicked",
         payload: { id: "done" },
+      })}\n`,
+    );
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "event",
+        event: "globalShortcuts.pressed",
+        payload: { id: "search" },
       })}\n`,
     );
     input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
     input.flush();
     expect(await child.exited).toBe(0);
-    expect(await stderr).toBe("done\n");
+    expect(await stderr).toBe("reopen\ndone\nsearch\n");
     reader.releaseLock();
     input.end();
   });

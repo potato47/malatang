@@ -117,8 +117,23 @@ describe("generated resident backend React template", () => {
               },
             },
           },
-          start({ host, app, server, url }) {
+          async start({ host, app, server, url }) {
             void host.application.getState();
+            host.application.onReopen(() => {});
+            host.globalShortcuts.onPressed(({ id }) => server.publish("events", id));
+            await host.globalShortcuts.set([
+              { id: "search", key: "space", modifiers: ["option"] },
+            ]);
+            const screens = await host.screens.list();
+            const screen = screens[0];
+            if (screen !== undefined) {
+              const receipt = await host.screenCapture.capture({
+                screenId: screen.id,
+                destination: app.dataDirectory + "/capture.png",
+              });
+              await host.clipboard.writeImage(receipt.path);
+            }
+            await host.system.openPath(app.dataDirectory);
             server.publish("events", app.name);
             url("/");
           },

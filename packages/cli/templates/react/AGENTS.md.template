@@ -5,14 +5,15 @@
 
 ## Project map
 
-- `fia.config.ts` 使用严格的 `configVersion: 4`，声明应用、必选 Backend 与状态栏初始配置。
+- `fia.config.ts` 使用严格的 `configVersion: 5`，声明应用、必选 Backend、状态栏初始配置与可选签名身份。
 - `src/backend.ts` 使用 `defineBackend<SocketData>()({...})` 声明 HTTP、WebSocket、生命周期与 Host 原生调用。
 - `src/ui/` 是普通 React 前端；不要导入 FIA 原生 API。
 - `src/ui/components/ui/` 是可编辑的 Tailwind CSS v4 组件库。
 - `dist/` 和 `.fia/` 是生成目录。
 
 原生能力只能在 Backend 中通过 `host.application`、`host.statusItem`、`host.webviews`、
-`host.system`、`host.notifications`、`host.dialogs`、`host.clipboard` 和 `host.keychain` 使用。
+`host.system`、`host.notifications`、`host.dialogs`、`host.clipboard`、`host.keychain`、
+`host.globalShortcuts`、`host.screens` 和 `host.screenCapture` 使用。
 route/fetch 的第三参数以及 start/stop 上下文还提供 `app.dataDirectory` 等只读应用信息。前端使用
 相对 `fetch` 和同源 WebSocket。
 

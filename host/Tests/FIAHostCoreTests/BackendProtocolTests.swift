@@ -4,6 +4,11 @@ import Testing
 
 @Suite("Backend stdio protocol")
 struct BackendProtocolTests {
+    @Test func exposesNativeConflictAndPermissionErrors() {
+        #expect(HostRequestErrorCode.conflict.rawValue == "CONFLICT")
+        #expect(HostRequestErrorCode.permissionDenied.rawValue == "PERMISSION_DENIED")
+    }
+
     @Test func decodesFragmentedJSONLines() throws {
         var decoder = BackendStdoutDecoder()
         #expect(try decoder.append(Data(#"{"v":2,"type":"rea"#.utf8)).isEmpty)

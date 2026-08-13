@@ -48,7 +48,7 @@ interface HostManifest {
   sha256: string;
   architecture: "arm64";
   minimumSystemVersion: "14.0";
-  configurationSchema: 7;
+  configurationSchema: 8;
   stdioProtocol: 2;
   hostCapabilities: readonly [
     "application",
@@ -59,6 +59,9 @@ interface HostManifest {
     "dialogs",
     "clipboard",
     "keychain",
+    "globalShortcuts",
+    "screens",
+    "screenCapture",
   ];
 }
 
@@ -67,6 +70,7 @@ interface BuildContext {
   stagingRoot: string;
   appPath: string;
   hostAssetDirectory: string;
+  signingIdentity: string;
   debug: boolean;
   io: ApplicationIO;
 }
@@ -95,7 +99,50 @@ const HOST_CAPABILITIES = [
   "dialogs",
   "clipboard",
   "keychain",
+  "globalShortcuts",
+  "screens",
+  "screenCapture",
 ] as const;
+
+export function hasExpectedHostCapabilities(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === HOST_CAPABILITIES.length &&
+    value.every((capability, index) => capability === HOST_CAPABILITIES[index])
+  );
+}
+
+interface CodeSigningIdentity {
+  readonly name: string;
+}
+
+export function parseCodeSigningIdentities(output: string): readonly CodeSigningIdentity[] {
+  const identities: CodeSigningIdentity[] = [];
+  for (const line of output.split("\n")) {
+    const match = /^\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"(.*)"\s*$/.exec(line);
+    if (match !== null) identities.push({ name: match[2]! });
+  }
+  return identities;
+}
+
+export function hasCodeSigningIdentity(output: string, identity: string): boolean {
+  return parseCodeSigningIdentities(output).some((candidate) => candidate.name === identity);
+}
+
+export function codeSigningCommand(
+  identity: string,
+  path: string,
+  options: { deep?: boolean } = {},
+): readonly string[] {
+  return [
+    "/usr/bin/codesign",
+    "--force",
+    "--sign",
+    identity,
+    ...(options.deep === true ? ["--deep"] : []),
+    path,
+  ];
+}
 
 function commandText(command: readonly string[]): string {
   return command.map((part) => JSON.stringify(part)).join(" ");
@@ -223,9 +270,9 @@ async function verifyHostAsset(context: BuildContext): Promise<string> {
     manifest.hostVersion !== CLI_VERSION ||
     manifest.architecture !== "arm64" ||
     manifest.minimumSystemVersion !== "14.0" ||
-    manifest.configurationSchema !== 7 ||
+    manifest.configurationSchema !== 8 ||
     manifest.stdioProtocol !== 2 ||
-    manifest.hostCapabilities.join(",") !== HOST_CAPABILITIES.join(",")
+    !hasExpectedHostCapabilities(manifest.hostCapabilities)
   ) {
     throw new Error("precompiled Host manifest is incompatible with this CLI");
   }
@@ -234,6 +281,27 @@ async function verifyHostAsset(context: BuildContext): Promise<string> {
   }
   await verifyArm64MachO("Host", executable, context);
   return executable;
+}
+
+async function verifySigningIdentity(context: BuildContext): Promise<void> {
+  const identity = context.config.signing?.identity;
+  if (identity === undefined) {
+    context.io.stderr(
+      "fia: warning: signing.identity is not configured; using ad-hoc signing. " +
+        "macOS privacy permissions may reset after rebuilding the application.\n",
+    );
+    return;
+  }
+  const output = await checked(
+    "Code signing identity validation",
+    ["/usr/bin/security", "find-identity", "-v", "-p", "codesigning"],
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  );
+  if (!hasCodeSigningIdentity(output, identity)) {
+    throw new Error(`configured code signing identity was not found: ${identity}`);
+  }
 }
 
 async function typecheck(context: BuildContext): Promise<void> {
@@ -399,6 +467,33 @@ function fakeNativeResult(method: string, params: Record<string, unknown>): unkn
   if (method === "notifications.send") {
     return { id: typeof params.id === "string" ? params.id : "smoke-notification" };
   }
+  if (method === "screens.list") {
+    return [
+      {
+        id: "main",
+        name: "Main Display",
+        frame: { x: 0, y: 0, width: 1920, height: 1080 },
+        visibleFrame: { x: 0, y: 25, width: 1920, height: 1055 },
+        scaleFactor: 2,
+        main: true,
+        containsPointer: true,
+      },
+    ];
+  }
+  if (
+    method === "screenCapture.getAuthorizationStatus" ||
+    method === "screenCapture.requestAuthorization"
+  ) {
+    return "authorized";
+  }
+  if (method === "screenCapture.capture") {
+    return {
+      path: params.destination,
+      pixelWidth: 1920,
+      pixelHeight: 1080,
+    };
+  }
+  if (method === "system.trashPath") return params.path;
   if (method.startsWith("dialogs.")) return null;
   if (method === "clipboard.readText" || method === "keychain.get") return null;
   if (method === "keychain.delete") return false;
@@ -576,7 +671,7 @@ function hostConfiguration(
   backend: BackendArtifact,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     stdioProtocolVersion: 2,
     development: backend.development,
     app: { name: config.app.name, identifier: config.app.identifier },
@@ -613,7 +708,7 @@ async function assembleApp(context: BuildContext, backend: BackendArtifact): Pro
   if (!backend.development) {
     await checked(
       "Backend signing",
-      ["/usr/bin/codesign", "--force", "--sign", "-", resolve(helpers, BACKEND_EXECUTABLE)],
+      codeSigningCommand(context.signingIdentity, resolve(helpers, BACKEND_EXECUTABLE)),
       context.config.projectRoot,
       context.debug,
       context.io,
@@ -629,7 +724,7 @@ async function assembleApp(context: BuildContext, backend: BackendArtifact): Pro
   );
   await checked(
     "Application signing",
-    ["/usr/bin/codesign", "--force", "--sign", "-", "--deep", context.appPath],
+    codeSigningCommand(context.signingIdentity, context.appPath, { deep: true }),
     context.config.projectRoot,
     context.debug,
     context.io,
@@ -642,7 +737,7 @@ async function verifyApp(context: BuildContext, production: boolean): Promise<vo
   const configuration = JSON.parse(
     await readFile(resolve(contents, "Resources/fia-config.json"), "utf8"),
   ) as Record<string, unknown>;
-  if (configuration.schemaVersion !== 7 || configuration.stdioProtocolVersion !== 2) {
+  if (configuration.schemaVersion !== 8 || configuration.stdioProtocolVersion !== 2) {
     throw new Error("packaged Host configuration is incompatible");
   }
   if (production) {
@@ -792,12 +887,14 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
     hostAssetDirectory: resolve(
       options.dependencies?.hostAssetDirectory ?? defaultHostAssetDirectory(),
     ),
+    signingIdentity: config.signing?.identity ?? "-",
     debug: options.debug,
     io: options.io,
   };
   await mkdir(stagingRoot, { recursive: true });
   try {
     options.io.stdout(`Validating ${config.app.name}\n`);
+    await verifySigningIdentity(context);
     await typecheck(context);
     const runner = await writeBackendRunner(context);
     await validateBackend(context, runner);

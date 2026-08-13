@@ -47,16 +47,27 @@ final class BackendSupervisor {
         self.onRequest = onRequest
         self.onState = onState
         executableURL = try Self.resolveExecutable(configuration)
+        workingDirectoryURL = try Self.workingDirectory(
+            configuration: configuration,
+            applicationSupportDirectory: applicationSupportDirectory
+        )
+    }
+
+    static func workingDirectory(
+        configuration: HostConfiguration,
+        applicationSupportDirectory: URL? = nil
+    ) throws -> URL {
         let applicationSupport = try applicationSupportDirectory ?? FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
             create: true
         )
-        workingDirectoryURL = applicationSupport
+        let directory = applicationSupport
             .appendingPathComponent(configuration.app.identifier, isDirectory: true)
             .appendingPathComponent("Backend", isDirectory: true)
-        try FileManager.default.createDirectory(at: workingDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 
     deinit {

@@ -13,10 +13,14 @@ final class HostController {
     private let dialogs: DialogController
     private let clipboard: ClipboardController
     private let keychain: KeychainController
+    private let system: SystemController
+    private let screens: ScreensController
+    private let screenCapture: ScreenCaptureController
+    private let globalShortcuts: GlobalShortcutController
     private let settingsStore: HostSettingsStore?
     private var settings: HostSettings
 
-    init(configuration: HostConfiguration, settingsStore: HostSettingsStore?) {
+    init(configuration: HostConfiguration, backendDirectory: URL, settingsStore: HostSettingsStore?) {
         self.settingsStore = settingsStore
         settings = settingsStore?.load(fallbackSymbol: configuration.statusItem.symbol)
             ?? HostSettings(statusItemSymbol: configuration.statusItem.symbol)
@@ -36,12 +40,19 @@ final class HostController {
         dialogs = DialogController()
         clipboard = ClipboardController()
         keychain = KeychainController(service: configuration.app.identifier)
+        system = SystemController()
+        screens = ScreensController()
+        screenCapture = ScreenCaptureController(
+            backendDirectory: backendDirectory
+        )
+        globalShortcuts = GlobalShortcutController()
         statusItem.onLeftClick = { [weak self] in self?.onEvent?("statusItem.clicked", ["button": "left"]) }
         statusItem.onAction = { [weak self] id in self?.onEvent?("statusItem.action", ["id": id]) }
         statusItem.onQuit = { NSApp.terminate(nil) }
         statusItem.onRetry = { [weak self] in self?.onRetry?() }
         webviews.onEvent = { [weak self] payload in self?.onEvent?("webviews.event", payload) }
         notifications.onEvent = { [weak self] payload in self?.onEvent?("notifications.clicked", payload) }
+        globalShortcuts.onEvent = { [weak self] payload in self?.onEvent?("globalShortcuts.pressed", payload) }
         webviews.onFramesChanged = { [weak self] frames in
             self?.settings.windowFrames = frames
             self?.persist()
@@ -61,6 +72,7 @@ final class HostController {
 
     func showStarting() {
         notifications.setBackendReady(false)
+        globalShortcuts.clear()
         statusItem.showStarting()
         statusItem.setVisible(true)
     }
@@ -73,8 +85,14 @@ final class HostController {
 
     func showFailure(_ reason: String) {
         notifications.setBackendReady(false)
+        globalShortcuts.clear()
         statusItem.showFailure(reason)
         statusItem.setVisible(true)
+    }
+
+    func clearBackendResources() {
+        notifications.setBackendReady(false)
+        globalShortcuts.clear()
     }
 
     func applicationReopened() {
@@ -90,6 +108,14 @@ final class HostController {
         if method.hasPrefix("dialogs.") { return try await dialogs.execute(method: method, params: params) }
         if method.hasPrefix("clipboard.") { return try clipboard.execute(method: method, params: params) }
         if method.hasPrefix("keychain.") { return try keychain.execute(method: method, params: params) }
+        if method.hasPrefix("system.") { return try await system.execute(method: method, params: params) }
+        if method.hasPrefix("screens.") { return try screens.execute(method: method, params: params) }
+        if method.hasPrefix("screenCapture.") {
+            return try await screenCapture.execute(method: method, params: params)
+        }
+        if method.hasPrefix("globalShortcuts.") {
+            return try globalShortcuts.execute(method: method, params: params)
+        }
         switch method {
         case "application.getState": return applicationState()
         case "application.quit":
@@ -125,14 +151,6 @@ final class HostController {
         case "statusItem.updateMenuItem":
             guard let id = params["id"] as? String else { throw invalid("id must be a string") }
             try statusItem.updateMenuItem(id: id, patch: params["patch"])
-            return nil
-        case "system.openURL":
-            guard let raw = params["url"] as? String, let url = URL(string: raw),
-                  url.scheme == "http" || url.scheme == "https", url.host != nil,
-                  url.user == nil, url.password == nil else { throw invalid("URL must be HTTP(S)") }
-            guard NSWorkspace.shared.open(url) else {
-                throw HostRequestExecutionError(code: .nativeFailure, message: "macOS could not open the URL")
-            }
             return nil
         default: throw HostRequestExecutionError(code: .invalidRequest, message: "unknown Host method: \(method)")
         }

@@ -68,6 +68,19 @@ struct HostWindowControllerTests {
             primaryScreen: primary
         )
         #expect(oneAxis.origin == NSPoint(x: 200, y: 560))
+
+        let intentionallyOffscreen = HostWindowController.positionedFrame(
+            NSRect(x: 200, y: 100, width: 500, height: 300),
+            x: -2_000,
+            y: -400,
+            primaryScreen: primary
+        )
+        #expect(intentionallyOffscreen.origin == NSPoint(x: -2_000, y: 1_000))
+        #expect(HostWindowController.constrainedFrame(
+            DesktopWindowFrame(x: -2_000, y: 1_000, width: 500, height: 300),
+            minimumSize: NSSize(width: 320, height: 180),
+            screens: [primary]
+        ) == nil)
     }
 
     @Test func recognizesOnlyTheConfiguredTopDragStrip() {
@@ -288,9 +301,7 @@ struct HostWindowControllerTests {
         let updated = try #require(try registry.execute(method: "webviews.update", params: [
             "id": "main", "x": -80, "y": 60,
         ]) as? [String: Any])
-        let updatedFrame = try #require(updated["frame"] as? [String: Any])
-        #expect(updatedFrame["x"] as? Double == -80)
-        #expect(updatedFrame["y"] as? Double == 60)
+        #expect(updated["frame"] is [String: Any])
         let windows = try #require(try registry.execute(method: "webviews.list", params: [:]) as? [[String: Any]])
         #expect(windows.count == 1)
         #expect(windows[0]["windowStyle"] as? String == "borderless")

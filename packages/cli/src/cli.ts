@@ -41,7 +41,7 @@ Usage:
 Commands:
   create       Create a React FIA project with a resident Bun backend
   dev          Launch the application with Bun full-stack HMR
-  build        Build and ad-hoc sign a production .app
+  build        Build and sign a production .app
   run          Build and launch the current source in production mode
   doctor       Check the local FIA development environment
 
@@ -87,7 +87,7 @@ Options:
   --emit-action <id>  Emit one status menu action after Backend readiness
   --debug             Include diagnostic command details
 `,
-  build: `Build and ad-hoc sign a production FIA application
+  build: `Build and sign a production FIA application
 
 Usage:
   fia [--debug] build

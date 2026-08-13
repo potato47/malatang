@@ -1,3 +1,4 @@
+import AppKit
 import FIAHostCore
 import Foundation
 import Testing
@@ -46,9 +47,11 @@ private final class MockFilePanelClient: FilePanelClient {
 @MainActor
 private final class MockClipboardClient: ClipboardClient {
     var text: String?
+    var png: Data?
     func readText() -> String? { text }
     func writeText(_ text: String) -> Bool { self.text = text; return true }
-    func clear() { text = nil }
+    func writePNG(_ data: Data) -> Bool { png = data; return !data.isEmpty }
+    func clear() { text = nil; png = nil }
 }
 
 private final class MockKeychainClient: KeychainClient {
@@ -127,6 +130,49 @@ struct NativeCapabilitiesTests {
         #expect(try controller.execute(method: "clipboard.readText", params: [:]) as? String == "hello")
         _ = try controller.execute(method: "clipboard.clear", params: [:])
         #expect(client.text == nil)
+    }
+
+    @Test func writesPNGImagesFromFiles() throws {
+        let client = MockClipboardClient()
+        let controller = ClipboardController(client: client)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fia-clipboard-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("valid.png")
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        image.lockFocus()
+        NSColor.red.setFill()
+        NSRect(x: 0, y: 0, width: 1, height: 1).fill()
+        image.unlockFocus()
+        let bitmap = try #require(NSBitmapImageRep(data: image.tiffRepresentation!))
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        try png.write(to: path)
+
+        _ = try controller.execute(method: "clipboard.writeImage", params: ["path": path.path])
+        #expect(client.png == png)
+
+        let disguisedJPEG = directory.appendingPathComponent("disguised.png")
+        let jpeg = try #require(bitmap.representation(using: .jpeg, properties: [:]))
+        try jpeg.write(to: disguisedJPEG)
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.execute(method: "clipboard.writeImage", params: ["path": disguisedJPEG.path])
+        }
+
+        let arbitrary = directory.appendingPathComponent("arbitrary.png")
+        try Data("not an image".utf8).write(to: arbitrary)
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.execute(method: "clipboard.writeImage", params: ["path": arbitrary.path])
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.execute(method: "clipboard.writeImage", params: ["path": "/tmp/not-a-png.jpg"])
+        }
+
+        let directoryNamedPNG = directory.appendingPathComponent("folder.png")
+        try FileManager.default.createDirectory(at: directoryNamedPNG, withIntermediateDirectories: false)
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.execute(method: "clipboard.writeImage", params: ["path": directoryNamedPNG.path])
+        }
     }
 
     @Test func isolatesKeychainValuesByBundleIdentifier() throws {

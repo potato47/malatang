@@ -4,13 +4,16 @@
 生命周期上下文以及受保护 route/fetch 的第三参数同时提供 `app`；其中 `dataDirectory` 是 Host
 预先创建并通过 initialize 帧传入的绝对持久化目录。
 
-- `host.application`：读取 Dock/状态栏可见性、退出、切换 Dock。
+- `host.application`：读取 Dock/状态栏可见性、退出、切换 Dock，以及接收 reopen 事件。
 - `host.statusItem`：可见性、SF Symbol、tooltip、完整动态菜单、左键与 action 事件。
 - `host.webviews`：按 ID open/upsert、navigate、show/hide/focus/close/update/list 和状态事件。
-- `host.system.openURL`：通过系统默认浏览器打开 HTTP(S) URL。
+- `host.globalShortcuts`：原子替换最多 32 个系统全局快捷键，并接收 pressed 事件。
+- `host.screens`：枚举显示器、逻辑坐标、可见区域、缩放、主屏与鼠标所在屏。
+- `host.screenCapture`：显式读取/申请屏幕录制授权，并把单屏或屏内区域捕获为 PNG 文件。
+- `host.system`：打开 HTTP(S) URL 或本地路径、在 Finder 定位路径、把路径移入废纸篓。
 - `host.notifications`：读取/申请授权、发送和移除通知，以及通知点击事件。
 - `host.dialogs`：打开文件、打开目录和保存文件面板，结果为绝对 POSIX 路径。
-- `host.clipboard`：读取、写入和清空文本剪贴板。
+- `host.clipboard`：读取、写入和清空文本剪贴板，也可从本地 PNG 写入图片剪贴板。
 - `host.keychain`：按应用 bundle identifier 隔离的 UTF-8 私有键值。
 
 菜单最多 8 层/256 节点，支持 separator、enabled、hidden、checked、SF Symbol、快捷键和
@@ -40,7 +43,20 @@ Dock 和状态栏不能同时隐藏，以保证故障后仍有恢复入口。
 security-scoped bookmark。
 
 Keychain 的 service 固定为 bundle identifier，key 作为 account；值使用
-`afterFirstUnlockThisDeviceOnly`，不支持列举、整库清空或跨应用 service。剪贴板首版只处理文本。
+`afterFirstUnlockThisDeviceOnly`，不支持列举、整库清空或跨应用 service。剪贴板图片首版只接受
+可解码的本地 PNG。
 
-所有 Promise 型 Host 方法接受可选的 `{ signal }` 尾参数。普通调用保持 30 秒超时，文件面板
-和通知授权无固定超时；取消文件面板会关闭对应的原生面板。
+全局快捷键使用按 ID 的原子全量集合：`set([])` 清空，重复组合、无修饰键、超出白名单或系统
+冲突会使整批失败并保留旧集合。快捷键在 Backend/HMR 生命周期切换时清理。
+
+`screens.list` 和 WebView 坐标统一使用主屏左上角为原点的逻辑点。截图区域使用目标屏幕左上角
+为原点的逻辑点，必须完全落在该屏幕内；结果固定为 PNG，并写到 Backend Application Support
+目录中尚不存在的目标。图片字节不会进入 1 MiB stdio 帧。首次授权可能需要重启应用才能捕获。
+当前 macOS 14–26 不由 FIA 注入 `NSScreenCaptureUsageDescription`；授权与重启流程参考
+[Apple ScreenCaptureKit macOS 示例](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos)。
+
+本地路径操作要求无 NUL、绝对且存在的 POSIX 路径。`trashPath` 只使用系统废纸篓并返回实际
+落点，不提供永久删除。`clipboard.writeImage` 首版只接受可解码的 PNG。
+
+所有 Promise 型 Host 方法接受可选的 `{ signal }` 尾参数。普通调用保持 30 秒超时，文件面板、
+通知授权和屏幕录制授权无固定超时；取消文件面板会关闭对应的原生面板。

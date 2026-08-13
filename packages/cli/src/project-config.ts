@@ -50,6 +50,9 @@ export interface ResolvedFIAConfig {
     readonly symbol: string;
     readonly tooltip: string;
   };
+  readonly signing?: {
+    readonly identity: string;
+  };
 }
 
 function invalid(path: string, message: string): never {
@@ -160,7 +163,7 @@ export async function resolveProjectConfig(
 ): Promise<ResolvedFIAConfig> {
   const projectRoot = resolve(projectDirectory);
   const root = objectAt(value, "config");
-  exactKeys(root, ["configVersion", "app", "backend", "statusBar"], "config");
+  exactKeys(root, ["configVersion", "app", "backend", "statusBar", "signing"], "config");
   if (root.configVersion !== FIA_CONFIG_VERSION) {
     if (typeof root.configVersion === "number" && Number.isInteger(root.configVersion)) {
       throw new ProjectConfigError(
@@ -232,6 +235,24 @@ export async function resolveProjectConfig(
   if (symbol.length > 128) invalid("statusBar.symbol", "must be at most 128 characters");
   if (tooltip.length > 512) invalid("statusBar.tooltip", "must be at most 512 characters");
 
+  let signing: ResolvedFIAConfig["signing"];
+  if (root.signing !== undefined) {
+    const value = objectAt(root.signing, "signing");
+    exactKeys(value, ["identity"], "signing");
+    const identity = requiredString(value, "identity", "signing");
+    if (identity !== identity.trim()) {
+      invalid("signing.identity", "must not have surrounding whitespace");
+    }
+    if (identity.length > 512) invalid("signing.identity", "must be at most 512 characters");
+    if (!/^(?:Apple Development|Developer ID Application): .+$/u.test(identity)) {
+      invalid(
+        "signing.identity",
+        "must be an Apple Development or Developer ID Application identity name",
+      );
+    }
+    signing = { identity };
+  }
+
   return {
     configVersion: FIA_CONFIG_VERSION,
     projectRoot,
@@ -239,6 +260,7 @@ export async function resolveProjectConfig(
     app: { name, identifier, version, ...(icon === undefined ? {} : { icon }) },
     backend: { entry, watch },
     statusBar: { symbol, tooltip },
+    ...(signing === undefined ? {} : { signing }),
   };
 }
 

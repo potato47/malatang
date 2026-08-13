@@ -57,7 +57,7 @@ describe("published FIA resident backend shape", () => {
     }
   });
 
-  test("packages a schema-7 Host manifest with stdio capabilities", async () => {
+  test("packages a schema-8 Host manifest with stdio capabilities", async () => {
     const host = resolve(packageRoot, "assets/host/darwin-arm64/FIAHost");
     await access(host, constants.X_OK);
     const manifest = JSON.parse(
@@ -69,7 +69,7 @@ describe("published FIA resident backend shape", () => {
       schemaVersion: 3,
       cliVersion: CLI_VERSION,
       hostVersion: CLI_VERSION,
-      configurationSchema: 7,
+      configurationSchema: 8,
       stdioProtocol: 2,
       hostCapabilities: [
         "application",
@@ -80,13 +80,16 @@ describe("published FIA resident backend shape", () => {
         "dialogs",
         "clipboard",
         "keychain",
+        "globalShortcuts",
+        "screens",
+        "screenCapture",
       ],
       sha256: hasher.digest("hex"),
     });
   });
 
   test("built CLI creates a required backend project and rejects --no-mcp", async () => {
-    const cwd = await mkdtemp(resolve(tmpdir(), "fia-built-v4-"));
+    const cwd = await mkdtemp(resolve(tmpdir(), "fia-built-v5-"));
     temporaryDirectories.push(cwd);
     const created = await run(["create", "service-app", "--no-install"], cwd);
     const legacy = await run(["create", "legacy", "--no-install", "--no-mcp"], cwd);

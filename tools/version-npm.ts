@@ -43,10 +43,30 @@ interface ParsedVersion {
 }
 
 interface HostManifest {
+  readonly schemaVersion: number;
   readonly cliVersion: string;
   readonly hostVersion: string;
   readonly sha256: string;
+  readonly architecture: string;
+  readonly minimumSystemVersion: string;
+  readonly configurationSchema: number;
+  readonly stdioProtocol: number;
+  readonly hostCapabilities: readonly string[];
 }
+
+const HOST_CAPABILITIES = [
+  "application",
+  "statusItem",
+  "webviews",
+  "system",
+  "notifications",
+  "dialogs",
+  "clipboard",
+  "keychain",
+  "globalShortcuts",
+  "screens",
+  "screenCapture",
+] as const;
 
 interface Snapshot {
   readonly path: string;
@@ -207,8 +227,14 @@ async function validateVersionedFiles(target: string): Promise<void> {
     packageSource.version !== target ||
     metadataVersion !== target ||
     lockVersion !== target ||
+    manifest.schemaVersion !== 3 ||
     manifest.cliVersion !== target ||
     manifest.hostVersion !== target ||
+    manifest.architecture !== "arm64" ||
+    manifest.minimumSystemVersion !== "14.0" ||
+    manifest.configurationSchema !== 8 ||
+    manifest.stdioProtocol !== 2 ||
+    JSON.stringify(manifest.hostCapabilities) !== JSON.stringify(HOST_CAPABILITIES) ||
     manifest.sha256 !== hasher.digest("hex")
   ) {
     throw new Error(`generated release metadata is not consistently versioned as ${target}`);

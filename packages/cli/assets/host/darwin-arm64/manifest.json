@@ -1,11 +1,11 @@
 {
   "schemaVersion": 3,
-  "cliVersion": "0.10.0",
-  "hostVersion": "0.10.0",
-  "sha256": "4e9c99bb7961e83c9e5778a701f865d9ed98720ee40b93e0ed2bde664ed71347",
+  "cliVersion": "0.11.0",
+  "hostVersion": "0.11.0",
+  "sha256": "0eaf141da41d88388e8ab9d9243828846e1f85d29efd534c3d903a28063f30aa",
   "architecture": "arm64",
   "minimumSystemVersion": "14.0",
-  "configurationSchema": 7,
+  "configurationSchema": 8,
   "stdioProtocol": 2,
   "hostCapabilities": [
     "application",
@@ -15,6 +15,9 @@
     "notifications",
     "dialogs",
     "clipboard",
-    "keychain"
+    "keychain",
+    "globalShortcuts",
+    "screens",
+    "screenCapture"
   ]
 }

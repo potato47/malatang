@@ -2,7 +2,7 @@ import FIAHostCore
 import Foundation
 import Testing
 
-@Suite("Host configuration schema 7")
+@Suite("Host configuration schema 8")
 struct HostConfigurationTests {
     private let hash = String(repeating: "a", count: 64)
 
@@ -12,7 +12,7 @@ struct HostConfigurationTests {
         mutate: ((inout [String: Any]) -> Void)? = nil
     ) throws -> Data {
         var value: [String: Any] = [
-            "schemaVersion": 7,
+            "schemaVersion": 8,
             "stdioProtocolVersion": 2,
             "development": development,
             "app": ["name": "Desktop", "identifier": "com.example.desktop"],
@@ -21,6 +21,7 @@ struct HostConfigurationTests {
             "hostCapabilities": [
                 "application", "statusItem", "webviews", "system",
                 "notifications", "dialogs", "clipboard", "keychain",
+                "globalShortcuts", "screens", "screenCapture",
             ],
         ]
         mutate?(&value)
@@ -29,7 +30,7 @@ struct HostConfigurationTests {
 
     @Test func decodesProductionAndDevelopmentBackends() throws {
         let production = try HostConfiguration.decode(data())
-        #expect(production.schemaVersion == 7)
+        #expect(production.schemaVersion == 8)
         #expect(production.backend.executable == "Helpers/FIABackend")
         let development = try HostConfiguration.decode(data(development: true, executable: "/usr/bin/false"))
         #expect(development.development)
@@ -38,7 +39,7 @@ struct HostConfigurationTests {
     @Test func rejectsLegacyAndUnknownFields() throws {
         let legacy = try data { $0["mcpServers"] = [] }
         #expect(throws: HostConfigurationError.self) { try HostConfiguration.decode(legacy) }
-        let oldSchema = try data { $0["schemaVersion"] = 6 }
+        let oldSchema = try data { $0["schemaVersion"] = 7 }
         #expect(throws: HostConfigurationError.self) { try HostConfiguration.decode(oldSchema) }
     }
 

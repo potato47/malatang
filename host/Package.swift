@@ -20,6 +20,10 @@ let package = Package(
             dependencies: ["FIAHostCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("Carbon"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("ImageIO"),
+                .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("Security"),
                 .linkedFramework("UniformTypeIdentifiers"),
                 .linkedFramework("UserNotifications"),

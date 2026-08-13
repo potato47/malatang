@@ -47,7 +47,7 @@ const manifest = {
   sha256: hasher.digest("hex"),
   architecture: "arm64",
   minimumSystemVersion: "14.0",
-  configurationSchema: 7,
+  configurationSchema: 8,
   stdioProtocol: 2,
   hostCapabilities: [
     "application",
@@ -58,6 +58,9 @@ const manifest = {
     "dialogs",
     "clipboard",
     "keychain",
+    "globalShortcuts",
+    "screens",
+    "screenCapture",
   ],
 };
 await Bun.write(

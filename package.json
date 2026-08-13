@@ -3,7 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "type": "module",
   "scripts": {
@@ -14,9 +15,11 @@
     "format:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit",
     "test:cli": "bun run cli:build && bun test packages/cli/tests",
+    "check:showcase": "bun run --cwd examples/fia-showcase typecheck && bun run --cwd examples/fia-showcase test && bun run --cwd examples/fia-showcase build",
+    "test:showcase:e2e": "bun run --cwd examples/fia-showcase test:e2e",
     "test:host": "swift test --package-path host",
     "host:package": "bun run tools/package-host.ts",
-    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test:cli && bun run test:host",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test:cli && bun run check:showcase && bun run test:host",
     "version:npm": "bun run tools/version-npm.ts",
     "release:npm": "bun run tools/publish-npm.ts"
   },
