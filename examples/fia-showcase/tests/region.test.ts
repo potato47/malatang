@@ -40,4 +40,14 @@ describe("截图区域", () => {
       ),
     ).toThrow("至少需要 4 × 4");
   });
+
+  test("小数选区取整后仍完全位于显示器边界内", () => {
+    const region = normalizeCaptureRegion(
+      { width: 100, height: 80 },
+      { x: 95.005, y: 74.005, width: 4.995, height: 5.995 },
+    );
+    expect(region).toEqual({ x: 95.01, y: 74.01, width: 4.99, height: 5.99 });
+    expect(region.x + region.width).toBeLessThanOrEqual(100);
+    expect(region.y + region.height).toBeLessThanOrEqual(80);
+  });
 });

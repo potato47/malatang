@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
   codeSigningCommand,
+  developmentBackendRunnerPath,
   executeApplicationCommand,
   generatedBackendRunner,
   hasCodeSigningIdentity,
@@ -228,6 +229,11 @@ describe("FIA resident Backend application packaging", () => {
     expect(runner).toContain("console.log = writeLog");
     expect(runner).toContain('await import("/project/src/backend.ts")');
     expect(runner).not.toContain("MCP");
+  });
+
+  test("uses one stable development runner path across temporary app builds", () => {
+    const root = "/project";
+    expect(developmentBackendRunnerPath(root)).toBe("/project/.fia/dev/backend-runner.ts");
   });
 
   test("builds one signed standalone Backend without packaged UI or MCP directories", async () => {

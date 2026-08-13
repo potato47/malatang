@@ -447,10 +447,15 @@ button {
 .screen-chips button {
   font-size: 11px;
 }
+html.capture-page,
+body.capture-page,
+body.capture-page #root {
+  background: transparent;
+}
 .capture-surface {
   position: fixed;
   inset: 0;
-  background: rgb(10 12 16 / 36%);
+  background: transparent;
   cursor: crosshair;
   user-select: none;
 }

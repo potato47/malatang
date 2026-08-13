@@ -14,7 +14,7 @@ function captureCapability(status: string): CapabilityItem {
     detail:
       status === "authorized"
         ? "已授权，可进行整屏和区域截图"
-        : "尚未授权；首次授权后 macOS 可能要求重新启动应用",
+        : "尚未授权；若系统设置已开启，请完全退出并重新启动应用；ad-hoc Host 变更后需重新授权",
   };
 }
 

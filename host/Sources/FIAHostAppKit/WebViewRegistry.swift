@@ -223,7 +223,7 @@ final class WebViewRegistry {
 
     private func optionalDimension(_ value: Any?, field: String) throws -> Double? {
         guard let value else { return nil }
-        guard !(value is Bool), let number = value as? NSNumber,
+        guard let number = value as? NSNumber, !number.isJSONBoolean,
               number.doubleValue.isFinite, number.doubleValue > 0, number.doubleValue <= 16_384 else {
             throw HostRequestExecutionError(code: .invalidArgument, message: "\(field) must be greater than zero")
         }
@@ -232,7 +232,7 @@ final class WebViewRegistry {
 
     private func optionalCoordinate(_ value: Any?, field: String) throws -> Double? {
         guard let value else { return nil }
-        guard !(value is Bool), let number = value as? NSNumber,
+        guard let number = value as? NSNumber, !number.isJSONBoolean,
               number.doubleValue.isFinite, abs(number.doubleValue) <= 1_000_000 else {
             throw HostRequestExecutionError(
                 code: .invalidArgument,
@@ -271,7 +271,7 @@ final class WebViewRegistry {
 
     private func optionalInset(_ value: Any?, field: String) throws -> Double? {
         guard let value else { return nil }
-        guard !(value is Bool), let number = value as? NSNumber,
+        guard let number = value as? NSNumber, !number.isJSONBoolean,
               number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 16_384 else {
             throw HostRequestExecutionError(
                 code: .invalidArgument,

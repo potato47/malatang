@@ -66,6 +66,7 @@ interface HostManifest {
 }
 
 interface BuildContext {
+  command: ApplicationCommand;
   config: ResolvedFIAConfig;
   stagingRoot: string;
   appPath: string;
@@ -338,8 +339,15 @@ export function generatedBackendRunner(entry: string): string {
   `;
 }
 
+export function developmentBackendRunnerPath(projectRoot: string): string {
+  return resolve(projectRoot, ".fia/dev/backend-runner.ts");
+}
+
 async function writeBackendRunner(context: BuildContext): Promise<string> {
-  const runner = resolve(context.stagingRoot, "backend-runner.ts");
+  const runner =
+    context.command === "dev"
+      ? developmentBackendRunnerPath(context.config.projectRoot)
+      : resolve(context.stagingRoot, "backend-runner.ts");
   await Bun.write(runner, generatedBackendRunner(context.config.backend.entry));
   return runner;
 }
@@ -881,6 +889,7 @@ export async function executeApplicationCommand(options: ApplicationCommandOptio
   assertGeneratedPath(config.projectRoot, stagingRoot);
   assertGeneratedPath(config.projectRoot, appPath);
   const context: BuildContext = {
+    command: options.command,
     config,
     stagingRoot,
     appPath,

@@ -3,7 +3,9 @@
 ## 命令
 
 - `fia create <name>`：生成必选 Bun Backend 和 React HTTP/WS 示例。
-- `fia dev`：创建临时开发 App，由 Host 以 `bun --hot` 启动 Backend。
+- `fia dev`：创建临时开发 App，由 Host 以 `bun --hot` 启动 Backend。Backend runner 使用项目内
+  稳定路径，使 Host 与配置未变化时重复启动的 ad-hoc App 保持同一代码身份，避免仅因会话目录
+  变化而丢失 TCC 授权。
   - `--print-session-url` 在首次启动时输出带 `FIA_DEV_SESSION_URL=` 标记的 30 秒单次会话 URL。
   - `--emit-action <id>` 在首次 ready 后通过真实 Host 事件链路触发一个可点击菜单项。
 - `fia run`：构建临时生产 App 并启动。

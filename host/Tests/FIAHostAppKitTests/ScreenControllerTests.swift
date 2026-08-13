@@ -145,7 +145,7 @@ struct ScreenControllerTests {
         let image = try makeImage(width: 600, height: 400)
         let client = MockScreenCaptureClient(status: .authorized, requested: .authorized, image: image) { request in
             #expect(request.screenID == 11)
-            #expect(request.sourceRect == CGRect(x: 10, y: 20, width: 300, height: 200))
+            #expect(request.sourceRect == CGRect(x: 0, y: 1, width: 300, height: 200))
             #expect(request.pixelWidth == 600)
             #expect(request.pixelHeight == 400)
             #expect(request.showsCursor)
@@ -155,12 +155,17 @@ struct ScreenControllerTests {
             screenProvider: MockScreenProvider(values: screens()),
             client: client
         )
-        let receipt = try #require(try await controller.execute(method: "screenCapture.capture", params: [
+        let serialized = try JSONSerialization.data(withJSONObject: [
             "screenId": "11",
-            "region": ["x": 10, "y": 20, "width": 300, "height": 200],
+            "region": ["x": 0, "y": 1, "width": 300, "height": 200],
             "destination": destination.path,
             "showsCursor": true,
-        ]) as? [String: Any])
+        ])
+        let params = try #require(try JSONSerialization.jsonObject(with: serialized) as? [String: Any])
+        let receipt = try #require(try await controller.execute(
+            method: "screenCapture.capture",
+            params: params
+        ) as? [String: Any])
         #expect(receipt["path"] as? String == destination.path)
         #expect(receipt["pixelWidth"] as? Int == 600)
         #expect(receipt["pixelHeight"] as? Int == 400)
@@ -270,6 +275,22 @@ struct ScreenControllerTests {
             try await allowed.execute(method: "screenCapture.capture", params: [
                 "screenId": "11", "destination": "/var/tmp/out.png",
             ])
+        }
+        let serialized = try JSONSerialization.data(withJSONObject: [
+            "screenId": "11",
+            "region": ["x": false, "y": 0, "width": 100, "height": 100],
+            "destination": "/tmp/boolean-coordinate.png",
+        ])
+        let booleanCoordinate = try #require(
+            try JSONSerialization.jsonObject(with: serialized) as? [String: Any]
+        )
+        do {
+            _ = try await allowed.execute(method: "screenCapture.capture", params: booleanCoordinate)
+            Issue.record("Expected a boolean region coordinate to be rejected")
+        } catch let error as HostRequestExecutionError {
+            #expect(error.code == .invalidArgument)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
         }
     }
 

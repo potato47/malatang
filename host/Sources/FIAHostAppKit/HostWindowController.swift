@@ -181,7 +181,10 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isInspectable = inspectable
-        if transparent { webView.underPageBackgroundColor = .clear }
+        if transparent {
+            webView.underPageBackgroundColor = .clear
+            webView.setValue(false, forKey: "drawsBackground")
+        }
         window.contentView = webView
         super.init(window: window)
         window.delegate = self

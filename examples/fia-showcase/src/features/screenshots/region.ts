@@ -20,11 +20,13 @@ export function normalizeCaptureRegion(
   const top = Math.max(0, finite(candidate.y, "y"));
   const right = Math.min(screen.width, left + finite(candidate.width, "width"));
   const bottom = Math.min(screen.height, top + finite(candidate.height, "height"));
+  const x = Math.round(left * 100) / 100;
+  const y = Math.round(top * 100) / 100;
   const region = {
-    x: Math.round(left * 100) / 100,
-    y: Math.round(top * 100) / 100,
-    width: Math.round((right - left) * 100) / 100,
-    height: Math.round((bottom - top) * 100) / 100,
+    x,
+    y,
+    width: Math.round((right - x) * 100) / 100,
+    height: Math.round((bottom - y) * 100) / 100,
   };
   if (region.width < 4 || region.height < 4) {
     throw new AppError("REGION_TOO_SMALL", "截图区域至少需要 4 × 4 点");

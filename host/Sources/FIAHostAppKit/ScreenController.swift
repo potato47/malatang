@@ -354,7 +354,7 @@ final class ScreenCaptureController {
     }
 
     private func number(_ value: Any?, field: String, positive: Bool) throws -> Double {
-        guard !(value is Bool), let value = value as? NSNumber, value.doubleValue.isFinite,
+        guard let value = value as? NSNumber, !value.isJSONBoolean, value.doubleValue.isFinite,
               positive ? value.doubleValue > 0 : value.doubleValue >= 0 else {
             throw invalid("\(field) must be a \(positive ? "positive" : "non-negative") finite number")
         }

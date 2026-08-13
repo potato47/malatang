@@ -182,6 +182,7 @@ struct HostWindowControllerTests {
         #expect(window.backgroundColor == .clear)
         #expect(!window.hasShadow)
         #expect(webView.underPageBackgroundColor.alphaComponent == 0)
+        #expect(webView.value(forKey: "drawsBackground") as? Bool == false)
         #expect(window.dragRegion == dragRegion)
 
         let state = controller.state()
@@ -298,6 +299,21 @@ struct HostWindowControllerTests {
                 "id": "main", "transparent": false,
             ])
         }
+        let serialized = try JSONSerialization.data(withJSONObject: [
+            "id": "zero-origin", "url": "https://example.com", "focus": false,
+            "width": 900, "height": 600, "x": 0, "y": 1,
+        ])
+        let zeroOrigin = try #require(
+            try JSONSerialization.jsonObject(with: serialized) as? [String: Any]
+        )
+        #expect((zeroOrigin["x"] as? NSNumber)?.isJSONBoolean == false)
+        #expect((zeroOrigin["y"] as? NSNumber)?.isJSONBoolean == false)
+        let opened = try #require(
+            try registry.execute(method: "webviews.open", params: zeroOrigin) as? [String: Any]
+        )
+        let openedFrame = try #require(opened["frame"] as? [String: Any])
+        #expect((openedFrame["x"] as? NSNumber)?.doubleValue == 0)
+        _ = try registry.execute(method: "webviews.close", params: ["id": "zero-origin"])
         let updated = try #require(try registry.execute(method: "webviews.update", params: [
             "id": "main", "x": -80, "y": 60,
         ]) as? [String: Any])

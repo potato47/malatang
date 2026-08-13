@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { errorMessage, jsonRequest, requestJSON } from "../api";
 
 interface Point {
@@ -14,6 +14,15 @@ export function CaptureView() {
   const [current, setCurrent] = useState<Point | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  useLayoutEffect(() => {
+    document.documentElement.classList.add("capture-page");
+    document.body.classList.add("capture-page");
+    return () => {
+      document.documentElement.classList.remove("capture-page");
+      document.body.classList.remove("capture-page");
+    };
+  }, []);
 
   const cancel = () =>
     void requestJSON("/api/screenshots/overlay", jsonRequest("DELETE")).catch(() => undefined);
