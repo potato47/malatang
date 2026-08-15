@@ -6,6 +6,15 @@ import WebKit
 @testable import FIAHostAppKit
 
 @MainActor
+private final class RecordingWindow: NSWindow {
+    private(set) var madeKeyAndOrderedFront = false
+
+    override func makeKeyAndOrderFront(_ sender: Any?) {
+        madeKeyAndOrderedFront = true
+    }
+}
+
+@MainActor
 @Suite("AppKit host primitives")
 struct HostWindowControllerTests {
     @Test func mainMenuProvidesStandardEditingCommands() throws {
@@ -146,6 +155,16 @@ struct HostWindowControllerTests {
         #expect(controller.state()["resizable"] as? Bool == true)
         #expect(controller.state()["dragRegion"] is NSNull)
         #expect(controller.state()["frame"] is [String: Any])
+    }
+
+    @Test func bringingWindowToFrontMakesItKeyAndActivatesApplication() {
+        let window = RecordingWindow()
+        var activated = false
+
+        HostWindowController.makeKeyAndActivate(window) { activated = true }
+
+        #expect(window.madeKeyAndOrderedFront)
+        #expect(activated)
     }
 
     @Test func configuresFocusableTransparentBorderlessWindows() throws {

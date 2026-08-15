@@ -199,15 +199,22 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
 
     func show() {
         showWindow(nil)
-        window?.orderFront(nil)
+        Self.makeKeyAndActivate(window)
         onStateChanged?()
     }
 
     func focus() {
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        Self.makeKeyAndActivate(window)
         onStateChanged?()
+    }
+
+    static func makeKeyAndActivate(
+        _ window: NSWindow?,
+        activateApplication: () -> Void = { NSApp.activate(ignoringOtherApps: true) }
+    ) {
+        window?.makeKeyAndOrderFront(nil)
+        activateApplication()
     }
 
     func hide() {
