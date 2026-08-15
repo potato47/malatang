@@ -588,6 +588,9 @@ describe("resident Bun backend runtime", () => {
                 title: "Test",
                 visible: true,
                 focused: true,
+                minimized: false,
+                maximized: false,
+                fullScreen: false,
                 windowStyle: "borderless",
                 transparent: true,
                 shadow: false,
@@ -756,6 +759,10 @@ describe("resident Bun backend runtime", () => {
             await host.system.openPath("/tmp");
             await host.system.revealPath("/tmp");
             await host.system.trashPath("/tmp/old-file");
+            await host.webviews.minimize("main");
+            await host.webviews.maximize("main");
+            await host.webviews.restore("main");
+            await host.webviews.setFullScreen("main", true);
             await host.globalShortcuts.set([
               { id: "search", key: "space", modifiers: ["option"] },
             ]);
@@ -829,6 +836,9 @@ describe("resident Bun backend runtime", () => {
           throw new Error(`unexpected frame: ${JSON.stringify(frame)}`);
         }
         methods.push(frame.method);
+        if (frame.method === "webviews.setFullScreen") {
+          expect(frame.params).toEqual({ id: "main", fullScreen: true });
+        }
         const result =
           frame.method === "system.trashPath"
             ? "/Users/test/.Trash/old-file"
@@ -869,6 +879,10 @@ describe("resident Bun backend runtime", () => {
       "system.openPath",
       "system.revealPath",
       "system.trashPath",
+      "webviews.minimize",
+      "webviews.maximize",
+      "webviews.restore",
+      "webviews.setFullScreen",
       "globalShortcuts.set",
       "screens.list",
       "screenCapture.getAuthorizationStatus",

@@ -92,6 +92,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     private var alwaysOnTop: Bool
     private var visibleOnAllSpaces: Bool
     private var visibleOverFullScreen: Bool
+    private var borderlessMaximized = false
     private var lastKnownFrame: DesktopWindowFrame?
     private var pendingFrameStateTask: Task<Void, Never>?
 
@@ -102,6 +103,14 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     var currentFrame: DesktopWindowFrame? {
         if let frame = window?.frame { return Self.desktopFrame(frame) }
         return lastKnownFrame
+    }
+
+    var restorableFrame: DesktopWindowFrame? {
+        guard let window else { return lastKnownFrame }
+        if window.isMiniaturized || isMaximized || window.styleMask.contains(.fullScreen) {
+            return lastKnownFrame
+        }
+        return Self.desktopFrame(window.frame)
     }
 
     init(
@@ -188,7 +197,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         window.contentView = webView
         super.init(window: window)
         window.delegate = self
-        window.onDragEnded = { [weak self] in self?.emitFrameStateChanged() }
+        window.onDragEnded = { [weak self] in self?.finishManualFrameInteraction() }
         webView.navigationDelegate = self
         applyFlags()
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15))
@@ -220,6 +229,54 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     func hide() {
         window?.orderOut(nil)
         onStateChanged?()
+    }
+
+    func minimize() throws {
+        let window = try availableWindow()
+        guard !window.isMiniaturized else { return }
+        window.miniaturize(nil)
+        onStateChanged?()
+    }
+
+    func maximize() throws {
+        let window = try availableWindow()
+        guard resizable else {
+            throw HostRequestExecutionError(code: .invalidArgument, message: "window is not resizable")
+        }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        if windowStyle == .borderless {
+            guard !borderlessMaximized else { return }
+            guard let targetFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+                throw HostRequestExecutionError(code: .nativeFailure, message: "no screen is available")
+            }
+            borderlessMaximized = true
+            window.setFrame(targetFrame, display: true)
+        } else if !window.isZoomed {
+            window.zoom(nil)
+        }
+        Self.makeKeyAndActivate(window)
+        onStateChanged?()
+    }
+
+    func restore() throws {
+        let window = try availableWindow()
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        if windowStyle == .borderless, borderlessMaximized {
+            borderlessMaximized = false
+            if let lastKnownFrame { window.setFrame(Self.nativeRect(lastKnownFrame), display: true) }
+        } else if windowStyle == .native, window.isZoomed {
+            window.zoom(nil)
+        }
+        Self.makeKeyAndActivate(window)
+        onStateChanged?()
+    }
+
+    func setFullScreen(_ fullScreen: Bool) throws {
+        let window = try availableWindow()
+        let isFullScreen = window.styleMask.contains(.fullScreen)
+        guard fullScreen != isFullScreen else { return }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.toggleFullScreen(nil)
     }
 
     func navigate(to url: URL) {
@@ -315,6 +372,9 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
             "title": window?.title ?? "",
             "visible": window?.isVisible == true && window?.isMiniaturized == false,
             "focused": window?.isKeyWindow == true,
+            "minimized": window?.isMiniaturized == true,
+            "maximized": isMaximized,
+            "fullScreen": window?.styleMask.contains(.fullScreen) == true,
             "windowStyle": windowStyle.rawValue,
             "transparent": transparent,
             "shadow": shadow,
@@ -341,8 +401,23 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         window.collectionBehavior = behavior
     }
 
+    private func availableWindow() throws -> NSWindow {
+        guard let window else {
+            throw HostRequestExecutionError(code: .nativeFailure, message: "WebView window is unavailable")
+        }
+        return window
+    }
+
+    private var isMaximized: Bool {
+        windowStyle == .borderless ? borderlessMaximized : window?.isZoomed == true
+    }
+
     private func recordFrame() {
-        guard let frame = window?.frame else { return }
+        guard let window,
+              !window.isMiniaturized,
+              !isMaximized,
+              !window.styleMask.contains(.fullScreen) else { return }
+        let frame = window.frame
         lastKnownFrame = Self.desktopFrame(frame)
         onFrameChanged?()
     }
@@ -363,6 +438,14 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         onStateChanged?()
     }
 
+    private func finishManualFrameInteraction() {
+        if windowStyle == .borderless, borderlessMaximized {
+            borderlessMaximized = false
+            recordFrame()
+        }
+        emitFrameStateChanged()
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if closeBehavior == .hide {
             sender.orderOut(nil)
@@ -381,9 +464,13 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
     func windowDidResignKey(_ notification: Notification) { onStateChanged?() }
     func windowDidMiniaturize(_ notification: Notification) { onStateChanged?() }
     func windowDidDeminiaturize(_ notification: Notification) { onStateChanged?() }
+    func windowDidEnterFullScreen(_ notification: Notification) { onStateChanged?() }
+    func windowDidExitFullScreen(_ notification: Notification) { onStateChanged?() }
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) { onStateChanged?() }
+    func windowDidFailToExitFullScreen(_ window: NSWindow) { onStateChanged?() }
     func windowDidMove(_ notification: Notification) { recordFrame(); scheduleFrameStateChanged() }
     func windowDidResize(_ notification: Notification) { recordFrame(); scheduleFrameStateChanged() }
-    func windowDidEndLiveResize(_ notification: Notification) { emitFrameStateChanged() }
+    func windowDidEndLiveResize(_ notification: Notification) { finishManualFrameInteraction() }
 
     func webView(
         _ webView: WKWebView,

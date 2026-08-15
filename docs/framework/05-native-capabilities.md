@@ -29,6 +29,12 @@ WebView 默认 1024×700、最小 720×480、关闭时隐藏并恢复按 ID 保�
 CSS 将 `html`/`body` 背景设为透明。拖动带拦截覆盖区域内的网页左键交互，可用左右 inset
 为页面按钮留出区域。
 
+窗口打开后可通过 `minimize`、`maximize`、`restore` 和 `setFullScreen` 控制原生窗口状态。
+`restore` 同时解除最小化和最大化；退出全屏应显式调用 `setFullScreen(id, false)`。不可缩放窗口
+调用 `maximize` 会返回 `INVALID_ARGUMENT`。`FIAWebViewState` 的 `minimized`、`maximized` 和
+`fullScreen` 表示 Host 当前观察到的原生状态；全屏切换包含系统动画，最终状态也会通过
+`host.webviews.onEvent` 的 `changed` 事件发布。最大化和全屏帧不会覆盖按窗口 ID 持久化的普通帧。
+
 `open` 和 `update` 的 `x/y` 使用以主屏左上角为原点、向右/向下递增的逻辑点坐标，多屏可以
 出现负值。状态中的 `frame` 返回实际窗口外框；原生标题栏窗口的外框尺寸可能大于传入的内容
 `width/height`。显式坐标允许位于屏幕外，只有历史恢复位置会被约束到可见屏幕。

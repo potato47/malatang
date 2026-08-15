@@ -33,6 +33,16 @@ final class WebViewRegistry {
             let controller = try controller(params); controller.hide(); return controller.state()
         case "webviews.focus":
             let controller = try controller(params); controller.focus(); return controller.state()
+        case "webviews.minimize":
+            let controller = try controller(params); try controller.minimize(); return controller.state()
+        case "webviews.maximize":
+            let controller = try controller(params); try controller.maximize(); return controller.state()
+        case "webviews.restore":
+            let controller = try controller(params); try controller.restore(); return controller.state()
+        case "webviews.setFullScreen":
+            let controller = try controller(params)
+            try controller.setFullScreen(try requiredBool(params["fullScreen"], field: "fullScreen"))
+            return controller.state()
         case "webviews.close":
             let id = try identifier(params["id"])
             guard let controller = controllers.removeValue(forKey: id) else { throw notFound(id) }
@@ -70,7 +80,7 @@ final class WebViewRegistry {
 
     func currentFrames() -> [String: DesktopWindowFrame] {
         var frames = storedFrames
-        for (id, controller) in controllers { if let frame = controller.currentFrame { frames[id] = frame } }
+        for (id, controller) in controllers { if let frame = controller.restorableFrame { frames[id] = frame } }
         return frames
     }
 
@@ -180,7 +190,7 @@ final class WebViewRegistry {
             self.emit(type: "changed", state: controller.state())
         }
         controller.onFrameChanged = { [weak self, weak controller] in
-            guard let self, let controller, let frame = controller.currentFrame else { return }
+            guard let self, let controller, let frame = controller.restorableFrame else { return }
             self.storedFrames[id] = frame
             self.onFramesChanged?(self.currentFrames())
         }
@@ -307,6 +317,13 @@ final class WebViewRegistry {
         guard let value else { return nil }
         guard let value = value as? Bool else {
             throw HostRequestExecutionError(code: .invalidArgument, message: "\(field) must be a boolean")
+        }
+        return value
+    }
+
+    private func requiredBool(_ value: Any?, field: String) throws -> Bool {
+        guard let value = try optionalBool(value, field: field) else {
+            throw HostRequestExecutionError(code: .invalidArgument, message: "\(field) is required")
         }
         return value
     }

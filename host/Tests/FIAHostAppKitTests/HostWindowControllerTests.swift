@@ -153,6 +153,9 @@ struct HostWindowControllerTests {
         #expect(controller.state()["transparent"] as? Bool == false)
         #expect(controller.state()["shadow"] as? Bool == true)
         #expect(controller.state()["resizable"] as? Bool == true)
+        #expect(controller.state()["minimized"] as? Bool == false)
+        #expect(controller.state()["maximized"] as? Bool == false)
+        #expect(controller.state()["fullScreen"] as? Bool == false)
         #expect(controller.state()["dragRegion"] is NSNull)
         #expect(controller.state()["frame"] is [String: Any])
     }
@@ -209,7 +212,14 @@ struct HostWindowControllerTests {
         #expect(state["transparent"] as? Bool == true)
         #expect(state["shadow"] as? Bool == false)
         #expect(state["resizable"] as? Bool == false)
+        #expect(state["minimized"] as? Bool == false)
+        #expect(state["maximized"] as? Bool == false)
+        #expect(state["fullScreen"] as? Bool == false)
         #expect((state["dragRegion"] as? [String: Any])?["height"] as? Double == 32)
+
+        #expect(throws: HostRequestExecutionError.self) {
+            try controller.maximize()
+        }
 
         var changes = 0
         controller.onStateChanged = { changes += 1 }
@@ -257,6 +267,41 @@ struct HostWindowControllerTests {
                 dragRegion: nil
             )
         }
+    }
+
+    @Test func maximizesAndRestoresBorderlessWindowsWithoutLosingTheirNormalFrame() throws {
+        _ = NSApplication.shared
+        let controller = HostWindowController(
+            id: "maximizable",
+            url: URL(string: "https://example.com")!,
+            title: "Maximizable",
+            width: 640,
+            height: 360,
+            minWidth: 320,
+            minHeight: 180,
+            restoredFrame: nil,
+            dataStore: .nonPersistent(),
+            closeBehavior: .close,
+            windowStyle: .borderless,
+            resizable: true,
+            alwaysOnTop: false,
+            visibleOnAllSpaces: false,
+            visibleOverFullScreen: false,
+            inspectable: false
+        )
+        let window = try #require(controller.window)
+        let normalFrame = window.frame
+        let persistedFrame = controller.restorableFrame
+
+        try controller.maximize()
+        #expect(controller.state()["maximized"] as? Bool == true)
+        #expect(controller.restorableFrame == persistedFrame)
+        #expect(window.frame != normalFrame)
+
+        try controller.restore()
+        #expect(controller.state()["maximized"] as? Bool == false)
+        #expect(window.frame == normalFrame)
+        controller.close()
     }
 
     @Test func coalescesFrameChangesAndFlushesInteractionEnd() async throws {
@@ -341,6 +386,17 @@ struct HostWindowControllerTests {
         #expect(windows.count == 1)
         #expect(windows[0]["windowStyle"] as? String == "borderless")
         #expect(windows[0]["transparent"] as? Bool == true)
+        let unchangedFullScreen = try #require(try registry.execute(
+            method: "webviews.setFullScreen",
+            params: ["id": "main", "fullScreen": false]
+        ) as? [String: Any])
+        #expect(unchangedFullScreen["fullScreen"] as? Bool == false)
+        #expect(throws: HostRequestExecutionError.self) {
+            try registry.execute(method: "webviews.setFullScreen", params: ["id": "main"])
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try registry.execute(method: "webviews.maximize", params: ["id": "main"])
+        }
         _ = try registry.execute(method: "webviews.close", params: ["id": "main"])
     }
 

@@ -117,6 +117,9 @@ export interface FIAWebViewState {
   readonly title: string;
   readonly visible: boolean;
   readonly focused: boolean;
+  readonly minimized: boolean;
+  readonly maximized: boolean;
+  readonly fullScreen: boolean;
   readonly windowStyle: FIAWebViewWindowStyle;
   readonly transparent: boolean;
   readonly shadow: boolean;
@@ -849,6 +852,14 @@ export interface FIAHost {
     show(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
     hide(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
     focus(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
+    minimize(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
+    maximize(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
+    restore(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
+    setFullScreen(
+      id: string,
+      fullScreen: boolean,
+      callOptions?: FIAHostCallOptions,
+    ): Promise<FIAWebViewState>;
     close(id: string, callOptions?: FIAHostCallOptions): Promise<void>;
     update(
       id: string,
@@ -998,6 +1009,11 @@ function createHost(peer: StdioPeer, session: SessionGuard, events: HostEventSco
       show: (id, callOptions) => peer.call("webviews.show", { id }, callOptions),
       hide: (id, callOptions) => peer.call("webviews.hide", { id }, callOptions),
       focus: (id, callOptions) => peer.call("webviews.focus", { id }, callOptions),
+      minimize: (id, callOptions) => peer.call("webviews.minimize", { id }, callOptions),
+      maximize: (id, callOptions) => peer.call("webviews.maximize", { id }, callOptions),
+      restore: (id, callOptions) => peer.call("webviews.restore", { id }, callOptions),
+      setFullScreen: (id, fullScreen, callOptions) =>
+        peer.call("webviews.setFullScreen", { id, fullScreen }, callOptions),
       close: (id, callOptions) => peer.call("webviews.close", { id }, callOptions),
       update: (id, options, callOptions) =>
         peer.call("webviews.update", { id, ...options }, callOptions),

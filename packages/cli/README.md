@@ -112,6 +112,10 @@ await host.webviews.open({
 所有 Promise 方法都接受可选的 `{ signal: AbortSignal }` 尾参数。文件面板和通知授权没有固定
 超时；AbortSignal 会取消等待，文件面板也会被关闭。
 
+窗口创建后可使用 `host.webviews.minimize(id)`、`maximize(id)`、`restore(id)` 和
+`setFullScreen(id, boolean)` 控制原生状态，并从 `FIAWebViewState` 或 `onEvent` 读取
+`minimized`、`maximized`、`fullScreen`。`restore` 不负责退出全屏。
+
 通过 `host.application.onReopen`、`host.statusItem.onClick`、`host.statusItem.onAction`、
 `host.globalShortcuts.onPressed`、`host.webviews.onEvent` 和 `host.notifications.onClick` 注册的
 监听器属于当前 `start` 生命周期，FIA 会在热重载或 Backend 停止时自动注销；全局快捷键集合
