@@ -1,4 +1,4 @@
-import type { FIAServer } from "@semicoder/fia/backend";
+import type { BackendServer } from "@semicoder/fia/backend";
 import type { AppEvent } from "../shared/contracts";
 
 export interface ShowcaseSocketData {
@@ -8,9 +8,9 @@ export interface ShowcaseSocketData {
 const TOPIC = "showcase-events";
 
 export class EventBroker {
-  #server: FIAServer<ShowcaseSocketData> | null = null;
+  #server: BackendServer<ShowcaseSocketData> | null = null;
 
-  attach(server: FIAServer<ShowcaseSocketData>): void {
+  attach(server: BackendServer<ShowcaseSocketData>): void {
     this.#server = server;
   }
 

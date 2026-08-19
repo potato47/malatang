@@ -1,4 +1,4 @@
-import { FIAHostError, type FIARouteContext, type FIAServer } from "@semicoder/fia/backend";
+import { HostError, type BackendServer, type RouteContext } from "@semicoder/fia/backend";
 import type { APIErrorPayload } from "../shared/contracts";
 
 export class AppError extends Error {
@@ -51,7 +51,7 @@ export function errorResponse(error: unknown): Response {
       { status: error.status },
     );
   }
-  if (error instanceof FIAHostError) {
+  if (error instanceof HostError) {
     const status =
       error.code === "PERMISSION_DENIED"
         ? 403
@@ -60,7 +60,7 @@ export function errorResponse(error: unknown): Response {
           : error.code === "CONFLICT"
             ? 409
             : 400;
-    console.error(`Host API ${error.code}: ${error.message}`, error.details);
+    console.error(`Desktop API ${error.code}: ${error.message}`, error.details);
     const messages: Record<string, string> = {
       PERMISSION_DENIED: "系统权限不足，请在能力中心检查授权",
       NOT_FOUND: "请求的原生资源不存在或已失效",
@@ -91,8 +91,8 @@ export function errorResponse(error: unknown): Response {
 
 type APIHandler<WebSocketData, Path extends string> = (
   request: Bun.BunRequest<Path>,
-  server: FIAServer<WebSocketData>,
-  context: FIARouteContext,
+  server: BackendServer<WebSocketData>,
+  context: RouteContext,
 ) => Response | Promise<Response>;
 
 export function api<WebSocketData = unknown, Path extends string = string>(

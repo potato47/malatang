@@ -41,7 +41,7 @@ xcrun notarytool store-credentials "fia-notary" \
 `defineBackend()({...})`。React 只是模板选择，运行时不引用 React，
 应用也可换成其他前端或只提供 API。
 
-受保护的 route 和 fallback `fetch` handler 第三个参数提供 `{ host, app }`。`app` 包含 Host
+受保护的 route 和 fallback `fetch` handler 第三个参数提供 `{ desktop, app }`。`app` 包含 Host
 权威的 name、identifier 和预先创建的绝对 `dataDirectory`，无需复制配置或依赖 `cwd()`。
 
 开发模式使用稳定 Bun server ID 热替换 routes/handlers，并复用同一 stdio peer；前端 HTML

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { FIAHost } from "@semicoder/fia/backend";
+import type { Desktop } from "@semicoder/fia/backend";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -22,7 +22,7 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
     const order: string[] = [];
     const service = new ScreenshotService(root, repository, () => order.push("event"));
     await service.initialize();
-    const host = {
+    const desktop = {
       screens: {
         list: async () => [
           {
@@ -51,8 +51,8 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
         },
       },
       system: { trashPath: async (path: string) => path },
-    } as unknown as FIAHost;
-    const result = await service.capture(host, { mode: "screen" });
+    } as unknown as Desktop;
+    const result = await service.capture(desktop, { mode: "screen" });
     expect(result).not.toHaveProperty("path");
     expect(order).toEqual(["capture", "clipboard", "event"]);
     repository.close();
@@ -65,7 +65,7 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
     const service = new ScreenshotService(root, repository, () => {});
     await service.initialize();
     let called = false;
-    const host = {
+    const desktop = {
       screens: { list: async () => [] },
       screenCapture: {
         getAuthorizationStatus: async () => "notAuthorized",
@@ -73,8 +73,8 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
           called = true;
         },
       },
-    } as unknown as FIAHost;
-    await expect(service.capture(host, { mode: "screen" })).rejects.toThrow("请先在能力中心");
+    } as unknown as Desktop;
+    await expect(service.capture(desktop, { mode: "screen" })).rejects.toThrow("请先在能力中心");
     expect(called).toBe(false);
     repository.close();
   });
@@ -93,7 +93,7 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
     const started = new Promise<void>((resolveStarted) => {
       captureStarted = resolveStarted;
     });
-    const host = {
+    const desktop = {
       screens: {
         list: async () => [
           {
@@ -118,13 +118,13 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
       },
       clipboard: { writeImage: async () => {} },
       system: { trashPath: async (path: string) => path },
-    } as unknown as FIAHost;
-    const first = service.capture(host, { mode: "screen" });
+    } as unknown as Desktop;
+    const first = service.capture(desktop, { mode: "screen" });
     await started;
-    await expect(service.capture(host, { mode: "screen" })).rejects.toThrow("已有截图任务");
+    await expect(service.capture(desktop, { mode: "screen" })).rejects.toThrow("已有截图任务");
     release();
     await first;
-    await expect(service.capture(host, { mode: "screen", screenId: "gone" })).rejects.toThrow(
+    await expect(service.capture(desktop, { mode: "screen", screenId: "gone" })).rejects.toThrow(
       "已断开",
     );
     repository.close();
@@ -137,7 +137,7 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
     const events: Array<{ type: string }> = [];
     const service = new ScreenshotService(root, repository, (event) => events.push(event));
     await service.initialize();
-    const host = {
+    const desktop = {
       screens: {
         list: async () => [
           {
@@ -164,8 +164,8 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
         },
       },
       system: { trashPath: async (path: string) => path },
-    } as unknown as FIAHost;
-    const result = await service.capture(host, { mode: "screen" });
+    } as unknown as Desktop;
+    const result = await service.capture(desktop, { mode: "screen" });
     expect(repository.listScreenshots()).toHaveLength(1);
     expect(result.warning).toContain("已保存");
     expect(result.warning).not.toContain("/private");
@@ -201,15 +201,15 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
       });
     }
     const trashed: string[] = [];
-    const host = {
+    const desktop = {
       system: {
         trashPath: async (path: string) => {
           trashed.push(path);
           return path;
         },
       },
-    } as unknown as FIAHost;
-    expect(await service.cleanup(host, { maxAgeDays: 30, maxCount: 1 })).toEqual({ removed: 2 });
+    } as unknown as Desktop;
+    expect(await service.cleanup(desktop, { maxAgeDays: 30, maxCount: 1 })).toEqual({ removed: 2 });
     expect(trashed).toHaveLength(2);
     expect(repository.listScreenshots().map((record) => record.id)).toEqual(["shot-2"]);
     repository.close();
@@ -225,7 +225,7 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
     const captureStarted = new Promise<void>((resolveStarted) => {
       started = resolveStarted;
     });
-    const host = {
+    const desktop = {
       screens: {
         list: async () => [
           {
@@ -253,8 +253,8 @@ describe("截图服务（注入 Host，不触发系统截图）", () => {
           throw new Error("unreachable");
         },
       },
-    } as unknown as FIAHost;
-    const outcome = service.capture(host, { mode: "screen" }).catch((error) => error as Error);
+    } as unknown as Desktop;
+    const outcome = service.capture(desktop, { mode: "screen" }).catch((error) => error as Error);
     await captureStarted;
     await service.dispose();
     expect(await outcome).toBeInstanceOf(Error);

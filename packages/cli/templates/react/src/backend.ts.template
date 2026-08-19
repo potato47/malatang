@@ -29,17 +29,17 @@ export default defineBackend<SocketData>()({
       },
     },
   },
-  async start({ host, url }) {
-    await host.statusItem.setMenu([
-      { type: "item", id: "open-window", title: "Open Window", symbol: "macwindow" },
-      { type: "item", id: "open-browser", title: "Open in Browser", symbol: "safari" },
+  async start({ desktop, url }) {
+    await desktop.tray.setMenu([
+      { item: { id: "open-window", label: "Open Window", symbol: "macwindow" } },
+      { item: { id: "open-browser", label: "Open in Browser", symbol: "safari" } },
     ]);
     const openWindow = () =>
-      host.webviews.open({ id: "main", url: url("/").href, title: __FIA_APP_NAME_JSON__ });
-    host.statusItem.onClick(() => void openWindow());
-    host.statusItem.onAction(({ id }) => {
-      if (id === "open-window") void openWindow();
-      if (id === "open-browser") void host.system.openURL(url("/").href);
+      desktop.windows.create({ id: "main", url: url("/"), title: __FIA_APP_NAME_JSON__ });
+    desktop.tray.addEventListener("click", () => void openWindow());
+    desktop.tray.addEventListener("menuclick", ({ detail }) => {
+      if (detail.id === "open-window") void openWindow();
+      if (detail.id === "open-browser") void desktop.system.openURL(url("/"));
     });
   },
 });

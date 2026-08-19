@@ -1,4 +1,4 @@
-import type { FIAHost } from "@semicoder/fia/backend";
+import type { Desktop } from "@semicoder/fia/backend";
 import { lstat, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ShowcaseRepository, type StoredScreenshotRecord } from "../../lib/database";
@@ -72,7 +72,7 @@ export class ScreenshotService {
     return record;
   }
 
-  async capture(host: FIAHost, input: CaptureRequest): Promise<ScreenshotRecord> {
+  async capture(desktop: Desktop, input: CaptureRequest): Promise<ScreenshotRecord> {
     if (this.#capturing || (this.#selecting && input.mode !== "region")) {
       throw new AppError("CAPTURE_IN_PROGRESS", "已有截图任务正在进行", 409);
     }
@@ -90,8 +90,8 @@ export class ScreenshotService {
       // Start both calls at the trigger boundary so pointer-screen selection is
       // sampled before any permission/status round-trip can introduce drift.
       const [authorization, screensValue] = await Promise.all([
-        host.screenCapture.getAuthorizationStatus(),
-        host.screens.list(),
+        desktop.screenCapture.getAuthorizationStatus(),
+        desktop.screens.list(),
       ]);
       if (authorization !== "authorized") {
         throw new AppError(
@@ -121,7 +121,7 @@ export class ScreenshotService {
       const region = mode === "region" ? normalizeCaptureRegion(screen.frame, input.region) : null;
       const id = crypto.randomUUID();
       destination = resolve(this.#directory, captureName(id));
-      const receipt = await host.screenCapture.capture(
+      const receipt = await desktop.screenCapture.capture(
         {
           screenId: screen.id,
           ...(region === null ? {} : { region }),
@@ -151,7 +151,7 @@ export class ScreenshotService {
       const { path: _path, ...publicRecord } = record;
       if (input.copyToClipboard ?? true) {
         try {
-          await host.clipboard.writeImage(record.path);
+          await desktop.clipboard.writeImage(record.path);
         } catch (error) {
           console.warn("截图已保存，但复制图片到剪贴板失败", error);
           publicRecord.warning = "截图已保存，但复制图片到剪贴板失败；可在历史记录中重试";
@@ -160,7 +160,7 @@ export class ScreenshotService {
       }
       this.publish({ type: "screenshot.created", screenshot: publicRecord });
       const settings = this.repository.settings();
-      await this.cleanup(host, {
+      await this.cleanup(desktop, {
         maxAgeDays: settings.screenshotMaxAgeDays,
         maxCount: settings.screenshotMaxCount,
       });
@@ -176,11 +176,11 @@ export class ScreenshotService {
     }
   }
 
-  async trash(host: FIAHost, id: string): Promise<{ trashed: true }> {
+  async trash(desktop: Desktop, id: string): Promise<{ trashed: true }> {
     const record = this.get(id);
     try {
       await lstat(record.path);
-      await host.system.trashPath(record.path);
+      await desktop.system.trashPath(record.path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
@@ -190,7 +190,7 @@ export class ScreenshotService {
   }
 
   async cleanup(
-    host: FIAHost,
+    desktop: Desktop,
     policy: { maxAgeDays?: number; maxCount?: number } = {},
   ): Promise<{ removed: number }> {
     const maxAgeDays = Math.min(Math.max(Math.floor(policy.maxAgeDays ?? 30), 1), 365);
@@ -203,7 +203,7 @@ export class ScreenshotService {
     let removed = 0;
     for (const record of records) {
       try {
-        await this.trash(host, record.id);
+        await this.trash(desktop, record.id);
         removed += 1;
       } catch (error) {
         console.warn(`无法清理截图 ${record.path}`, error);

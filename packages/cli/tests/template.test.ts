@@ -96,20 +96,43 @@ describe("generated resident backend React template", () => {
     await Bun.write(
       resolve(project, "src/backend-contract.ts"),
       `
-        import { defineBackend, type FIAServer } from "@semicoder/fia/backend";
+        import {
+          defineBackend,
+          type BackendServer,
+          type BrowserWindow,
+          type Desktop,
+          type MenuItem,
+        } from "@semicoder/fia/backend";
+        // @ts-expect-error Legacy Backend types are intentionally removed.
+        import type { FIAHost } from "@semicoder/fia/backend";
+        // @ts-expect-error Legacy window types are intentionally removed.
+        import type { FIAWebViewState } from "@semicoder/fia/backend";
+        // @ts-expect-error Legacy server types are intentionally removed.
+        import type { FIAServer } from "@semicoder/fia/backend";
+        // @ts-expect-error Legacy error classes are intentionally removed.
+        import { FIAHostError } from "@semicoder/fia/backend";
 
         interface SocketData { connectedAt: number }
-        declare const defaultServer: FIAServer;
+        declare const defaultServer: BackendServer;
         defaultServer.publish("events", "ready");
+        declare const desktopContract: Desktop;
+        declare const windowContract: BrowserWindow;
+        const menuContract: MenuItem[] = [
+          { item: { id: "open", label: "Open", accelerator: "CmdOrCtrl+O" } },
+          "separator",
+        ];
+        void desktopContract;
+        void windowContract;
+        void menuContract;
 
         export const backend = defineBackend<SocketData>()({
           http: {
             routes: {
-              "/api/cards/:id": (request, server, { host, app }) => {
+              "/api/cards/:id": (request, server, { desktop, app }) => {
                 const id: string = request.params.id;
                 const directory: string = app.dataDirectory;
                 const identifier: string = app.identifier;
-                void host.clipboard.writeText(id);
+                void desktop.clipboard.writeText(id);
                 server.publish("events", directory + identifier);
                 // @ts-expect-error The route does not declare a missing parameter.
                 request.params.missing;
@@ -117,25 +140,40 @@ describe("generated resident backend React template", () => {
               },
             },
           },
-          async start({ host, app, server, url }) {
-            void host.application.getState();
-            host.application.onReopen(() => {});
-            host.globalShortcuts.onPressed(({ id }) => server.publish("events", id));
-            await host.globalShortcuts.set([
+          async start(context) {
+            const { desktop, app, server, url } = context;
+            void desktop.getState();
+            desktop.dock.addEventListener("reopen", () => {});
+            desktop.globalShortcuts.addEventListener("pressed", ({ detail }) =>
+              server.publish("events", detail.id)
+            );
+            await desktop.globalShortcuts.set([
               { id: "search", key: "space", modifiers: ["option"] },
             ]);
-            const screens = await host.screens.list();
+            const main = await desktop.windows.create({
+              id: "main",
+              url: url("/"),
+              frameless: true,
+            });
+            await main.setTitle("Main");
+            // @ts-expect-error windowStyle was replaced by frameless.
+            await desktop.windows.create({ id: "legacy", url: url("/"), windowStyle: "borderless" });
+            // @ts-expect-error The legacy WebView manager is intentionally removed.
+            desktop.webviews;
+            const screens = await desktop.screens.list();
             const screen = screens[0];
             if (screen !== undefined) {
-              const receipt = await host.screenCapture.capture({
+              const receipt = await desktop.screenCapture.capture({
                 screenId: screen.id,
                 destination: app.dataDirectory + "/capture.png",
               });
-              await host.clipboard.writeImage(receipt.path);
+              await desktop.clipboard.writeImage(receipt.path);
             }
-            await host.system.openPath(app.dataDirectory);
+            await desktop.system.openPath(app.dataDirectory);
             server.publish("events", app.name);
             url("/");
+            // @ts-expect-error The legacy context property is intentionally removed.
+            context.host;
           },
         });
 

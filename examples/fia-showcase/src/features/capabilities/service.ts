@@ -1,4 +1,4 @@
-import type { FIAHost } from "@semicoder/fia/backend";
+import type { Desktop } from "@semicoder/fia/backend";
 import type { CapabilityItem, CapabilitySnapshot, ScreenInfo } from "../../shared/contracts";
 
 export interface ShortcutState {
@@ -19,15 +19,15 @@ function captureCapability(status: string): CapabilityItem {
 }
 
 export async function capabilitySnapshot(
-  host: FIAHost,
+  desktop: Desktop,
   shortcuts: ShortcutState,
 ): Promise<CapabilitySnapshot> {
   const [app, screens, windows, captureStatus, notificationStatus] = await Promise.all([
-    host.application.getState(),
-    host.screens.list() as Promise<ScreenInfo[]>,
-    host.webviews.list(),
-    host.screenCapture.getAuthorizationStatus(),
-    host.notifications.getAuthorizationStatus(),
+    desktop.getState(),
+    desktop.screens.list() as Promise<ScreenInfo[]>,
+    desktop.windows.list(),
+    desktop.screenCapture.getAuthorizationStatus(),
+    desktop.notifications.getAuthorizationStatus(),
   ]);
   const notificationAuthorized = ["authorized", "provisional", "ephemeral"].includes(
     notificationStatus,
@@ -35,10 +35,10 @@ export async function capabilitySnapshot(
   return {
     app,
     screens,
-    windows: windows.map((window) => ({
-      id: window.id,
-      visible: window.visible,
-      focused: window.focused,
+    windows: windows.map(({ state }) => ({
+      id: state.id,
+      visible: state.visible,
+      focused: state.focused,
     })),
     shortcuts,
     items: [

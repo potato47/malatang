@@ -91,11 +91,11 @@ describe("resident Bun backend runtime", () => {
         import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
         const backend = (label) => defineBackend()({
           http: {},
-          async start({ host }) {
-            host.statusItem.onClick(() => process.stderr.write(label + "\\n"));
-            host.application.onReopen(() => process.stderr.write("reopen-" + label + "\\n"));
+          async start({ desktop }) {
+            desktop.tray.addEventListener("click", () => process.stderr.write(label + "\\n"));
+            desktop.dock.addEventListener("reopen", () => process.stderr.write("reopen-" + label + "\\n"));
             if (label === "stale") {
-              await host.globalShortcuts.set([
+              await desktop.globalShortcuts.set([
                 { id: "search", key: "space", modifiers: ["option"] },
               ]);
             }
@@ -207,6 +207,149 @@ describe("resident Bun backend runtime", () => {
     input.end();
   });
 
+  test("keeps Desktop handles usable during stop and invalidates them afterward", async () => {
+    const root = await mkdtemp(resolve(tmpdir(), "fia-backend-desktop-stop-"));
+    temporaryDirectories.push(root);
+    const backendSource = pathToFileURL(resolve(import.meta.dir, "../src/backend.ts")).href;
+    const runner = resolve(root, "runner.ts");
+    await Bun.write(
+      runner,
+      `
+        import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
+        let main;
+        const first = defineBackend()({
+          http: {},
+          async start({ desktop }) {
+            main = await desktop.windows.create({
+              id: "main",
+              url: "https://app.invalid/",
+            });
+          },
+          async stop({ desktop }) {
+            if (desktop === undefined) throw new Error("missing Desktop in stop");
+            await main.setTitle("Stopping");
+            await main.close();
+            process.stderr.write("stop-ok\\n");
+          },
+        });
+        await runBackend(first);
+        await runBackend(defineBackend()({ http: {} }));
+        try {
+          await main.show();
+        } catch (error) {
+          process.stderr.write("stale:" + error.code + "\\n");
+        }
+      `,
+    );
+    const child = Bun.spawn([process.execPath, runner], {
+      cwd: root,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const input = child.stdin;
+    if (input === undefined || typeof input === "number") throw new Error("missing child stdin");
+    const stderr = new Response(child.stderr).text();
+    input.write(
+      `${JSON.stringify({
+        v: 2,
+        type: "initialize",
+        sessionSecret: crypto.randomUUID() + crypto.randomUUID(),
+        preferredPort: 0,
+        development: false,
+        applicationSupport: root,
+        app: { name: "Stop", identifier: "com.example.stop" },
+      })}\n`,
+    );
+    input.flush();
+
+    const reader = child.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const methods: string[] = [];
+    const deadline = Date.now() + 5_000;
+    while (methods.length < 5 && Date.now() < deadline) {
+      const item = await Promise.race([
+        reader.read(),
+        Bun.sleep(Math.max(1, deadline - Date.now())).then(() => undefined),
+      ]);
+      if (item === undefined || item.done) break;
+      buffer += decoder.decode(item.value, { stream: true });
+      while (buffer.includes("\n")) {
+        const newline = buffer.indexOf("\n");
+        const frame = JSON.parse(buffer.slice(0, newline)) as {
+          type: string;
+          id?: number;
+          method?: string;
+          params?: Record<string, unknown>;
+        };
+        buffer = buffer.slice(newline + 1);
+        if (frame.type !== "request" || frame.id === undefined || frame.method === undefined) {
+          continue;
+        }
+        methods.push(frame.method);
+        const result =
+          frame.method === "webviews.open"
+            ? {
+                id: "main",
+                url: frame.params?.url,
+                title: "Main",
+                visible: true,
+                focused: true,
+                minimized: false,
+                maximized: false,
+                fullScreen: false,
+                windowStyle: "native",
+                transparent: false,
+                shadow: true,
+                resizable: true,
+                dragRegion: null,
+                frame: { x: 0, y: 0, width: 800, height: 600 },
+                alwaysOnTop: false,
+                visibleOnAllSpaces: false,
+                visibleOverFullScreen: false,
+              }
+            : frame.method === "webviews.update"
+              ? {
+                  id: "main",
+                  url: "https://app.invalid/",
+                  title: frame.params?.title,
+                  visible: true,
+                  focused: true,
+                  minimized: false,
+                  maximized: false,
+                  fullScreen: false,
+                  windowStyle: "native",
+                  transparent: false,
+                  shadow: true,
+                  resizable: true,
+                  dragRegion: null,
+                  frame: { x: 0, y: 0, width: 800, height: 600 },
+                  alwaysOnTop: false,
+                  visibleOnAllSpaces: false,
+                  visibleOverFullScreen: false,
+                }
+              : null;
+        input.write(`${JSON.stringify({ v: 2, type: "response", id: frame.id, result })}\n`);
+        input.flush();
+      }
+    }
+    expect(methods).toEqual([
+      "webviews.open",
+      "globalShortcuts.set",
+      "webviews.update",
+      "webviews.close",
+      "globalShortcuts.set",
+    ]);
+    await Bun.sleep(50);
+    input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
+    input.flush();
+    expect(await child.exited).toBe(0);
+    expect(await stderr).toBe("stop-ok\nstale:UNSAFE_STATE\n");
+    reader.releaseLock();
+    input.end();
+  });
+
   test("clears shortcuts and listeners before awaiting a stalled stop hook", async () => {
     const root = await mkdtemp(resolve(tmpdir(), "fia-backend-stalled-stop-"));
     temporaryDirectories.push(root);
@@ -218,9 +361,9 @@ describe("resident Bun backend runtime", () => {
         import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
         const stale = defineBackend()({
           http: {},
-          async start({ host }) {
-            host.application.onReopen(() => process.stderr.write("stale-reopen\\n"));
-            await host.globalShortcuts.set([
+          async start({ desktop }) {
+            desktop.dock.addEventListener("reopen", () => process.stderr.write("stale-reopen\\n"));
+            await desktop.globalShortcuts.set([
               { id: "search", key: "space", modifiers: ["option"] },
             ]);
           },
@@ -336,9 +479,9 @@ describe("resident Bun backend runtime", () => {
         import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
         const failing = defineBackend()({
           http: {},
-          async start({ host }) {
-            host.application.onReopen(() => process.stderr.write("stale-reopen\\n"));
-            await host.globalShortcuts.set([
+          async start({ desktop }) {
+            desktop.dock.addEventListener("reopen", () => process.stderr.write("stale-reopen\\n"));
+            await desktop.globalShortcuts.set([
               { id: "capture", key: "4", modifiers: ["control", "shift"] },
             ]);
             throw new Error("start exploded");
@@ -354,8 +497,8 @@ describe("resident Bun backend runtime", () => {
         }
         await runBackend(defineBackend()({
           http: {},
-          start({ host }) {
-            host.application.onReopen(() => process.stderr.write("active-reopen\\n"));
+          start({ desktop }) {
+            desktop.dock.addEventListener("reopen", () => process.stderr.write("active-reopen\\n"));
           },
         }));
       `,
@@ -463,31 +606,31 @@ describe("resident Bun backend runtime", () => {
             publicRoutes: { "/": new Response("page") },
             routes: {
               "/api": {
-                GET: (_request, _server, { host, app }) => Response.json({
+                GET: (_request, _server, { desktop, app }) => Response.json({
                   ok: true,
                   app,
-                  sameHost: host === activeContext.host,
+                  sameDesktop: desktop === activeContext.desktop,
                   sameApp: app === activeContext.app,
                 }),
               },
             },
-            fetch: (_request, _server, { host, app }) => Response.json({
+            fetch: (_request, _server, { desktop, app }) => Response.json({
               fallback: true,
-              sameHost: host === activeContext.host,
+              sameDesktop: desktop === activeContext.desktop,
               sameApp: app === activeContext.app,
             }),
           },
           async start(context) {
             activeContext = context;
-            const { host, url } = context;
-            await host.webviews.open({
+            const { desktop, url } = context;
+            await desktop.windows.create({
               id: "main",
-              url: url("/").href,
+              url: url("/"),
               x: 120,
               y: 80,
               width: 640,
               height: 360,
-              windowStyle: "borderless",
+              frameless: true,
               transparent: true,
               shadow: false,
               resizable: false,
@@ -639,11 +782,11 @@ describe("resident Bun backend runtime", () => {
         identifier: "com.example.test",
         dataDirectory: root,
       },
-      sameHost: true,
+      sameDesktop: true,
       sameApp: true,
     });
     const fallback = await fetch(`${origin}/fallback`, { headers: { cookie } });
-    expect(await fallback.json()).toEqual({ fallback: true, sameHost: true, sameApp: true });
+    expect(await fallback.json()).toEqual({ fallback: true, sameDesktop: true, sameApp: true });
     const crossOrigin = await fetch(`${origin}/api`, {
       headers: { cookie, origin: "https://evil.example" },
     });
@@ -673,10 +816,10 @@ describe("resident Bun backend runtime", () => {
         Date.now = () => now;
         await runBackend(defineBackend()({
           http: { publicRoutes: { "/": new Response("page") } },
-          start({ host }) {
-            host.statusItem.onClick(() => {
+          start({ desktop }) {
+            desktop.tray.addEventListener("click", () => {
               now += 30_001;
-              void host.statusItem.setTooltip("clock advanced");
+              void desktop.tray.setTooltip("clock advanced");
             });
           },
         }));
@@ -752,39 +895,41 @@ describe("resident Bun backend runtime", () => {
         import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
         await runBackend(defineBackend()({
           http: {},
-          async start({ host }) {
-            host.application.onReopen(() => process.stderr.write("reopen\\n"));
-            host.notifications.onClick(({ id }) => process.stderr.write(id + "\\n"));
-            host.globalShortcuts.onPressed(({ id }) => process.stderr.write(id + "\\n"));
-            await host.system.openPath("/tmp");
-            await host.system.revealPath("/tmp");
-            await host.system.trashPath("/tmp/old-file");
-            await host.webviews.minimize("main");
-            await host.webviews.maximize("main");
-            await host.webviews.restore("main");
-            await host.webviews.setFullScreen("main", true);
-            await host.globalShortcuts.set([
+          async start({ desktop }) {
+            desktop.dock.addEventListener("reopen", () => process.stderr.write("reopen\\n"));
+            desktop.notifications.addEventListener("click", ({ detail }) => process.stderr.write(detail.id + "\\n"));
+            desktop.globalShortcuts.addEventListener("pressed", ({ detail }) => process.stderr.write(detail.id + "\\n"));
+            await desktop.system.openPath("/tmp");
+            await desktop.system.revealPath("/tmp");
+            await desktop.system.trashPath("/tmp/old-file");
+            const main = await desktop.windows.get("main");
+            if (main === null) throw new Error("main window is missing");
+            await main.minimize();
+            await main.maximize();
+            await main.restore();
+            await main.setFullScreen(true);
+            await desktop.globalShortcuts.set([
               { id: "search", key: "space", modifiers: ["option"] },
             ]);
-            await host.screens.list();
-            await host.screenCapture.getAuthorizationStatus();
-            await host.screenCapture.requestAuthorization();
-            await host.screenCapture.capture({
+            await desktop.screens.list();
+            await desktop.screenCapture.getAuthorizationStatus();
+            await desktop.screenCapture.requestAuthorization();
+            await desktop.screenCapture.capture({
               screenId: "main",
               region: { x: 10, y: 20, width: 640, height: 480 },
               destination: "/tmp/capture.png",
               showsCursor: true,
             });
-            await host.notifications.getAuthorizationStatus();
-            await host.notifications.requestAuthorization();
-            await host.notifications.send({ id: "done", title: "Complete", sound: true });
-            await host.dialogs.openFile({ allowedExtensions: ["json"], multiple: true });
-            await host.clipboard.writeText("hello");
-            await host.clipboard.writeImage("/tmp/capture.png");
-            await host.clipboard.readText();
-            await host.keychain.set("token", "secret");
-            await host.keychain.get("token");
-            await host.keychain.delete("token");
+            await desktop.notifications.getAuthorizationStatus();
+            await desktop.notifications.requestAuthorization();
+            await desktop.notifications.send({ id: "done", title: "Complete", sound: true });
+            await desktop.dialogs.openFile({ allowedExtensions: ["json"], multiple: true });
+            await desktop.clipboard.writeText("hello");
+            await desktop.clipboard.writeImage("/tmp/capture.png");
+            await desktop.clipboard.readText();
+            await desktop.keychain.set("token", "secret");
+            await desktop.keychain.get("token");
+            await desktop.keychain.delete("token");
           },
         }));
       `,
@@ -814,9 +959,28 @@ describe("resident Bun backend runtime", () => {
     const decoder = new TextDecoder();
     let buffer = "";
     const methods: string[] = [];
+    let mainWindow = {
+      id: "main",
+      url: "https://app.invalid/",
+      title: "Main",
+      visible: true,
+      focused: false,
+      minimized: false,
+      maximized: false,
+      fullScreen: false,
+      windowStyle: "native",
+      transparent: false,
+      shadow: true,
+      resizable: true,
+      dragRegion: null,
+      frame: { x: 0, y: 0, width: 800, height: 600 },
+      alwaysOnTop: false,
+      visibleOnAllSpaces: false,
+      visibleOverFullScreen: false,
+    };
     while (true) {
       const item = await reader.read();
-      if (item.done) throw new Error("Backend exited before ready");
+      if (item.done) throw new Error(`Backend exited before ready: ${await stderr}`);
       buffer += decoder.decode(item.value, { stream: true });
       let ready = false;
       while (buffer.includes("\n")) {
@@ -839,37 +1003,47 @@ describe("resident Bun backend runtime", () => {
         if (frame.method === "webviews.setFullScreen") {
           expect(frame.params).toEqual({ id: "main", fullScreen: true });
         }
+        if (frame.method === "webviews.minimize") mainWindow = { ...mainWindow, minimized: true };
+        if (frame.method === "webviews.maximize") mainWindow = { ...mainWindow, maximized: true };
+        if (frame.method === "webviews.restore")
+          mainWindow = { ...mainWindow, minimized: false, maximized: false };
+        if (frame.method === "webviews.setFullScreen")
+          mainWindow = { ...mainWindow, fullScreen: true };
         const result =
-          frame.method === "system.trashPath"
-            ? "/Users/test/.Trash/old-file"
-            : frame.method === "screens.list"
-              ? [
-                  {
-                    id: "main",
-                    name: "Main Display",
-                    frame: { x: 0, y: 0, width: 1920, height: 1080 },
-                    visibleFrame: { x: 0, y: 25, width: 1920, height: 1055 },
-                    scaleFactor: 2,
-                    main: true,
-                    containsPointer: true,
-                  },
-                ]
-              : frame.method === "screenCapture.getAuthorizationStatus" ||
-                  frame.method === "screenCapture.requestAuthorization" ||
-                  frame.method === "notifications.getAuthorizationStatus" ||
-                  frame.method === "notifications.requestAuthorization"
-                ? "authorized"
-                : frame.method === "screenCapture.capture"
-                  ? { path: frame.params?.destination, pixelWidth: 1280, pixelHeight: 960 }
-                  : frame.method === "notifications.send"
-                    ? { id: frame.params?.id }
-                    : frame.method === "dialogs.openFile"
-                      ? ["/tmp/input.json"]
-                      : frame.method === "clipboard.readText" || frame.method === "keychain.get"
-                        ? "secret"
-                        : frame.method === "keychain.delete"
-                          ? true
-                          : null;
+          frame.method === "webviews.list"
+            ? [mainWindow]
+            : frame.method.startsWith("webviews.")
+              ? mainWindow
+              : frame.method === "system.trashPath"
+                ? "/Users/test/.Trash/old-file"
+                : frame.method === "screens.list"
+                  ? [
+                      {
+                        id: "main",
+                        name: "Main Display",
+                        frame: { x: 0, y: 0, width: 1920, height: 1080 },
+                        visibleFrame: { x: 0, y: 25, width: 1920, height: 1055 },
+                        scaleFactor: 2,
+                        main: true,
+                        containsPointer: true,
+                      },
+                    ]
+                  : frame.method === "screenCapture.getAuthorizationStatus" ||
+                      frame.method === "screenCapture.requestAuthorization" ||
+                      frame.method === "notifications.getAuthorizationStatus" ||
+                      frame.method === "notifications.requestAuthorization"
+                    ? "authorized"
+                    : frame.method === "screenCapture.capture"
+                      ? { path: frame.params?.destination, pixelWidth: 1280, pixelHeight: 960 }
+                      : frame.method === "notifications.send"
+                        ? { id: frame.params?.id }
+                        : frame.method === "dialogs.openFile"
+                          ? ["/tmp/input.json"]
+                          : frame.method === "clipboard.readText" || frame.method === "keychain.get"
+                            ? "secret"
+                            : frame.method === "keychain.delete"
+                              ? true
+                              : null;
         input.write(`${JSON.stringify({ v: 2, type: "response", id: frame.id, result })}\n`);
         input.flush();
       }
@@ -879,6 +1053,7 @@ describe("resident Bun backend runtime", () => {
       "system.openPath",
       "system.revealPath",
       "system.trashPath",
+      "webviews.list",
       "webviews.minimize",
       "webviews.maximize",
       "webviews.restore",
@@ -942,11 +1117,11 @@ describe("resident Bun backend runtime", () => {
         import { defineBackend, runBackend } from ${JSON.stringify(backendSource)};
         await runBackend(defineBackend()({
           http: {},
-          async start({ host }) {
+          async start({ desktop }) {
             const controller = new AbortController();
             setTimeout(() => controller.abort(), 20);
             try {
-              await host.dialogs.openFile({}, { signal: controller.signal });
+              await desktop.dialogs.openFile({}, { signal: controller.signal });
             } catch (error) {
               process.stderr.write(error.name + "\\n");
             }

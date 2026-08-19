@@ -46,7 +46,7 @@ export default defineConfig({
 });
 ```
 
-Backend 直接声明 Bun HTTP/WS handlers，并在启动钩子中使用 Host API：
+Backend 直接声明 Bun HTTP/WS handlers，并在启动钩子中使用 Desktop API：
 
 ```ts
 import { defineBackend } from "@semicoder/fia/backend";
@@ -62,28 +62,32 @@ export default defineBackend()({
       },
     },
   },
-  async start({ host, url }) {
-    await host.statusItem.setMenu([{ type: "item", id: "open", title: "Open" }]);
-    host.statusItem.onAction(({ id }) => {
-      if (id === "open") void host.webviews.open({ id: "main", url: url("/").href });
+  async start({ desktop, url }) {
+    const main = await desktop.windows.create({ id: "main", url: url("/"), title: "My App" });
+    await desktop.tray.setMenu([
+      { item: { id: "open", label: "Open", accelerator: "CmdOrCtrl+O" } },
+      "separator",
+    ]);
+    desktop.tray.addEventListener("menuclick", ({ detail }) => {
+      if (detail.id === "open") void main.show();
     });
   },
 });
 ```
 
-在 `start` 中通过 Host API 注册的事件监听器会随当前 Backend 生命周期自动清理，热重载和退出时
+在 `start` 中通过 Desktop API 注册的事件监听器会随当前 Backend 生命周期自动清理，热重载和退出时
 不需要手动保存注销函数。
 
-受保护 route 与 fallback `fetch` 的第三参数提供 `host` 和只读 `app` 信息，其中
+受保护 route 与 fallback `fetch` 的第三参数提供 `desktop` 和只读 `app` 信息，其中
 `app.dataDirectory` 是 Host 按应用 identifier 创建的绝对持久化目录。
 
-Host API 还提供全局快捷键、屏幕枚举与截图、系统通知、文件与目录操作、打开/保存文件面板、
+Desktop API 还提供全局快捷键、屏幕枚举与截图、系统通知、文件与目录操作、打开/保存文件面板、
 文本/PNG 剪贴板和按 bundle identifier 隔离的 Keychain。所有 Promise 方法都接受可选的
 `{ signal }` 尾参数；取消文件面板会同时关闭原生面板。
 
-WebView 支持原生窗口和完全无边框窗口。无边框模式可配置透明背景、阴影、用户缩放、顶部
+BrowserWindow 支持原生窗口和完全无边框窗口。无边框模式可配置透明背景、阴影、用户缩放、顶部
 原生拖动带及主屏左上坐标，适合搜索框、HUD 和截图遮罩等浮层。窗口打开后支持最小化、
-最大化/恢复、全屏切换，并通过统一状态事件报告变化。
+最大化/恢复、全屏切换，并通过 `change`/`close` 事件报告变化。
 
 网页不导入 FIA 包，只使用 `fetch`、WebSocket 和普通 URL。原生 API 仅存在于 Backend。
 

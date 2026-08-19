@@ -1,4 +1,56 @@
 import { timingSafeEqual } from "node:crypto";
+import { DesktopSession, HostError } from "./desktop.ts";
+import type { CallOptions, Desktop, HostErrorCode } from "./desktop.ts";
+import { createRawHost, HostEventScope } from "./raw-host.ts";
+
+export { HostError };
+export type {
+  BrowserWindow,
+  BrowserWindowChangeDetail,
+  BrowserWindowCloseDetail,
+  BrowserWindowEventMap,
+  BrowserWindowOptions,
+  BrowserWindowState,
+  CallOptions,
+  Desktop,
+  DesktopState,
+  Dock,
+  DockEventMap,
+  FileDialogOptions,
+  GlobalShortcut,
+  GlobalShortcutEventMap,
+  GlobalShortcutModifier,
+  GlobalShortcutPressedDetail,
+  GlobalShortcuts,
+  HostErrorCode,
+  MenuClickDetail,
+  MenuEntry,
+  MenuItem,
+  MenuItemEntry,
+  MenuItemPatch,
+  NotificationAuthorizationStatus,
+  NotificationClickDetail,
+  NotificationEventMap,
+  NotificationOptions,
+  NotificationReceipt,
+  Notifications,
+  OpenDirectoryDialogOptions,
+  OpenFileDialogOptions,
+  SaveFileDialogOptions,
+  ScreenCaptureAuthorizationResult,
+  ScreenCaptureAuthorizationStatus,
+  ScreenCaptureOptions,
+  ScreenCaptureReceipt,
+  ScreenCaptureRegion,
+  ScreenInfo,
+  SubmenuEntry,
+  Tray,
+  TrayClickDetail,
+  TrayEventMap,
+  WindowDragRegion,
+  WindowFrame,
+  WindowManager,
+} from "./desktop.ts";
 
 const FIA_BACKEND = Symbol.for("@semicoder/fia/backend-definition");
 const FIA_RUNTIME = Symbol.for("@semicoder/fia/backend-runtime");
@@ -9,7 +61,7 @@ const STDIO_PROTOCOL_VERSION = 2 as const;
 const BOOTSTRAP_TTL_MS = 30_000;
 const COOKIE_NAME = "fia_session";
 const RESERVED_PATH_PREFIX = "/_fia/";
-const HOST_ERROR_CODES = new Set<FIAHostErrorCode>([
+const HOST_ERROR_CODES = new Set<HostErrorCode>([
   "INVALID_REQUEST",
   "INVALID_ARGUMENT",
   "NOT_FOUND",
@@ -22,307 +74,65 @@ const HOST_ERROR_CODES = new Set<FIAHostErrorCode>([
   "PERMISSION_DENIED",
 ]);
 
-export type FIAHostErrorCode =
-  | "INVALID_REQUEST"
-  | "INVALID_ARGUMENT"
-  | "NOT_FOUND"
-  | "UNSAFE_STATE"
-  | "NATIVE_FAILURE"
-  | "PROTOCOL_FAILURE"
-  | "TIMEOUT"
-  | "CANCELLED"
-  | "CONFLICT"
-  | "PERMISSION_DENIED";
-
-export class FIAHostError extends Error {
-  readonly code: FIAHostErrorCode;
-  readonly details?: unknown;
-
-  constructor(code: FIAHostErrorCode, message: string, details?: unknown) {
-    super(message);
-    this.name = "FIAHostError";
-    this.code = code;
-    this.details = details;
-  }
-}
-
-export interface FIAApplicationState {
-  readonly dockVisible: boolean;
-  readonly statusItemVisible: boolean;
-}
-
-export type FIAWebViewWindowStyle = "native" | "borderless";
-
-export interface FIAWebViewDragRegion {
-  height: number;
-  leftInset?: number;
-  rightInset?: number;
-}
-
-export interface FIAWebViewFrame {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-export interface FIAScreen {
-  readonly id: string;
-  readonly name: string;
-  readonly frame: FIAWebViewFrame;
-  readonly visibleFrame: FIAWebViewFrame;
-  readonly scaleFactor: number;
-  readonly main: boolean;
-  readonly containsPointer: boolean;
-}
-
-export type FIAGlobalShortcutModifier = "command" | "option" | "control" | "shift";
-
-export interface FIAGlobalShortcut {
-  id: string;
-  key: string;
-  modifiers: readonly FIAGlobalShortcutModifier[];
-}
-
-export interface FIAGlobalShortcutPressedEvent {
-  readonly id: string;
-}
-
-export interface FIAScreenCaptureRegion {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export type FIAScreenCaptureAuthorizationStatus = "authorized" | "notAuthorized";
-export type FIAScreenCaptureAuthorizationResult = "authorized" | "restartRequired" | "denied";
-
-export interface FIAScreenCaptureOptions {
-  screenId: string;
-  region?: FIAScreenCaptureRegion;
-  destination: string;
-  showsCursor?: boolean;
-}
-
-export interface FIAScreenCaptureReceipt {
-  readonly path: string;
-  readonly pixelWidth: number;
-  readonly pixelHeight: number;
-}
-
-export interface FIAWebViewState {
-  readonly id: string;
-  readonly url: string;
-  readonly title: string;
-  readonly visible: boolean;
-  readonly focused: boolean;
-  readonly minimized: boolean;
-  readonly maximized: boolean;
-  readonly fullScreen: boolean;
-  readonly windowStyle: FIAWebViewWindowStyle;
-  readonly transparent: boolean;
-  readonly shadow: boolean;
-  readonly resizable: boolean;
-  readonly dragRegion: FIAWebViewDragRegion | null;
-  readonly frame: FIAWebViewFrame;
-  readonly alwaysOnTop: boolean;
-  readonly visibleOnAllSpaces: boolean;
-  readonly visibleOverFullScreen: boolean;
-}
-
-export interface FIAWebViewOpenOptions {
-  id: string;
-  url: string;
-  title?: string;
-  width?: number;
-  height?: number;
-  minWidth?: number;
-  minHeight?: number;
-  x?: number;
-  y?: number;
-  windowStyle?: FIAWebViewWindowStyle;
-  transparent?: boolean;
-  shadow?: boolean;
-  resizable?: boolean;
-  dragRegion?: FIAWebViewDragRegion;
-  closeBehavior?: "hide" | "close";
-  restoreFrame?: boolean;
-  alwaysOnTop?: boolean;
-  visibleOnAllSpaces?: boolean;
-  visibleOverFullScreen?: boolean;
-  focus?: boolean;
-}
-
-export interface FIAWebViewUpdateOptions {
-  title?: string;
-  width?: number;
-  height?: number;
-  minWidth?: number;
-  minHeight?: number;
-  x?: number;
-  y?: number;
-  closeBehavior?: "hide" | "close";
-  alwaysOnTop?: boolean;
-  visibleOnAllSpaces?: boolean;
-  visibleOverFullScreen?: boolean;
-}
-
-export type FIAStatusMenuShortcutModifier = "command" | "option" | "control" | "shift";
-
-export interface FIAStatusMenuShortcut {
-  key: string;
-  modifiers?: readonly FIAStatusMenuShortcutModifier[];
-}
-
-export interface FIAStatusMenuSeparator {
-  type: "separator";
-}
-
-export interface FIAStatusMenuItem {
-  type: "item";
-  id: string;
-  title: string;
-  enabled?: boolean;
-  hidden?: boolean;
-  checked?: boolean;
-  symbol?: string;
-  shortcut?: FIAStatusMenuShortcut;
-  children?: readonly FIAStatusMenuNode[];
-}
-
-export type FIAStatusMenuNode = FIAStatusMenuSeparator | FIAStatusMenuItem;
-
-export interface FIAStatusMenuItemPatch {
-  title?: string;
-  enabled?: boolean;
-  hidden?: boolean;
-  checked?: boolean;
-  symbol?: string | null;
-  shortcut?: FIAStatusMenuShortcut | null;
-}
-
-export interface FIAStatusItemClickEvent {
-  readonly button: "left";
-}
-
-export interface FIAStatusItemActionEvent {
-  readonly id: string;
-}
-
-export interface FIAWebViewEvent {
-  readonly type: "changed" | "closed";
-  readonly window: FIAWebViewState;
-}
-
-export interface FIAHostCallOptions {
-  readonly signal?: AbortSignal;
-}
-
-export type FIANotificationAuthorizationStatus =
-  | "notDetermined"
-  | "denied"
-  | "authorized"
-  | "provisional"
-  | "ephemeral"
-  | "unknown";
-
-export interface FIANotificationSendOptions {
-  id?: string;
-  title: string;
-  subtitle?: string;
-  body?: string;
-  sound?: boolean;
-}
-
-export interface FIANotificationReceipt {
-  readonly id: string;
-}
-
-export interface FIANotificationClickEvent {
-  readonly id: string;
-}
-
-export interface FIAFileDialogOptions {
-  title?: string;
-  directory?: string;
-  showHiddenFiles?: boolean;
-}
-
-export interface FIAOpenFileDialogOptions extends FIAFileDialogOptions {
-  allowedExtensions?: readonly string[];
-  multiple?: boolean;
-}
-
-export interface FIAOpenDirectoryDialogOptions extends FIAFileDialogOptions {
-  multiple?: boolean;
-}
-
-export interface FIASaveFileDialogOptions extends FIAFileDialogOptions {
-  allowedExtensions?: readonly string[];
-  name?: string;
-  canCreateDirectories?: boolean;
-}
-
 type MaybePromise<Value> = Value | Promise<Value>;
-export type FIAServer<WebSocketData = unknown> = Bun.Server<WebSocketData>;
+export type BackendServer<WebSocketData = unknown> = Bun.Server<WebSocketData>;
 
-export interface FIAAppContext {
+export interface AppContext {
   readonly name: string;
   readonly identifier: string;
   readonly dataDirectory: string;
 }
 
-export interface FIARouteContext {
-  readonly host: FIAHost;
-  readonly app: FIAAppContext;
+export interface RouteContext {
+  readonly desktop: Desktop;
+  readonly app: AppContext;
 }
 
-export type FIARouteHandler<WebSocketData = unknown, Path extends string = string> = (
+export type RouteHandler<WebSocketData = unknown, Path extends string = string> = (
   request: Bun.BunRequest<Path>,
-  server: FIAServer<WebSocketData>,
-  context: FIARouteContext,
+  server: BackendServer<WebSocketData>,
+  context: RouteContext,
 ) => MaybePromise<Response | undefined | void>;
 
-export type FIAProtectedRoute<WebSocketData = unknown, Path extends string = string> =
-  | FIARouteHandler<WebSocketData, Path>
-  | Partial<Record<Bun.Serve.HTTPMethod, FIARouteHandler<WebSocketData, Path>>>;
+export type ProtectedRoute<WebSocketData = unknown, Path extends string = string> =
+  | RouteHandler<WebSocketData, Path>
+  | Partial<Record<Bun.Serve.HTTPMethod, RouteHandler<WebSocketData, Path>>>;
 
-export type FIAPublicRoute = Response | false | Bun.HTMLBundle | Bun.BunFile;
+export type PublicRoute = Response | false | Bun.HTMLBundle | Bun.BunFile;
 
-export interface FIAHTTPDefinition<WebSocketData = unknown, RoutePaths extends string = string> {
-  publicRoutes?: Readonly<Record<string, FIAPublicRoute>>;
+export interface HTTPDefinition<WebSocketData = unknown, RoutePaths extends string = string> {
+  publicRoutes?: Readonly<Record<string, PublicRoute>>;
   routes?: Readonly<{
-    [Path in RoutePaths]: FIAProtectedRoute<WebSocketData, Path>;
+    [Path in RoutePaths]: ProtectedRoute<WebSocketData, Path>;
   }>;
-  fetch?: FIARouteHandler<WebSocketData>;
+  fetch?: RouteHandler<WebSocketData>;
   websocket?: Bun.WebSocketHandler<WebSocketData>;
   error?: (error: Error) => MaybePromise<Response | undefined | void>;
   maxRequestBodySize?: number;
   idleTimeout?: number;
 }
 
-export interface FIABackendContext<WebSocketData = unknown> extends FIARouteContext {
-  readonly server: FIAServer<WebSocketData>;
+export interface BackendContext<WebSocketData = unknown> extends RouteContext {
+  readonly server: BackendServer<WebSocketData>;
   url(path?: string): URL;
 }
 
-export interface FIABackendDefinition<WebSocketData = unknown, RoutePaths extends string = string> {
+export interface BackendDefinition<WebSocketData = unknown, RoutePaths extends string = string> {
   readonly [FIA_BACKEND]: true;
-  readonly http: FIAHTTPDefinition<WebSocketData, RoutePaths>;
-  readonly start?: (context: FIABackendContext<WebSocketData>) => MaybePromise<void>;
-  readonly stop?: (context: FIABackendContext<WebSocketData>) => MaybePromise<void>;
+  readonly http: HTTPDefinition<WebSocketData, RoutePaths>;
+  readonly start?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
+  readonly stop?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
 }
 
-interface FIABackendInput<WebSocketData, RoutePaths extends string> {
-  http: FIAHTTPDefinition<WebSocketData, RoutePaths>;
-  start?: (context: FIABackendContext<WebSocketData>) => MaybePromise<void>;
-  stop?: (context: FIABackendContext<WebSocketData>) => MaybePromise<void>;
+interface BackendInput<WebSocketData, RoutePaths extends string> {
+  http: HTTPDefinition<WebSocketData, RoutePaths>;
+  start?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
+  stop?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
 }
 
 export function defineBackend<WebSocketData = unknown>(): <const RoutePaths extends string>(
-  definition: FIABackendInput<WebSocketData, RoutePaths>,
-) => FIABackendDefinition<WebSocketData, RoutePaths>;
+  definition: BackendInput<WebSocketData, RoutePaths>,
+) => BackendDefinition<WebSocketData, RoutePaths>;
 export function defineBackend<WebSocketData = unknown>(...unexpected: never[]) {
   if (unexpected.length !== 0) {
     throw new TypeError(
@@ -330,8 +140,8 @@ export function defineBackend<WebSocketData = unknown>(...unexpected: never[]) {
     );
   }
   return <const RoutePaths extends string>(
-    definition: FIABackendInput<WebSocketData, RoutePaths>,
-  ): FIABackendDefinition<WebSocketData, RoutePaths> => {
+    definition: BackendInput<WebSocketData, RoutePaths>,
+  ): BackendDefinition<WebSocketData, RoutePaths> => {
     if (!isPlainObject(definition) || !isPlainObject(definition.http)) {
       throw new TypeError("defineBackend expects an object with an http definition");
     }
@@ -341,15 +151,15 @@ export function defineBackend<WebSocketData = unknown>(...unexpected: never[]) {
       enumerable: false,
       writable: false,
     });
-    return definition as unknown as FIABackendDefinition<WebSocketData, RoutePaths>;
+    return definition as unknown as BackendDefinition<WebSocketData, RoutePaths>;
   };
 }
 
-export function isDefinedBackend(value: unknown): value is FIABackendDefinition {
+export function isDefinedBackend(value: unknown): value is BackendDefinition {
   return (
     typeof value === "object" &&
     value !== null &&
-    (value as Partial<FIABackendDefinition>)[FIA_BACKEND] === true
+    (value as Partial<BackendDefinition>)[FIA_BACKEND] === true
   );
 }
 
@@ -383,7 +193,7 @@ interface ResponseFrame {
   readonly id: number;
   readonly result?: unknown;
   readonly error?: {
-    readonly code: FIAHostErrorCode;
+    readonly code: HostErrorCode;
     readonly message: string;
     readonly details?: unknown;
   };
@@ -398,7 +208,7 @@ interface EventFrame {
 
 type IncomingFrame = InitializeFrame | ResponseFrame | EventFrame;
 
-interface StdioCallOptions extends FIAHostCallOptions {
+interface StdioCallOptions extends CallOptions {
   readonly timeout?: boolean;
 }
 
@@ -417,7 +227,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function encodeFrame(value: unknown): string {
   const line = `${JSON.stringify(value)}\n`;
   if (Buffer.byteLength(line) > MAX_FRAME_BYTES) {
-    throw new FIAHostError("INVALID_ARGUMENT", "The stdio frame exceeds the 1 MiB limit");
+    throw new HostError("INVALID_ARGUMENT", "The stdio frame exceeds the 1 MiB limit");
   }
   return line;
 }
@@ -435,24 +245,24 @@ async function* readFrames(stream: ReadableStream<Uint8Array>): AsyncGenerator<u
         const newline = buffer.indexOf("\n");
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
-        if (line.length === 0) throw new FIAHostError("PROTOCOL_FAILURE", "Empty stdio frame");
+        if (line.length === 0) throw new HostError("PROTOCOL_FAILURE", "Empty stdio frame");
         if (Buffer.byteLength(line) + 1 > MAX_FRAME_BYTES) {
-          throw new FIAHostError("PROTOCOL_FAILURE", "The stdio frame exceeds the 1 MiB limit");
+          throw new HostError("PROTOCOL_FAILURE", "The stdio frame exceeds the 1 MiB limit");
         }
         let frame: unknown;
         try {
           frame = JSON.parse(line);
         } catch {
-          throw new FIAHostError("PROTOCOL_FAILURE", "Invalid JSON on stdin");
+          throw new HostError("PROTOCOL_FAILURE", "Invalid JSON on stdin");
         }
         yield frame;
       }
       if (Buffer.byteLength(buffer) > MAX_FRAME_BYTES) {
-        throw new FIAHostError("PROTOCOL_FAILURE", "The stdio frame exceeds the 1 MiB limit");
+        throw new HostError("PROTOCOL_FAILURE", "The stdio frame exceeds the 1 MiB limit");
       }
     }
     buffer += decoder.decode();
-    if (buffer.length > 0) throw new FIAHostError("PROTOCOL_FAILURE", "Truncated stdio frame");
+    if (buffer.length > 0) throw new HostError("PROTOCOL_FAILURE", "Truncated stdio frame");
   } finally {
     reader.releaseLock();
   }
@@ -488,11 +298,11 @@ class StdioPeer {
     params: Record<string, unknown> = {},
     options: StdioCallOptions = {},
   ): Promise<Result> {
-    if (this.#closed) throw new FIAHostError("PROTOCOL_FAILURE", "The Host connection is closed");
+    if (this.#closed) throw new HostError("PROTOCOL_FAILURE", "The Host connection is closed");
     if (options.signal?.aborted === true)
       throw new DOMException("The Host request was aborted", "AbortError");
     if (this.#pending.size >= MAX_PENDING_REQUESTS) {
-      throw new FIAHostError("UNSAFE_STATE", "The Host request concurrency limit was exceeded");
+      throw new HostError("UNSAFE_STATE", "The Host request concurrency limit was exceeded");
     }
     const id = this.#nextID++;
     let resolveResult: (value: Result | PromiseLike<Result>) => void = () => {};
@@ -540,7 +350,7 @@ class StdioPeer {
     }
     if (options.timeout !== false) {
       pending.timer = setTimeout(
-        () => retire(new FIAHostError("TIMEOUT", `Host request timed out: ${method}`)),
+        () => retire(new HostError("TIMEOUT", `Host request timed out: ${method}`)),
         REQUEST_TIMEOUT_MS,
       );
     }
@@ -555,27 +365,26 @@ class StdioPeer {
     try {
       while (true) {
         const item = await this.#iterator.next();
-        if (item.done) throw new FIAHostError("PROTOCOL_FAILURE", "Host stdin closed");
+        if (item.done) throw new HostError("PROTOCOL_FAILURE", "Host stdin closed");
         const frame = item.value as IncomingFrame;
         if (
           !isPlainObject(frame) ||
           frame.v !== STDIO_PROTOCOL_VERSION ||
           typeof frame.type !== "string"
         ) {
-          throw new FIAHostError("PROTOCOL_FAILURE", "Invalid stdio envelope");
+          throw new HostError("PROTOCOL_FAILURE", "Invalid stdio envelope");
         }
         if (frame.type === "response") {
           validateResponseFrame(frame);
           const pending = this.#pending.get(frame.id);
-          if (pending === undefined)
-            throw new FIAHostError("PROTOCOL_FAILURE", "Unknown response ID");
+          if (pending === undefined) throw new HostError("PROTOCOL_FAILURE", "Unknown response ID");
           this.#pending.delete(frame.id);
           if (pending.timer !== undefined) clearTimeout(pending.timer);
           pending.removeAbortListener?.();
           if (pending.retired) continue;
           if (frame.error !== undefined) {
             pending.reject(
-              new FIAHostError(frame.error.code, frame.error.message, frame.error.details),
+              new HostError(frame.error.code, frame.error.message, frame.error.details),
             );
           } else {
             pending.resolve(frame.result);
@@ -587,7 +396,7 @@ class StdioPeer {
           for (const listener of this.#listeners.get(frame.event) ?? []) listener(frame.payload);
           continue;
         }
-        throw new FIAHostError("PROTOCOL_FAILURE", `Unexpected stdio frame: ${frame.type}`);
+        throw new HostError("PROTOCOL_FAILURE", `Unexpected stdio frame: ${frame.type}`);
       }
     } catch (error) {
       this.#closed = true;
@@ -677,59 +486,6 @@ class SessionGuard {
   }
 }
 
-function validateMenu(nodes: readonly FIAStatusMenuNode[]): void {
-  const ids = new Set<string>();
-  let count = 0;
-  const visit = (values: readonly FIAStatusMenuNode[], depth: number): void => {
-    if (depth > 8) throw new FIAHostError("INVALID_ARGUMENT", "Status menu exceeds eight levels");
-    for (const node of values) {
-      count += 1;
-      if (count > 256) throw new FIAHostError("INVALID_ARGUMENT", "Status menu exceeds 256 nodes");
-      if (node.type === "separator") continue;
-      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(node.id) || node.id.startsWith("fia.")) {
-        throw new FIAHostError(
-          "INVALID_ARGUMENT",
-          `Invalid or reserved status menu ID: ${node.id}`,
-        );
-      }
-      if (ids.has(node.id))
-        throw new FIAHostError("INVALID_ARGUMENT", `Duplicate status menu ID: ${node.id}`);
-      ids.add(node.id);
-      if (node.title.length === 0 || node.title.length > 256) {
-        throw new FIAHostError(
-          "INVALID_ARGUMENT",
-          `Invalid title for status menu item: ${node.id}`,
-        );
-      }
-      for (const field of ["enabled", "hidden", "checked"] as const) {
-        if (node[field] !== undefined && typeof node[field] !== "boolean") {
-          throw new FIAHostError("INVALID_ARGUMENT", `${field} must be a boolean: ${node.id}`);
-        }
-      }
-      if (
-        node.symbol !== undefined &&
-        (typeof node.symbol !== "string" || node.symbol.length === 0)
-      ) {
-        throw new FIAHostError("INVALID_ARGUMENT", `Invalid SF Symbol: ${node.id}`);
-      }
-      if (node.shortcut !== undefined) {
-        const modifiers = node.shortcut.modifiers ?? [];
-        if (
-          typeof node.shortcut.key !== "string" ||
-          [...node.shortcut.key].length !== 1 ||
-          modifiers.some(
-            (modifier) => !(["command", "option", "control", "shift"] as const).includes(modifier),
-          )
-        ) {
-          throw new FIAHostError("INVALID_ARGUMENT", `Invalid shortcut: ${node.id}`);
-        }
-      }
-      if (node.children !== undefined) visit(node.children, depth + 1);
-    }
-  };
-  visit(nodes, 1);
-}
-
 function hasExactKeys(
   value: Record<string, unknown>,
   required: readonly string[],
@@ -771,7 +527,7 @@ function validateInitializeFrame(value: unknown): InitializeFrame {
     typeof value.app.identifier !== "string" ||
     value.app.identifier.length === 0
   ) {
-    throw new FIAHostError("PROTOCOL_FAILURE", "Invalid initialize frame");
+    throw new HostError("PROTOCOL_FAILURE", "Invalid initialize frame");
   }
   return value as unknown as InitializeFrame;
 }
@@ -789,7 +545,7 @@ function validateResponseFrame(
     (value.id as number) <= 0 ||
     hasResult === hasError
   ) {
-    throw new FIAHostError("PROTOCOL_FAILURE", "Invalid response frame");
+    throw new HostError("PROTOCOL_FAILURE", "Invalid response frame");
   }
   if (hasError) {
     const error = value.error;
@@ -797,11 +553,11 @@ function validateResponseFrame(
       !isPlainObject(error) ||
       !hasExactKeys(error, ["code", "message"], ["details"]) ||
       typeof error.code !== "string" ||
-      !HOST_ERROR_CODES.has(error.code as FIAHostErrorCode) ||
+      !HOST_ERROR_CODES.has(error.code as HostErrorCode) ||
       typeof error.message !== "string" ||
       error.message.length === 0
     ) {
-      throw new FIAHostError("PROTOCOL_FAILURE", "Invalid Host error response");
+      throw new HostError("PROTOCOL_FAILURE", "Invalid Host error response");
     }
   }
 }
@@ -816,280 +572,26 @@ function validateEventFrame(
     typeof value.event !== "string" ||
     value.event.length === 0
   ) {
-    throw new FIAHostError("PROTOCOL_FAILURE", "Invalid event frame");
+    throw new HostError("PROTOCOL_FAILURE", "Invalid event frame");
   }
-}
-
-export interface FIAHost {
-  readonly application: {
-    getState(callOptions?: FIAHostCallOptions): Promise<FIAApplicationState>;
-    quit(callOptions?: FIAHostCallOptions): Promise<void>;
-    setDockVisible(
-      visible: boolean,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIAApplicationState>;
-    onReopen(listener: () => void): () => void;
-  };
-  readonly statusItem: {
-    setVisible(visible: boolean, callOptions?: FIAHostCallOptions): Promise<FIAApplicationState>;
-    setSymbol(symbol: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    setTooltip(tooltip: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    setMenu(menu: readonly FIAStatusMenuNode[], callOptions?: FIAHostCallOptions): Promise<void>;
-    updateMenuItem(
-      id: string,
-      patch: FIAStatusMenuItemPatch,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<void>;
-    onClick(listener: (event: FIAStatusItemClickEvent) => void): () => void;
-    onAction(listener: (event: FIAStatusItemActionEvent) => void): () => void;
-  };
-  readonly webviews: {
-    open(
-      options: FIAWebViewOpenOptions,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIAWebViewState>;
-    navigate(id: string, url: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
-    show(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
-    hide(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
-    focus(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
-    minimize(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
-    maximize(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
-    restore(id: string, callOptions?: FIAHostCallOptions): Promise<FIAWebViewState>;
-    setFullScreen(
-      id: string,
-      fullScreen: boolean,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIAWebViewState>;
-    close(id: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    update(
-      id: string,
-      options: FIAWebViewUpdateOptions,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIAWebViewState>;
-    list(callOptions?: FIAHostCallOptions): Promise<readonly FIAWebViewState[]>;
-    onEvent(listener: (event: FIAWebViewEvent) => void): () => void;
-  };
-  readonly system: {
-    openURL(url: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    openPath(path: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    revealPath(path: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    trashPath(path: string, callOptions?: FIAHostCallOptions): Promise<string>;
-  };
-  readonly globalShortcuts: {
-    set(shortcuts: readonly FIAGlobalShortcut[], callOptions?: FIAHostCallOptions): Promise<void>;
-    onPressed(listener: (event: FIAGlobalShortcutPressedEvent) => void): () => void;
-  };
-  readonly screens: {
-    list(callOptions?: FIAHostCallOptions): Promise<readonly FIAScreen[]>;
-  };
-  readonly screenCapture: {
-    getAuthorizationStatus(
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIAScreenCaptureAuthorizationStatus>;
-    requestAuthorization(
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIAScreenCaptureAuthorizationResult>;
-    capture(
-      options: FIAScreenCaptureOptions,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIAScreenCaptureReceipt>;
-  };
-  readonly notifications: {
-    getAuthorizationStatus(
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIANotificationAuthorizationStatus>;
-    requestAuthorization(
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIANotificationAuthorizationStatus>;
-    send(
-      options: FIANotificationSendOptions,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<FIANotificationReceipt>;
-    remove(id: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    removeAll(callOptions?: FIAHostCallOptions): Promise<void>;
-    onClick(listener: (event: FIANotificationClickEvent) => void): () => void;
-  };
-  readonly dialogs: {
-    openFile(
-      options?: FIAOpenFileDialogOptions,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<readonly string[] | null>;
-    openDirectory(
-      options?: FIAOpenDirectoryDialogOptions,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<readonly string[] | null>;
-    saveFile(
-      options?: FIASaveFileDialogOptions,
-      callOptions?: FIAHostCallOptions,
-    ): Promise<string | null>;
-  };
-  readonly clipboard: {
-    readText(callOptions?: FIAHostCallOptions): Promise<string | null>;
-    writeText(text: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    writeImage(path: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    clear(callOptions?: FIAHostCallOptions): Promise<void>;
-  };
-  readonly keychain: {
-    get(key: string, callOptions?: FIAHostCallOptions): Promise<string | null>;
-    set(key: string, value: string, callOptions?: FIAHostCallOptions): Promise<void>;
-    delete(key: string, callOptions?: FIAHostCallOptions): Promise<boolean>;
-  };
-}
-
-function eventListener<Value>(
-  peer: StdioPeer,
-  event: string,
-  listener: (value: Value) => void,
-  scope: HostEventScope,
-): () => void {
-  return scope.add(peer.on(event, (payload) => listener(payload as Value)));
-}
-
-class HostEventScope {
-  readonly #removers = new Set<() => void>();
-  #disposed = false;
-
-  add(remove: () => void): () => void {
-    if (this.#disposed) {
-      remove();
-      return () => {};
-    }
-    let active = true;
-    const scopedRemove = (): void => {
-      if (!active) return;
-      active = false;
-      this.#removers.delete(scopedRemove);
-      remove();
-    };
-    this.#removers.add(scopedRemove);
-    return scopedRemove;
-  }
-
-  dispose(): void {
-    if (this.#disposed) return;
-    this.#disposed = true;
-    for (const remove of this.#removers) remove();
-  }
-}
-
-function createHost(peer: StdioPeer, session: SessionGuard, events: HostEventScope): FIAHost {
-  return {
-    application: {
-      getState: (callOptions) => peer.call("application.getState", {}, callOptions),
-      quit: (callOptions) => peer.call("application.quit", {}, callOptions),
-      setDockVisible: (visible, callOptions) =>
-        peer.call("application.setDockVisible", { visible }, callOptions),
-      onReopen: (listener) => eventListener(peer, "application.reopen", () => listener(), events),
-    },
-    statusItem: {
-      setVisible: (visible, callOptions) =>
-        peer.call("statusItem.setVisible", { visible }, callOptions),
-      setSymbol: (symbol, callOptions) =>
-        peer.call("statusItem.setSymbol", { symbol }, callOptions),
-      setTooltip: (tooltip, callOptions) =>
-        peer.call("statusItem.setTooltip", { tooltip }, callOptions),
-      setMenu: async (menu, callOptions) => {
-        validateMenu(menu);
-        await peer.call("statusItem.setMenu", { menu }, callOptions);
-      },
-      updateMenuItem: (id, patch, callOptions) =>
-        peer.call("statusItem.updateMenuItem", { id, patch }, callOptions),
-      onClick: (listener) => eventListener(peer, "statusItem.clicked", listener, events),
-      onAction: (listener) => eventListener(peer, "statusItem.action", listener, events),
-    },
-    webviews: {
-      open: (options, callOptions) =>
-        peer.call(
-          "webviews.open",
-          { ...options, url: session.authorizeURL(options.url) },
-          callOptions,
-        ),
-      navigate: (id, url, callOptions) =>
-        peer.call("webviews.navigate", { id, url: session.authorizeURL(url) }, callOptions),
-      show: (id, callOptions) => peer.call("webviews.show", { id }, callOptions),
-      hide: (id, callOptions) => peer.call("webviews.hide", { id }, callOptions),
-      focus: (id, callOptions) => peer.call("webviews.focus", { id }, callOptions),
-      minimize: (id, callOptions) => peer.call("webviews.minimize", { id }, callOptions),
-      maximize: (id, callOptions) => peer.call("webviews.maximize", { id }, callOptions),
-      restore: (id, callOptions) => peer.call("webviews.restore", { id }, callOptions),
-      setFullScreen: (id, fullScreen, callOptions) =>
-        peer.call("webviews.setFullScreen", { id, fullScreen }, callOptions),
-      close: (id, callOptions) => peer.call("webviews.close", { id }, callOptions),
-      update: (id, options, callOptions) =>
-        peer.call("webviews.update", { id, ...options }, callOptions),
-      list: (callOptions) => peer.call("webviews.list", {}, callOptions),
-      onEvent: (listener) => eventListener(peer, "webviews.event", listener, events),
-    },
-    system: {
-      openURL: (url, callOptions) =>
-        peer.call("system.openURL", { url: session.authorizeURL(url) }, callOptions),
-      openPath: (path, callOptions) => peer.call("system.openPath", { path }, callOptions),
-      revealPath: (path, callOptions) => peer.call("system.revealPath", { path }, callOptions),
-      trashPath: (path, callOptions) => peer.call("system.trashPath", { path }, callOptions),
-    },
-    globalShortcuts: {
-      set: (shortcuts, callOptions) => peer.call("globalShortcuts.set", { shortcuts }, callOptions),
-      onPressed: (listener) => eventListener(peer, "globalShortcuts.pressed", listener, events),
-    },
-    screens: {
-      list: (callOptions) => peer.call("screens.list", {}, callOptions),
-    },
-    screenCapture: {
-      getAuthorizationStatus: (callOptions) =>
-        peer.call("screenCapture.getAuthorizationStatus", {}, callOptions),
-      requestAuthorization: (callOptions) =>
-        peer.call("screenCapture.requestAuthorization", {}, { ...callOptions, timeout: false }),
-      capture: (options, callOptions) =>
-        peer.call("screenCapture.capture", { ...options }, callOptions),
-    },
-    notifications: {
-      getAuthorizationStatus: (callOptions) =>
-        peer.call("notifications.getAuthorizationStatus", {}, callOptions),
-      requestAuthorization: (callOptions) =>
-        peer.call("notifications.requestAuthorization", {}, { ...callOptions, timeout: false }),
-      send: (options, callOptions) => peer.call("notifications.send", { ...options }, callOptions),
-      remove: (id, callOptions) => peer.call("notifications.remove", { id }, callOptions),
-      removeAll: (callOptions) => peer.call("notifications.removeAll", {}, callOptions),
-      onClick: (listener) => eventListener(peer, "notifications.clicked", listener, events),
-    },
-    dialogs: {
-      openFile: (options = {}, callOptions) =>
-        peer.call("dialogs.openFile", { ...options }, { ...callOptions, timeout: false }),
-      openDirectory: (options = {}, callOptions) =>
-        peer.call("dialogs.openDirectory", { ...options }, { ...callOptions, timeout: false }),
-      saveFile: (options = {}, callOptions) =>
-        peer.call("dialogs.saveFile", { ...options }, { ...callOptions, timeout: false }),
-    },
-    clipboard: {
-      readText: (callOptions) => peer.call("clipboard.readText", {}, callOptions),
-      writeText: (text, callOptions) => peer.call("clipboard.writeText", { text }, callOptions),
-      writeImage: (path, callOptions) => peer.call("clipboard.writeImage", { path }, callOptions),
-      clear: (callOptions) => peer.call("clipboard.clear", {}, callOptions),
-    },
-    keychain: {
-      get: (key, callOptions) => peer.call("keychain.get", { key }, callOptions),
-      set: (key, value, callOptions) => peer.call("keychain.set", { key, value }, callOptions),
-      delete: (key, callOptions) => peer.call("keychain.delete", { key }, callOptions),
-    },
-  };
 }
 
 function wrapProtectedRoutes<WebSocketData, RoutePaths extends string>(
   routes:
     | Readonly<{
-        [Path in RoutePaths]: FIAProtectedRoute<WebSocketData, Path>;
+        [Path in RoutePaths]: ProtectedRoute<WebSocketData, Path>;
       }>
     | undefined,
   authorized: (request: Request) => boolean,
-  context: FIARouteContext,
+  context: RouteContext,
 ): Record<string, unknown> {
   const output: Record<string, unknown> = {};
   for (const [path, route] of Object.entries(routes ?? {})) {
     if (path.startsWith(RESERVED_PATH_PREFIX)) {
-      throw new FIAHostError("INVALID_ARGUMENT", `${RESERVED_PATH_PREFIX} routes are reserved`);
+      throw new HostError("INVALID_ARGUMENT", `${RESERVED_PATH_PREFIX} routes are reserved`);
     }
     if (typeof route === "function") {
-      output[path] = (request: Bun.BunRequest, server: FIAServer<WebSocketData>) =>
+      output[path] = (request: Bun.BunRequest, server: BackendServer<WebSocketData>) =>
         authorized(request)
           ? route(request as never, server, context)
           : new Response("Unauthorized", { status: 401 });
@@ -1097,11 +599,11 @@ function wrapProtectedRoutes<WebSocketData, RoutePaths extends string>(
     }
     const methods: Record<string, unknown> = {};
     const routeMethods = route as unknown as Partial<
-      Record<Bun.Serve.HTTPMethod, FIARouteHandler<WebSocketData>>
+      Record<Bun.Serve.HTTPMethod, RouteHandler<WebSocketData>>
     >;
     for (const [method, handler] of Object.entries(routeMethods)) {
       if (handler === undefined) continue;
-      methods[method] = (request: Bun.BunRequest, server: FIAServer<WebSocketData>) =>
+      methods[method] = (request: Bun.BunRequest, server: BackendServer<WebSocketData>) =>
         authorized(request)
           ? handler(request as never, server, context)
           : new Response("Unauthorized", { status: 401 });
@@ -1115,9 +617,10 @@ interface SharedBackendRuntime {
   readonly initialize: InitializeFrame;
   readonly peer: StdioPeer;
   readonly session: SessionGuard;
-  server?: FIAServer<unknown>;
-  definition?: FIABackendDefinition;
-  context?: FIABackendContext;
+  server?: BackendServer<unknown>;
+  definition?: BackendDefinition;
+  context?: BackendContext;
+  desktopSession?: DesktopSession;
   hostEvents?: HostEventScope;
   ready: boolean;
   stopping: boolean;
@@ -1133,20 +636,26 @@ async function deactivateDefinition(
 ): Promise<void> {
   const definition = runtime.definition;
   const context = runtime.context;
+  const desktopSession = runtime.desktopSession;
   const hostEvents = runtime.hostEvents;
   const active = definition !== undefined && context !== undefined;
   runtime.definition = undefined;
   runtime.context = undefined;
+  runtime.desktopSession = undefined;
   runtime.hostEvents = undefined;
   hostEvents?.dispose();
-  if (active && options.clearGlobalShortcuts) {
-    await runtime.peer.call("globalShortcuts.set", { shortcuts: [] });
-  }
   try {
-    if (active) await definition.stop?.(context);
-  } finally {
     if (active && options.clearGlobalShortcuts) {
       await runtime.peer.call("globalShortcuts.set", { shortcuts: [] });
+    }
+    if (active) await definition.stop?.(context);
+  } finally {
+    try {
+      if (active && options.clearGlobalShortcuts) {
+        await runtime.peer.call("globalShortcuts.set", { shortcuts: [] });
+      }
+    } finally {
+      desktopSession?.dispose();
     }
   }
 }
@@ -1157,7 +666,7 @@ async function sharedRuntime(): Promise<SharedBackendRuntime> {
   const frames = readFrames(Bun.stdin.stream())[Symbol.asyncIterator]();
   const first = await frames.next();
   if (first.done) {
-    throw new FIAHostError("PROTOCOL_FAILURE", "The first Host frame must be initialize v2");
+    throw new HostError("PROTOCOL_FAILURE", "The first Host frame must be initialize v2");
   }
   const initialize = validateInitializeFrame(first.value);
   const peer = new StdioPeer(frames, (error) => {
@@ -1195,16 +704,16 @@ async function sharedRuntime(): Promise<SharedBackendRuntime> {
   return runtime;
 }
 
-export async function runBackend(definition: FIABackendDefinition): Promise<void> {
+export async function runBackend(definition: BackendDefinition): Promise<void> {
   if (!isDefinedBackend(definition))
     throw new TypeError("Backend entry must default-export defineBackend()({...})");
   const runtime = await sharedRuntime();
   await deactivateDefinition(runtime, { clearGlobalShortcuts: true });
   const { initialize, peer, session } = runtime;
   const hostEvents = new HostEventScope();
-  const host = createHost(peer, session, hostEvents);
-  const routeContext: FIARouteContext = {
-    host,
+  const desktopSession = new DesktopSession(createRawHost(peer, session, hostEvents));
+  const routeContext: RouteContext = {
+    desktop: desktopSession,
     app: {
       name: initialize.app.name,
       identifier: initialize.app.identifier,
@@ -1212,47 +721,54 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
     },
   };
   let port = runtime.server?.port ?? initialize.preferredPort;
-  const publicRoutes = definition.http.publicRoutes ?? {};
-  for (const path of Object.keys(publicRoutes)) {
-    if (path.startsWith(RESERVED_PATH_PREFIX)) {
-      throw new FIAHostError("INVALID_ARGUMENT", `${RESERVED_PATH_PREFIX} routes are reserved`);
+  let server: BackendServer<unknown>;
+  try {
+    const publicRoutes = definition.http.publicRoutes ?? {};
+    for (const path of Object.keys(publicRoutes)) {
+      if (path.startsWith(RESERVED_PATH_PREFIX)) {
+        throw new HostError("INVALID_ARGUMENT", `${RESERVED_PATH_PREFIX} routes are reserved`);
+      }
     }
-  }
-  const authorize = (request: Request): boolean => session.isAuthorized(request, port);
-  const routes: Record<string, unknown> = {
-    ...publicRoutes,
-    ...wrapProtectedRoutes(definition.http.routes, authorize, routeContext),
-    [`${RESERVED_PATH_PREFIX}bootstrap`]: (request: Request) =>
-      session.bootstrap(request, port) ?? new Response("Not Found", { status: 404 }),
-    [`${RESERVED_PATH_PREFIX}health`]: new Response(null, { status: 204 }),
-  };
+    const authorize = (request: Request): boolean => session.isAuthorized(request, port);
+    const routes: Record<string, unknown> = {
+      ...publicRoutes,
+      ...wrapProtectedRoutes(definition.http.routes, authorize, routeContext),
+      [`${RESERVED_PATH_PREFIX}bootstrap`]: (request: Request) =>
+        session.bootstrap(request, port) ?? new Response("Not Found", { status: 404 }),
+      [`${RESERVED_PATH_PREFIX}health`]: new Response(null, { status: 204 }),
+    };
 
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port,
-    id: "fia-backend",
-    development: initialize.development ? { hmr: true, console: true } : false,
-    routes,
-    fetch:
-      definition.http.fetch === undefined
-        ? () => new Response("Not Found", { status: 404 })
-        : (request: Request, server: FIAServer<unknown>) =>
-            authorize(request)
-              ? definition.http.fetch!(request as Bun.BunRequest, server, routeContext)
-              : new Response("Unauthorized", { status: 401 }),
-    ...(definition.http.websocket === undefined ? {} : { websocket: definition.http.websocket }),
-    ...(definition.http.error === undefined ? {} : { error: definition.http.error }),
-    ...(definition.http.maxRequestBodySize === undefined
-      ? {}
-      : { maxRequestBodySize: definition.http.maxRequestBodySize }),
-    ...(definition.http.idleTimeout === undefined
-      ? {}
-      : { idleTimeout: definition.http.idleTimeout }),
-  } as never) as FIAServer<unknown>;
+    server = Bun.serve({
+      hostname: "127.0.0.1",
+      port,
+      id: "fia-backend",
+      development: initialize.development ? { hmr: true, console: true } : false,
+      routes,
+      fetch:
+        definition.http.fetch === undefined
+          ? () => new Response("Not Found", { status: 404 })
+          : (request: Request, server: BackendServer<unknown>) =>
+              authorize(request)
+                ? definition.http.fetch!(request as Bun.BunRequest, server, routeContext)
+                : new Response("Unauthorized", { status: 401 }),
+      ...(definition.http.websocket === undefined ? {} : { websocket: definition.http.websocket }),
+      ...(definition.http.error === undefined ? {} : { error: definition.http.error }),
+      ...(definition.http.maxRequestBodySize === undefined
+        ? {}
+        : { maxRequestBodySize: definition.http.maxRequestBodySize }),
+      ...(definition.http.idleTimeout === undefined
+        ? {}
+        : { idleTimeout: definition.http.idleTimeout }),
+    } as never) as BackendServer<unknown>;
+  } catch (error) {
+    hostEvents.dispose();
+    desktopSession.dispose();
+    throw error;
+  }
   port = server.port ?? 0;
   const origin = `http://127.0.0.1:${port}`;
   session.setOrigin(origin);
-  const context: FIABackendContext = {
+  const context: BackendContext = {
     ...routeContext,
     server,
     url(path = "/") {
@@ -1262,6 +778,7 @@ export async function runBackend(definition: FIABackendDefinition): Promise<void
   runtime.server = server;
   runtime.definition = definition;
   runtime.context = context;
+  runtime.desktopSession = desktopSession;
   runtime.hostEvents = hostEvents;
   try {
     await definition.start?.(context);

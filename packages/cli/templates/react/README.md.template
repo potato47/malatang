@@ -21,9 +21,10 @@ bun run run
 - `bun run package` 生成 Developer ID 签名的 arm64 预公证 ZIP；`bun run release` 进一步完成
   Apple 公证、ticket stapling、Gatekeeper 验证和 SHA-256 checksum，生成可公开分发产物。
 
-Backend 可通过 `host.application`、`host.statusItem`、`host.webviews`、`host.system`、
-`host.notifications`、`host.dialogs`、`host.clipboard`、`host.keychain`、
-`host.globalShortcuts`、`host.screens` 和 `host.screenCapture` 使用原生能力；生命周期及
+Backend 可通过 `desktop`、`desktop.windows`、`desktop.tray`、`desktop.dock`、
+`desktop.system`、`desktop.notifications`、`desktop.dialogs`、`desktop.clipboard`、
+`desktop.keychain`、`desktop.globalShortcuts`、`desktop.screens` 和
+`desktop.screenCapture` 使用原生能力；生命周期及
 route/fetch 上下文的 `app.dataDirectory` 是 Host 预先创建的持久化目录。
 浏览器和 WebView 必须由 Backend 调用安全打开接口建立会话，前端不能直接访问原生接口。
 在 `start` 中注册的 Host 事件监听器会由 FIA 在热重载和退出时自动注销。

@@ -149,7 +149,7 @@ export function CapabilitiesView() {
               <span>
                 <Check size={17} />
               </span>
-              <strong>{snapshot.app.statusItemVisible ? "状态栏可见" : "状态栏隐藏"}</strong>
+              <strong>{snapshot.app.trayVisible ? "状态栏可见" : "状态栏隐藏"}</strong>
               <small>{snapshot.app.dockVisible ? "Dock 可见" : "仅状态栏模式"}</small>
             </div>
             <div>

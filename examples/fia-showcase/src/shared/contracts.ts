@@ -113,7 +113,7 @@ export interface CapabilityItem {
 }
 
 export interface CapabilitySnapshot {
-  app: { dockVisible: boolean; statusItemVisible: boolean };
+  app: { dockVisible: boolean; trayVisible: boolean };
   screens: ScreenInfo[];
   windows: Array<{ id: string; visible: boolean; focused: boolean }>;
   shortcuts: { ready: boolean; detail: string };

@@ -1,4 +1,10 @@
-import { defineBackend, type FIAHost, type FIAWebViewOpenOptions } from "@semicoder/fia/backend";
+import {
+  defineBackend,
+  HostError,
+  type BrowserWindow,
+  type BrowserWindowOptions,
+  type Desktop,
+} from "@semicoder/fia/backend";
 import { mkdir } from "node:fs/promises";
 import { copyFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -57,13 +63,19 @@ const nativeWindows: Record<
   capabilities: { title: "能力中心", width: 920, height: 700 },
 };
 
+async function windowFor(desktop: Desktop, id: string): Promise<BrowserWindow> {
+  const window = await desktop.windows.get(id);
+  if (window === null) throw new HostError("NOT_FOUND", `BrowserWindow not found: ${id}`);
+  return window;
+}
+
 async function openWindow(
-  host: FIAHost,
+  desktop: Desktop,
   makeURL: (path?: string) => URL,
   name: WindowName,
 ): Promise<void> {
   if (name === "search") {
-    const screens = (await host.screens.list()) as ScreenInfo[];
+    const screens = (await desktop.screens.list()) as ScreenInfo[];
     const screen =
       screens.find((item) => item.containsPointer) ??
       screens.find((item) => item.main) ??
@@ -71,7 +83,7 @@ async function openWindow(
     const width = 720;
     const height = 520;
     const frame = screen?.visibleFrame;
-    const options: FIAWebViewOpenOptions = {
+    const options: BrowserWindowOptions = {
       id: "search",
       url: makeURL(windowPaths.search).href,
       title: "文件搜索",
@@ -83,7 +95,7 @@ async function openWindow(
             x: Math.round(frame.x + (frame.width - width) / 2),
             y: Math.round(frame.y + Math.max(56, (frame.height - height) * 0.22)),
           }),
-      windowStyle: "borderless",
+      frameless: true,
       transparent: true,
       shadow: true,
       resizable: false,
@@ -92,11 +104,11 @@ async function openWindow(
       alwaysOnTop: true,
       focus: true,
     };
-    await host.webviews.open(options);
+    await desktop.windows.create(options);
     return;
   }
   const configuration = nativeWindows[name];
-  await host.webviews.open({
+  await desktop.windows.create({
     id: name,
     url: makeURL(windowPaths[name]).href,
     title: configuration.title,
@@ -109,13 +121,14 @@ async function openWindow(
   });
 }
 
-async function closeCaptureOverlays(host: FIAHost, mode: "hide" | "close"): Promise<void> {
+async function closeCaptureOverlays(desktop: Desktop, mode: "hide" | "close"): Promise<void> {
   const ids = [...active().overlayIds];
   await Promise.all(
     ids.map(async (id) => {
       try {
-        if (mode === "hide") await host.webviews.hide(id);
-        else await host.webviews.close(id);
+        const window = await windowFor(desktop, id);
+        if (mode === "hide") await window.hide();
+        else await window.close();
       } catch {
         // Closing/hiding the complete overlay set is intentionally idempotent.
       }
@@ -125,12 +138,12 @@ async function closeCaptureOverlays(host: FIAHost, mode: "hide" | "close"): Prom
 }
 
 async function openScreenshotPreview(
-  host: FIAHost,
+  desktop: Desktop,
   makeURL: (path?: string) => URL,
   screenshotId: string,
 ): Promise<void> {
   const parameters = new URLSearchParams({ id: screenshotId });
-  await host.webviews.open({
+  await desktop.windows.create({
     id: "screenshot-preview",
     url: makeURL(`/preview?${parameters}`).href,
     title: "截图预览",
@@ -145,11 +158,14 @@ async function openScreenshotPreview(
   });
 }
 
-async function openCaptureOverlays(host: FIAHost, makeURL: (path?: string) => URL): Promise<void> {
+async function openCaptureOverlays(
+  desktop: Desktop,
+  makeURL: (path?: string) => URL,
+): Promise<void> {
   active().screenshots.beginSelection();
   let screens: ScreenInfo[];
   try {
-    screens = (await host.screens.list()) as ScreenInfo[];
+    screens = (await desktop.screens.list()) as ScreenInfo[];
   } catch (error) {
     active().screenshots.cancelSelection();
     throw error;
@@ -158,13 +174,13 @@ async function openCaptureOverlays(host: FIAHost, makeURL: (path?: string) => UR
     active().screenshots.cancelSelection();
     throw new AppError("NO_SCREEN", "没有可用于截图的显示器", 409);
   }
-  await closeCaptureOverlays(host, "close");
+  await closeCaptureOverlays(desktop, "close");
   const opened: string[] = [];
   try {
     for (const [index, screen] of screens.entries()) {
       const id = `capture-overlay-${index}`;
       const query = new URLSearchParams({ screenId: screen.id, screenName: screen.name });
-      await host.webviews.open({
+      await desktop.windows.create({
         id,
         url: makeURL(`/capture?${query}`).href,
         title: `选择截图区域 · ${screen.name}`,
@@ -172,7 +188,7 @@ async function openCaptureOverlays(host: FIAHost, makeURL: (path?: string) => UR
         y: screen.frame.y,
         width: screen.frame.width,
         height: screen.frame.height,
-        windowStyle: "borderless",
+        frameless: true,
         transparent: true,
         shadow: false,
         resizable: false,
@@ -187,7 +203,9 @@ async function openCaptureOverlays(host: FIAHost, makeURL: (path?: string) => UR
       active().overlayIds.add(id);
     }
   } catch (error) {
-    await Promise.all(opened.map((id) => host.webviews.close(id).catch(() => undefined)));
+    await Promise.all(
+      opened.map(async (id) => (await windowFor(desktop, id)).close().catch(() => undefined)),
+    );
     active().overlayIds.clear();
     active().screenshots.cancelSelection();
     throw error;
@@ -195,53 +213,54 @@ async function openCaptureOverlays(host: FIAHost, makeURL: (path?: string) => UR
 }
 
 async function handleCapabilityAction(
-  host: FIAHost,
+  desktop: Desktop,
   makeURL: (path?: string) => URL,
   action: string,
 ): Promise<unknown> {
   switch (action) {
     case "request-screen-capture": {
-      const status = await host.screenCapture.requestAuthorization();
+      const status = await desktop.screenCapture.requestAuthorization();
       active().events.publish({ type: "capabilities.changed" });
       return { status };
     }
     case "request-notifications": {
-      const status = await host.notifications.requestAuthorization();
+      const status = await desktop.notifications.requestAuthorization();
       active().events.publish({ type: "capabilities.changed" });
       return { status };
     }
     case "send-notification":
-      return await host.notifications.send({
+      return await desktop.notifications.send({
         id: `showcase-${Date.now()}`,
         title: "FIA 工具箱",
         body: "原生通知链路工作正常。",
       });
     case "copy-text":
-      await host.clipboard.writeText("来自 FIA 工具箱的剪贴板测试");
+      await desktop.clipboard.writeText("来自 FIA 工具箱的剪贴板测试");
       return { copied: true };
     case "keychain-roundtrip": {
       const key = `diagnostic-${crypto.randomUUID()}`;
       const value = crypto.randomUUID();
-      await host.keychain.set(key, value);
-      const restored = await host.keychain.get(key);
-      await host.keychain.delete(key);
+      await desktop.keychain.set(key, value);
+      const restored = await desktop.keychain.get(key);
+      await desktop.keychain.delete(key);
       return { matched: restored === value };
     }
     case "choose-file":
       return {
         selected:
-          (await host.dialogs.openFile({ title: "验证打开文件面板", multiple: true }))?.length ?? 0,
+          (await desktop.dialogs.openFile({ title: "验证打开文件面板", multiple: true }))?.length ??
+          0,
       };
     case "choose-directory":
       return {
         selected:
-          (await host.dialogs.openDirectory({ title: "验证目录选择面板", multiple: true }))
+          (await desktop.dialogs.openDirectory({ title: "验证目录选择面板", multiple: true }))
             ?.length ?? 0,
       };
     case "choose-save":
       return {
         selected:
-          (await host.dialogs.saveFile({
+          (await desktop.dialogs.saveFile({
             title: "验证保存面板（不会写入文件）",
             name: "FIA-Toolbox-test.txt",
             canCreateDirectories: true,
@@ -251,11 +270,11 @@ async function handleCapabilityAction(
       const latest = active().repository.listScreenshots(1)[0];
       if (latest === undefined)
         throw new AppError("NO_SCREENSHOT", "请先完成一张截图，再验证图片剪贴板", 409);
-      await host.clipboard.writeImage(latest.path);
+      await desktop.clipboard.writeImage(latest.path);
       return { copied: true };
     }
     case "open-secondary-window":
-      await host.webviews.open({
+      await desktop.windows.create({
         id: "capability-secondary",
         url: makeURL("/capabilities").href,
         title: "FIA 多窗口验证",
@@ -271,13 +290,13 @@ async function handleCapabilityAction(
 }
 
 async function installShortcuts(
-  host: FIAHost,
+  desktop: Desktop,
   makeURL: (path?: string) => URL,
   state: ShortcutState,
   settings: ShowcaseSettings,
 ): Promise<void> {
   try {
-    await host.globalShortcuts.set([
+    await desktop.globalShortcuts.set([
       { id: "show-search", ...settings.searchShortcut },
       { id: "capture-region", ...settings.captureShortcut },
     ]);
@@ -288,26 +307,28 @@ async function installShortcuts(
     state.detail = "注册失败：快捷键可能与其他应用冲突";
     console.warn("全局快捷键注册失败", error);
   }
-  host.globalShortcuts.onPressed(({ id }) => {
-    if (id === "show-search") void openWindow(host, makeURL, "search").catch(console.error);
-    if (id === "capture-region") void openCaptureOverlays(host, makeURL).catch(console.error);
+  desktop.globalShortcuts.addEventListener("pressed", ({ detail }) => {
+    if (detail.id === "show-search")
+      void openWindow(desktop, makeURL, "search").catch(console.error);
+    if (detail.id === "capture-region")
+      void openCaptureOverlays(desktop, makeURL).catch(console.error);
   });
 }
 
 async function statusAction(
   id: string,
-  host: FIAHost,
+  desktop: Desktop,
   makeURL: (path?: string) => URL,
 ): Promise<void> {
-  if (id === "open-home") return await openWindow(host, makeURL, "home");
-  if (id === "open-search") return await openWindow(host, makeURL, "search");
-  if (id === "open-files") return await openWindow(host, makeURL, "files");
-  if (id === "open-screenshots") return await openWindow(host, makeURL, "screenshots");
-  if (id === "open-capabilities") return await openWindow(host, makeURL, "capabilities");
-  if (id === "capture-region") return await openCaptureOverlays(host, makeURL);
+  if (id === "open-home") return await openWindow(desktop, makeURL, "home");
+  if (id === "open-search") return await openWindow(desktop, makeURL, "search");
+  if (id === "open-files") return await openWindow(desktop, makeURL, "files");
+  if (id === "open-screenshots") return await openWindow(desktop, makeURL, "screenshots");
+  if (id === "open-capabilities") return await openWindow(desktop, makeURL, "capabilities");
+  if (id === "capture-region") return await openCaptureOverlays(desktop, makeURL);
   if (id === "capture-screen") {
-    const screenshot = await active().screenshots.capture(host, { mode: "screen" });
-    await openScreenshotPreview(host, makeURL, screenshot.id);
+    const screenshot = await active().screenshots.capture(desktop, { mode: "screen" });
+    await openScreenshotPreview(desktop, makeURL, screenshot.id);
   }
 }
 
@@ -338,17 +359,17 @@ export default defineBackend<ShowcaseSocketData>()({
         }),
       },
       "/api/windows/:name": {
-        POST: api(async (request, _server, { host }) => {
+        POST: api(async (request, _server, { desktop }) => {
           const name = request.params.name as WindowName;
           if (!Object.hasOwn(windowPaths, name)) throw new AppError("UNKNOWN_WINDOW", "未知窗口");
-          await openWindow(host, (path = "/") => new URL(path, request.url), name);
+          await openWindow(desktop, (path = "/") => new URL(path, request.url), name);
           return json({ ok: true });
         }),
-        DELETE: api(async (request, _server, { host }) => {
+        DELETE: api(async (request, _server, { desktop }) => {
           const name = request.params.name;
           if (!Object.hasOwn(windowPaths, name)) throw new AppError("UNKNOWN_WINDOW", "未知窗口");
           try {
-            await host.webviews.hide(name);
+            await (await windowFor(desktop, name)).hide();
           } catch {
             // Hiding an unopened window is idempotent for the UI.
           }
@@ -356,7 +377,7 @@ export default defineBackend<ShowcaseSocketData>()({
         }),
       },
       "/api/screens": {
-        GET: api(async (_request, _server, { host }) => json(await host.screens.list())),
+        GET: api(async (_request, _server, { desktop }) => json(await desktop.screens.list())),
       },
       "/api/screenshots": {
         GET: api(async (request) => {
@@ -365,7 +386,7 @@ export default defineBackend<ShowcaseSocketData>()({
             screenshots: active().screenshots.list(Number.isFinite(limit) ? limit : 100),
           });
         }),
-        POST: api(async (request, _server, { host }) => {
+        POST: api(async (request, _server, { desktop }) => {
           const input = await jsonBody<{
             screenId?: string;
             mode?: "screen" | "region";
@@ -373,46 +394,46 @@ export default defineBackend<ShowcaseSocketData>()({
             showsCursor?: boolean;
           }>(request);
           if (input.mode === "region") {
-            await closeCaptureOverlays(host, "hide");
+            await closeCaptureOverlays(desktop, "hide");
             await Bun.sleep(140);
           }
           try {
-            const screenshot = await active().screenshots.capture(host, input);
+            const screenshot = await active().screenshots.capture(desktop, input);
             await openScreenshotPreview(
-              host,
+              desktop,
               (path = "/") => new URL(path, request.url),
               screenshot.id,
             );
             return json({ screenshot }, { status: 201 });
           } finally {
-            if (input.mode === "region") await closeCaptureOverlays(host, "close");
+            if (input.mode === "region") await closeCaptureOverlays(desktop, "close");
           }
         }),
       },
       "/api/screenshots/overlay": {
-        POST: api(async (request, _server, { host }) => {
+        POST: api(async (request, _server, { desktop }) => {
           await jsonBody<Record<string, never>>(request);
-          await openCaptureOverlays(host, (path = "/") => new URL(path, request.url));
+          await openCaptureOverlays(desktop, (path = "/") => new URL(path, request.url));
           return json({ ok: true });
         }),
-        DELETE: api(async (_request, _server, { host }) => {
-          await closeCaptureOverlays(host, "close");
+        DELETE: api(async (_request, _server, { desktop }) => {
+          await closeCaptureOverlays(desktop, "close");
           active().screenshots.cancelSelection();
           return json({ ok: true });
         }),
       },
       "/api/screenshots/cleanup": {
-        POST: api(async (request, _server, { host }) => {
+        POST: api(async (request, _server, { desktop }) => {
           const input = await jsonBody<{ maxAgeDays?: number; maxCount?: number }>(request);
-          return json(await active().screenshots.cleanup(host, input));
+          return json(await active().screenshots.cleanup(desktop, input));
         }),
       },
       "/api/screenshots/:id": {
         GET: api(async (request) =>
           json({ screenshot: active().screenshots.publicRecord(request.params.id) }),
         ),
-        DELETE: api(async (request, _server, { host }) =>
-          json(await active().screenshots.trash(host, request.params.id)),
+        DELETE: api(async (request, _server, { desktop }) =>
+          json(await active().screenshots.trash(desktop, request.params.id)),
         ),
       },
       "/api/screenshots/:id/content": {
@@ -424,14 +445,14 @@ export default defineBackend<ShowcaseSocketData>()({
         }),
       },
       "/api/screenshots/:id/action": {
-        POST: api(async (request, _server, { host }) => {
+        POST: api(async (request, _server, { desktop }) => {
           const input = await jsonBody<{ action?: string }>(request);
           const record = active().screenshots.get(request.params.id);
-          if (input.action === "copy") await host.clipboard.writeImage(record.path);
-          else if (input.action === "open") await host.system.openPath(record.path);
-          else if (input.action === "reveal") await host.system.revealPath(record.path);
+          if (input.action === "copy") await desktop.clipboard.writeImage(record.path);
+          else if (input.action === "open") await desktop.system.openPath(record.path);
+          else if (input.action === "reveal") await desktop.system.revealPath(record.path);
           else if (input.action === "save-as") {
-            const destination = await host.dialogs.saveFile({
+            const destination = await desktop.dialogs.saveFile({
               title: "另存截图副本",
               allowedExtensions: ["png"],
               name: `FIA-截图-${request.params.id.slice(0, 8)}.png`,
@@ -460,12 +481,12 @@ export default defineBackend<ShowcaseSocketData>()({
         GET: api(async () => json({ searches: active().search.recent() })),
       },
       "/api/search/action": {
-        POST: api(async (request, _server, { host }) => {
+        POST: api(async (request, _server, { desktop }) => {
           const input = await jsonBody<{ token?: string; action?: string }>(request);
           const path = active().search.resultPath(requiredString(input.token, "token", 128));
-          if (input.action === "open") await host.system.openPath(path);
-          else if (input.action === "reveal") await host.system.revealPath(path);
-          else if (input.action === "copy-path") await host.clipboard.writeText(path);
+          if (input.action === "open") await desktop.system.openPath(path);
+          else if (input.action === "reveal") await desktop.system.revealPath(path);
+          else if (input.action === "copy-path") await desktop.clipboard.writeText(path);
           else throw new AppError("UNKNOWN_ACTION", "未知搜索结果动作");
           return json({ ok: true });
         }),
@@ -474,8 +495,8 @@ export default defineBackend<ShowcaseSocketData>()({
         GET: api(async () =>
           json({ roots: active().files.roots(), recents: active().files.recent() }),
         ),
-        POST: api(async (_request, _server, { host }) => {
-          const paths = await host.dialogs.openDirectory({
+        POST: api(async (_request, _server, { desktop }) => {
+          const paths = await desktop.dialogs.openDirectory({
             title: "添加文件根目录",
             multiple: true,
           });
@@ -520,7 +541,7 @@ export default defineBackend<ShowcaseSocketData>()({
         ),
       },
       "/api/files/actions": {
-        POST: api(async (request, _server, { host }) => {
+        POST: api(async (request, _server, { desktop }) => {
           const input = await jsonBody<Record<string, unknown>>(request);
           const action = requiredString(input.action, "action", 64);
           const rootId = requiredString(input.rootId, "rootId", 128);
@@ -573,13 +594,13 @@ export default defineBackend<ShowcaseSocketData>()({
             });
           }
           if (action === "trash") {
-            await active().files.trash(host, rootId, relativePath);
+            await active().files.trash(desktop, rootId, relativePath);
             return json({ trashed: true });
           }
           const path = await active().files.systemPath(rootId, relativePath);
-          if (action === "open") await host.system.openPath(path);
-          else if (action === "reveal") await host.system.revealPath(path);
-          else if (action === "copy-path") await host.clipboard.writeText(path);
+          if (action === "open") await desktop.system.openPath(path);
+          else if (action === "reveal") await desktop.system.revealPath(path);
+          else if (action === "copy-path") await desktop.clipboard.writeText(path);
           else throw new AppError("UNKNOWN_ACTION", "未知文件动作");
           return json({ ok: true });
         }),
@@ -600,16 +621,16 @@ export default defineBackend<ShowcaseSocketData>()({
         }),
       },
       "/api/capabilities": {
-        GET: api(async (_request, _server, { host }) =>
-          json(await capabilitySnapshot(host, active().shortcuts)),
+        GET: api(async (_request, _server, { desktop }) =>
+          json(await capabilitySnapshot(desktop, active().shortcuts)),
         ),
       },
       "/api/capabilities/actions": {
-        POST: api(async (request, _server, { host }) => {
+        POST: api(async (request, _server, { desktop }) => {
           const input = await jsonBody<{ action?: string }>(request);
           return json({
             result: await handleCapabilityAction(
-              host,
+              desktop,
               (path = "/") => new URL(path, request.url),
               requiredString(input.action, "action", 64),
             ),
@@ -618,7 +639,7 @@ export default defineBackend<ShowcaseSocketData>()({
       },
       "/api/settings": {
         GET: api(async () => json({ settings: active().repository.settings() })),
-        PUT: api(async (request, _server, { host }) => {
+        PUT: api(async (request, _server, { desktop }) => {
           const candidate = await jsonBody<ShowcaseSettings>(request);
           const previous = active().repository.settings();
           const modifiers = ["command", "option", "control", "shift"];
@@ -646,7 +667,7 @@ export default defineBackend<ShowcaseSocketData>()({
             throw new AppError("INVALID_RETENTION", "保留天数需为 1–365，数量需为 1–500");
           }
           try {
-            await host.globalShortcuts.set([
+            await desktop.globalShortcuts.set([
               { id: "show-search", ...candidate.searchShortcut },
               { id: "capture-region", ...candidate.captureShortcut },
             ]);
@@ -661,7 +682,7 @@ export default defineBackend<ShowcaseSocketData>()({
           } catch (error) {
             console.error("快捷键已注册但设置写入失败，正在回滚", error);
             try {
-              await host.globalShortcuts.set([
+              await desktop.globalShortcuts.set([
                 { id: "show-search", ...previous.searchShortcut },
                 { id: "capture-region", ...previous.captureShortcut },
               ]);
@@ -690,7 +711,7 @@ export default defineBackend<ShowcaseSocketData>()({
       return errorResponse(error);
     },
   },
-  async start({ host, app, server, url }) {
+  async start({ desktop, app, server, url }) {
     await mkdir(app.dataDirectory, { recursive: true });
     const repository = new ShowcaseRepository(resolve(app.dataDirectory, "showcase.sqlite"));
     const screenshots = new ScreenshotService(app.dataDirectory, repository, (event) =>
@@ -708,31 +729,47 @@ export default defineBackend<ShowcaseSocketData>()({
       overlayIds: new Set(),
     };
     broker.attach(server);
-    await host.statusItem.setMenu([
-      { type: "item", id: "open-home", title: "打开工具箱", symbol: "square.grid.2x2" },
-      { type: "separator" },
-      { type: "item", id: "capture-region", title: "区域截图…", symbol: "viewfinder" },
-      { type: "item", id: "capture-screen", title: "截取当前屏幕", symbol: "display" },
-      { type: "item", id: "open-screenshots", title: "截图历史", symbol: "photo.on.rectangle" },
-      { type: "separator" },
-      { type: "item", id: "open-search", title: "搜索文件…", symbol: "magnifyingglass" },
-      { type: "item", id: "open-files", title: "文件管理", symbol: "folder" },
-      { type: "item", id: "open-capabilities", title: "能力中心", symbol: "checkmark.seal" },
+    await desktop.tray.setMenu([
+      { item: { id: "open-home", label: "打开工具箱", symbol: "square.grid.2x2" } },
+      "separator",
+      { item: { id: "capture-region", label: "区域截图…", symbol: "viewfinder" } },
+      { item: { id: "capture-screen", label: "截取当前屏幕", symbol: "display" } },
+      {
+        item: {
+          id: "open-screenshots",
+          label: "截图历史",
+          symbol: "photo.on.rectangle",
+        },
+      },
+      "separator",
+      { item: { id: "open-search", label: "搜索文件…", symbol: "magnifyingglass" } },
+      { item: { id: "open-files", label: "文件管理", symbol: "folder" } },
+      { item: { id: "open-capabilities", label: "能力中心", symbol: "checkmark.seal" } },
     ]);
-    host.statusItem.onClick(() => void openWindow(host, url, "search").catch(console.error));
-    host.statusItem.onAction(({ id }) => void statusAction(id, host, url).catch(console.error));
-    host.application.onReopen(() => void openWindow(host, url, "home").catch(console.error));
-    host.notifications.onClick(
-      () => void openWindow(host, url, "screenshots").catch(console.error),
+    desktop.tray.addEventListener(
+      "click",
+      () => void openWindow(desktop, url, "search").catch(console.error),
     );
-    await installShortcuts(host, url, shortcuts, repository.settings());
-    await screenshots.cleanup(host, {
+    desktop.tray.addEventListener(
+      "menuclick",
+      ({ detail }) => void statusAction(detail.id, desktop, url).catch(console.error),
+    );
+    desktop.dock.addEventListener(
+      "reopen",
+      () => void openWindow(desktop, url, "home").catch(console.error),
+    );
+    desktop.notifications.addEventListener(
+      "click",
+      () => void openWindow(desktop, url, "screenshots").catch(console.error),
+    );
+    await installShortcuts(desktop, url, shortcuts, repository.settings());
+    await screenshots.cleanup(desktop, {
       maxAgeDays: repository.settings().screenshotMaxAgeDays,
       maxCount: repository.settings().screenshotMaxCount,
     });
   },
-  async stop({ host }) {
-    await closeCaptureOverlays(host, "close");
+  async stop({ desktop }) {
+    await closeCaptureOverlays(desktop, "close");
     await runtime?.screenshots.dispose();
     runtime?.files.closeWatch();
     runtime?.search.dispose();

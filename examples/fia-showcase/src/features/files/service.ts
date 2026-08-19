@@ -1,4 +1,4 @@
-import type { FIAHost } from "@semicoder/fia/backend";
+import type { Desktop } from "@semicoder/fia/backend";
 import { constants } from "node:fs";
 import { watch, type FSWatcher } from "node:fs";
 import { copyFile, link, lstat, mkdir, open, readdir, rm, unlink } from "node:fs/promises";
@@ -558,10 +558,10 @@ export class FileManagerService {
     return normalizeRelativePath(relative(root.path, destination));
   }
 
-  async trash(host: FIAHost, rootId: string, relativePath: string): Promise<void> {
+  async trash(desktop: Desktop, rootId: string, relativePath: string): Promise<void> {
     const root = this.root(rootId);
     const source = await resolveManagedEntry(root.path, relativePath);
-    await host.system.trashPath(source.absolutePath);
+    await desktop.system.trashPath(source.absolutePath);
     this.publish({
       type: "files.changed",
       rootId,

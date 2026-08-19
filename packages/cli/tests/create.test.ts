@@ -43,8 +43,8 @@ describe("FIA project creation", () => {
     expect(config).not.toContain("mcp:");
     const backend = await readFile(resolve(root, "src/backend.ts"), "utf8");
     expect(backend).toContain("defineBackend");
-    expect(backend).toContain("host.webviews.open");
-    expect(backend).toContain("host.statusItem.setMenu");
+    expect(backend).toContain("desktop.windows.create");
+    expect(backend).toContain("desktop.tray.setMenu");
     expect(backend).not.toContain("globalThis");
     expect(backend).not.toContain("stop()");
     const app = await readFile(resolve(root, "src/ui/App.tsx"), "utf8");

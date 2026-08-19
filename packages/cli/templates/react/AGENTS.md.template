@@ -11,14 +11,14 @@
 - `src/ui/components/ui/` 是可编辑的 Tailwind CSS v4 组件库。
 - `dist/` 和 `.fia/` 是生成目录。
 
-原生能力只能在 Backend 中通过 `host.application`、`host.statusItem`、`host.webviews`、
-`host.system`、`host.notifications`、`host.dialogs`、`host.clipboard`、`host.keychain`、
-`host.globalShortcuts`、`host.screens` 和 `host.screenCapture` 使用。
+原生能力只能在 Backend 中通过 `desktop`、`desktop.windows`、`desktop.tray`、`desktop.dock`、
+`desktop.system`、`desktop.notifications`、`desktop.dialogs`、`desktop.clipboard`、
+`desktop.keychain`、`desktop.globalShortcuts`、`desktop.screens` 和 `desktop.screenCapture` 使用。
 route/fetch 的第三参数以及 start/stop 上下文还提供 `app.dataDirectory` 等只读应用信息。前端使用
 相对 `fetch` 和同源 WebSocket。
 
 状态栏菜单 ID 必须全树唯一，不能使用保留的 `fia.*`；菜单最多 8 层、256 项。打开本机页面时
-调用 `host.webviews.open` 或 `host.system.openURL`，由 Host 注入一次性 bootstrap code。
+调用 `desktop.windows.create` 或 `desktop.system.openURL`，由 Host 注入一次性 bootstrap code。
 
 从 `./components/ui` 导入已有控件，保持 `ThemeProvider` 和 `ToastProvider` 挂载。开发期日志写入
 stderr；Backend stdout 专用于 FIA JSONL 协议。
