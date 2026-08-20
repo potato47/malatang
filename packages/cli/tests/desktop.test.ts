@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import {
   DesktopSession,
   HostError,
@@ -40,6 +43,14 @@ interface RawFixture {
   readonly calls: Array<{ method: string; value?: unknown }>;
   emitWindow(event: { type: "changed" | "closed"; window: RawWindowState }): void;
 }
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
 
 function rawFixture(): RawFixture {
   const states = new Map<string, RawWindowState>();
@@ -155,7 +166,21 @@ function rawFixture(): RawFixture {
     system: {},
     globalShortcuts: { set: async () => {}, onPressed: () => () => {} },
     screens: {},
-    screenCapture: {},
+    screenCapture: {
+      getAuthorizationStatus: async () => "authorized",
+      requestAuthorization: async () => "authorized",
+      capture: async (options: { destination: string }) => {
+        const bytes = new Uint8Array([137, 80, 78, 71]);
+        await Bun.write(options.destination, bytes);
+        calls.push({ method: "screenCapture.capture", value: options });
+        return {
+          path: options.destination,
+          byteSize: bytes.byteLength,
+          pixelWidth: 200,
+          pixelHeight: 160,
+        };
+      },
+    },
     notifications: {
       getAuthorizationStatus: async () => "authorized",
       requestAuthorization: async () => "authorized",
@@ -165,12 +190,18 @@ function rawFixture(): RawFixture {
       onClick: () => () => {},
     },
     dialogs: {},
-    clipboard: {},
+    clipboard: {
+      writeImage: async (path: string) => {
+        calls.push({ method: "clipboard.writeImage", value: { path } });
+      },
+    },
     keychain: {},
   } as unknown as RawHostClient;
 
+  const dataDirectory = resolve(tmpdir(), `fia-desktop-${crypto.randomUUID()}`);
+  temporaryDirectories.push(dataDirectory);
   return {
-    desktop: new DesktopSession(raw),
+    desktop: new DesktopSession(raw, dataDirectory),
     raw,
     states,
     calls,
@@ -262,10 +293,12 @@ describe("Desktop resource facade", () => {
       fixture.desktop.windows.create({ id: "", url: "https://app.invalid" }),
     ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
 
-    fixture.desktop.dispose();
+    await fixture.desktop.dispose();
     await expect(first.refresh()).rejects.toMatchObject({ code: "UNSAFE_STATE" });
 
-    const restarted = new DesktopSession(fixture.raw);
+    const dataDirectory = resolve(tmpdir(), `fia-desktop-${crypto.randomUUID()}`);
+    temporaryDirectories.push(dataDirectory);
+    const restarted = new DesktopSession(fixture.raw, dataDirectory);
     const adopted = await restarted.windows.create({
       id: "first",
       url: "https://app.invalid/restarted",
@@ -326,6 +359,67 @@ describe("Desktop resource facade", () => {
       { method: "webviews.update", value: { id: "main", visibleOnAllSpaces: true } },
       { method: "webviews.update", value: { id: "main", visibleOverFullScreen: true } },
     ]);
+  });
+
+  test("wraps captures as managed file-backed images and accepts them in the clipboard", async () => {
+    const fixture = rawFixture();
+    const image = await fixture.desktop.screenCapture.capture({
+      screenId: "main",
+      region: { x: 1, y: 2, width: 100, height: 80 },
+      showsCursor: true,
+    });
+    expect(image.type).toBe("image/png");
+    expect(image.size).toBe(4);
+    expect(image.pixelWidth).toBe(200);
+    expect(image.pixelHeight).toBe(160);
+    expect(new Uint8Array(await image.arrayBuffer())).toEqual(new Uint8Array([137, 80, 78, 71]));
+
+    const captureCall = fixture.calls.find((call) => call.method === "screenCapture.capture");
+    if (captureCall === undefined) throw new Error("missing screenCapture.capture call");
+    expect(captureCall.value).toMatchObject({
+      screenId: "main",
+      region: { x: 1, y: 2, width: 100, height: 80 },
+      showsCursor: true,
+    });
+    const temporaryPath = (captureCall.value as { destination: string }).destination;
+    expect(temporaryPath).toContain("/NativePayloads/");
+    expect(await Bun.file(temporaryPath).exists()).toBe(true);
+
+    const savedPath = resolve(tmpdir(), `fia-saved-${crypto.randomUUID()}.png`);
+    temporaryDirectories.push(savedPath);
+    await image.saveTo(savedPath);
+    expect(new Uint8Array(await Bun.file(savedPath).arrayBuffer())).toEqual(
+      new Uint8Array([137, 80, 78, 71]),
+    );
+    await fixture.desktop.clipboard.writeImage(image);
+    expect(fixture.calls.at(-1)).toEqual({
+      method: "clipboard.writeImage",
+      value: { path: temporaryPath },
+    });
+
+    await image.dispose();
+    await image.dispose();
+    expect(image.disposed).toBe(true);
+    expect(await Bun.file(temporaryPath).exists()).toBe(false);
+    expect(() => image.file).toThrow("disposed");
+
+    const streamed = await fixture.desktop.screenCapture.capture({ screenId: "main" });
+    const streamedCall = fixture.calls.findLast((call) => call.method === "screenCapture.capture");
+    if (streamedCall === undefined) throw new Error("missing streamed screenCapture.capture call");
+    const streamedPath = (streamedCall.value as { destination: string }).destination;
+    expect(
+      new Uint8Array(await new Response(streamed.stream({ dispose: true })).arrayBuffer()),
+    ).toEqual(new Uint8Array([137, 80, 78, 71]));
+    expect(streamed.disposed).toBe(true);
+    expect(await Bun.file(streamedPath).exists()).toBe(false);
+
+    const pending = await fixture.desktop.screenCapture.capture({ screenId: "main" });
+    const pendingCall = fixture.calls.findLast((call) => call.method === "screenCapture.capture");
+    if (pendingCall === undefined) throw new Error("missing second screenCapture.capture call");
+    const pendingPath = (pendingCall.value as { destination: string }).destination;
+    await fixture.desktop.dispose();
+    expect(pending.disposed).toBe(true);
+    expect(await Bun.file(pendingPath).exists()).toBe(false);
   });
 
   test("converts tagged menus and strictly validates IDs, limits, and accelerators", async () => {

@@ -18,7 +18,7 @@
 - [x] 为 Host 请求增加可选 AbortSignal/取消帧。
 - [x] 增加通知、文件面板、文本剪贴板和 Keychain 等 Backend-only 原生能力。
 - [x] 增加全局快捷键、屏幕枚举/截图、Finder 路径操作和 PNG 剪贴板能力。
-- [x] 增加 FIA Toolbox 综合示例及其类型检查、单元测试、构建 smoke 和手工验收矩阵。
+- [x] 默认示例应用已移出仓库；框架能力改在独立的实际项目中进行端到端验收。
 - [x] 增加可选稳定开发签名 identity；缺省仍使用 ad-hoc 签名。
 - [x] 实现 arm64 Developer ID、Hardened Runtime、notarization、stapling 与 ZIP 发布命令。
 - [ ] 使用真实 Developer ID 与 Apple 公证服务完成发布链路端到端验收。

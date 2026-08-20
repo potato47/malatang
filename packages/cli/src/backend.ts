@@ -12,6 +12,7 @@ export type {
   BrowserWindowOptions,
   BrowserWindowState,
   CallOptions,
+  CapturedImage,
   Desktop,
   DesktopState,
   Dock,
@@ -40,7 +41,6 @@ export type {
   ScreenCaptureAuthorizationResult,
   ScreenCaptureAuthorizationStatus,
   ScreenCaptureOptions,
-  ScreenCaptureReceipt,
   ScreenCaptureRegion,
   ScreenInfo,
   SubmenuEntry,
@@ -655,7 +655,7 @@ async function deactivateDefinition(
         await runtime.peer.call("globalShortcuts.set", { shortcuts: [] });
       }
     } finally {
-      desktopSession?.dispose();
+      await desktopSession?.dispose();
     }
   }
 }
@@ -711,7 +711,10 @@ export async function runBackend(definition: BackendDefinition): Promise<void> {
   await deactivateDefinition(runtime, { clearGlobalShortcuts: true });
   const { initialize, peer, session } = runtime;
   const hostEvents = new HostEventScope();
-  const desktopSession = new DesktopSession(createRawHost(peer, session, hostEvents));
+  const desktopSession = new DesktopSession(
+    createRawHost(peer, session, hostEvents),
+    initialize.applicationSupport,
+  );
   const routeContext: RouteContext = {
     desktop: desktopSession,
     app: {
@@ -762,7 +765,7 @@ export async function runBackend(definition: BackendDefinition): Promise<void> {
     } as never) as BackendServer<unknown>;
   } catch (error) {
     hostEvents.dispose();
-    desktopSession.dispose();
+    await desktopSession.dispose();
     throw error;
   }
   port = server.port ?? 0;

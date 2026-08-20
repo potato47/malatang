@@ -236,7 +236,20 @@ final class ScreenCaptureController {
                     message: "screen capture failed: \(error.localizedDescription)"
                 )
             }
-            return ["path": destination.path, "pixelWidth": image.width, "pixelHeight": image.height]
+            let attributes = try fileManager.attributesOfItem(atPath: destination.path)
+            guard let byteSize = attributes[.size] as? NSNumber, byteSize.intValue > 0 else {
+                try? fileManager.removeItem(at: destination)
+                throw HostRequestExecutionError(
+                    code: .nativeFailure,
+                    message: "captured PNG has an invalid file size"
+                )
+            }
+            return [
+                "path": destination.path,
+                "byteSize": byteSize.intValue,
+                "pixelWidth": image.width,
+                "pixelHeight": image.height,
+            ]
         default:
             throw HostRequestExecutionError(code: .invalidRequest, message: "unknown screen capture method: \(method)")
         }

@@ -10,7 +10,8 @@
 - `desktop.getState()` / `desktop.quit()`：读取 `dockVisible`、`trayVisible` 或退出应用。
 - `desktop.globalShortcuts`：原子替换最多 32 个系统全局快捷键，并接收 `pressed` 事件。
 - `desktop.screens`：枚举显示器、逻辑坐标、可见区域、缩放、主屏与鼠标所在屏。
-- `desktop.screenCapture`：显式读取/申请屏幕录制授权，并把单屏或屏内区域捕获为 PNG 文件。
+- `desktop.screenCapture`：显式读取/申请屏幕录制授权，并把单屏或屏内区域捕获为临时
+  `CapturedImage`。
 - `desktop.system`：打开 HTTP(S) URL 或本地路径、在 Finder 定位路径、把路径移入废纸篓。
 - `desktop.notifications`：读取/申请授权、发送和移除通知，以及通知点击事件。
 - `desktop.dialogs`：打开文件、打开目录和保存文件面板，结果为绝对 POSIX 路径。
@@ -85,14 +86,18 @@ security-scoped bookmark。
 
 Keychain 的 service 固定为 bundle identifier，key 作为 account；值使用
 `afterFirstUnlockThisDeviceOnly`，不支持列举、整库清空或跨应用 service。剪贴板图片只接受
-可解码的本地 PNG。
+可解码的本地 PNG，也可直接接受当前 Desktop session 的 `CapturedImage`。
 
 全局快捷键使用按 ID 的原子全量集合：`set([])` 清空，重复组合、无修饰键、超出白名单或系统
 冲突会使整批失败并保留旧集合。快捷键在 Backend/HMR 生命周期切换时清理。
 
 `screens.list` 和窗口坐标统一使用主屏左上角为原点的逻辑点。截图区域使用目标屏幕左上角为
-原点的逻辑点，必须完全落在该屏幕内；结果固定为 PNG，并写到 Backend Application Support
-目录中尚不存在的目标。图片字节不会进入 1 MiB stdio 帧。首次授权可能需要重启应用才能捕获。
+原点的逻辑点，必须完全落在该屏幕内；结果固定为 PNG，并由 FIA 写入 Backend Application
+Support 下按 Desktop session 隔离的临时目录。stdio 只返回路径、大小和像素尺寸，图片字节不会
+进入 1 MiB 帧。`CapturedImage` 以文件支持的 `file`/`stream()` 延迟读取，可用 `saveTo()`
+持久化，并应在使用结束后调用幂等 `dispose()`；每个 session 最多保留 128 个、合计 512 MiB
+的未释放截图，session 停止时会统一清理。传入 `stream({ dispose: true })` 可在流结束、失败或
+取消时自动释放。首次授权可能需要重启应用才能捕获。
 当前 macOS 14–26 不由 FIA 注入 `NSScreenCaptureUsageDescription`；授权与重启流程参考
 [Apple ScreenCaptureKit macOS 示例](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos)。
 

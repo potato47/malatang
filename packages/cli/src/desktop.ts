@@ -1,3 +1,6 @@
+import { copyFile, lstat, mkdir, rm } from "node:fs/promises";
+import { resolve } from "node:path";
+
 export type HostErrorCode =
   | "INVALID_REQUEST"
   | "INVALID_ARGUMENT"
@@ -275,14 +278,21 @@ export type ScreenCaptureAuthorizationResult = "authorized" | "restartRequired" 
 export interface ScreenCaptureOptions {
   screenId: string;
   region?: ScreenCaptureRegion;
-  destination: string;
   showsCursor?: boolean;
 }
 
-export interface ScreenCaptureReceipt {
-  readonly path: string;
+export interface CapturedImage {
+  readonly type: "image/png";
+  readonly size: number;
   readonly pixelWidth: number;
   readonly pixelHeight: number;
+  readonly file: Bun.BunFile;
+  readonly disposed: boolean;
+
+  stream(options?: { readonly dispose?: boolean }): ReadableStream<Uint8Array>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+  saveTo(destination: string): Promise<void>;
+  dispose(): Promise<void>;
 }
 
 export type NotificationAuthorizationStatus =
@@ -369,10 +379,7 @@ export interface Desktop {
   readonly screenCapture: {
     getAuthorizationStatus(callOptions?: CallOptions): Promise<ScreenCaptureAuthorizationStatus>;
     requestAuthorization(callOptions?: CallOptions): Promise<ScreenCaptureAuthorizationResult>;
-    capture(
-      options: ScreenCaptureOptions,
-      callOptions?: CallOptions,
-    ): Promise<ScreenCaptureReceipt>;
+    capture(options: ScreenCaptureOptions, callOptions?: CallOptions): Promise<CapturedImage>;
   };
   readonly notifications: Notifications;
   readonly dialogs: {
@@ -389,7 +396,7 @@ export interface Desktop {
   readonly clipboard: {
     readText(callOptions?: CallOptions): Promise<string | null>;
     writeText(text: string, callOptions?: CallOptions): Promise<void>;
-    writeImage(path: string, callOptions?: CallOptions): Promise<void>;
+    writeImage(image: string | CapturedImage, callOptions?: CallOptions): Promise<void>;
     clear(callOptions?: CallOptions): Promise<void>;
   };
   readonly keychain: {
@@ -486,6 +493,17 @@ export interface RawMenuItemPatch {
   shortcut?: RawMenuShortcut | null;
 }
 
+export interface RawScreenCaptureOptions extends ScreenCaptureOptions {
+  destination: string;
+}
+
+export interface RawScreenCaptureReceipt {
+  readonly path: string;
+  readonly byteSize: number;
+  readonly pixelWidth: number;
+  readonly pixelHeight: number;
+}
+
 export interface RawHostClient {
   readonly application: {
     getState(callOptions?: CallOptions): Promise<{
@@ -542,7 +560,14 @@ export interface RawHostClient {
     onPressed(listener: (event: GlobalShortcutPressedDetail) => void): () => void;
   };
   readonly screens: Desktop["screens"];
-  readonly screenCapture: Desktop["screenCapture"];
+  readonly screenCapture: {
+    getAuthorizationStatus(callOptions?: CallOptions): Promise<ScreenCaptureAuthorizationStatus>;
+    requestAuthorization(callOptions?: CallOptions): Promise<ScreenCaptureAuthorizationResult>;
+    capture(
+      options: RawScreenCaptureOptions,
+      callOptions?: CallOptions,
+    ): Promise<RawScreenCaptureReceipt>;
+  };
   readonly notifications: {
     getAuthorizationStatus(callOptions?: CallOptions): Promise<NotificationAuthorizationStatus>;
     requestAuthorization(callOptions?: CallOptions): Promise<NotificationAuthorizationStatus>;
@@ -552,7 +577,12 @@ export interface RawHostClient {
     onClick(listener: (event: NotificationClickDetail) => void): () => void;
   };
   readonly dialogs: Desktop["dialogs"];
-  readonly clipboard: Desktop["clipboard"];
+  readonly clipboard: {
+    readText(callOptions?: CallOptions): Promise<string | null>;
+    writeText(text: string, callOptions?: CallOptions): Promise<void>;
+    writeImage(path: string, callOptions?: CallOptions): Promise<void>;
+    clear(callOptions?: CallOptions): Promise<void>;
+  };
   readonly keychain: Desktop["keychain"];
 }
 
@@ -984,10 +1014,122 @@ class NotificationsHandle extends EventTarget {
   }
 }
 
+const MAX_CAPTURED_IMAGES = 128;
+const MAX_CAPTURED_IMAGE_BYTES = 512 * 1024 * 1024;
+
+class CapturedImageHandle implements CapturedImage {
+  readonly type = "image/png" as const;
+  readonly size: number;
+  readonly pixelWidth: number;
+  readonly pixelHeight: number;
+  readonly #session: DesktopSession;
+  readonly #path: string;
+  #disposed = false;
+
+  constructor(session: DesktopSession, path: string, receipt: RawScreenCaptureReceipt) {
+    this.#session = session;
+    this.#path = path;
+    this.size = receipt.byteSize;
+    this.pixelWidth = receipt.pixelWidth;
+    this.pixelHeight = receipt.pixelHeight;
+  }
+
+  get file(): Bun.BunFile {
+    this.assertActive();
+    return Bun.file(this.#path, { type: this.type });
+  }
+
+  get disposed(): boolean {
+    return this.#disposed;
+  }
+
+  stream(options: { readonly dispose?: boolean } = {}): ReadableStream<Uint8Array> {
+    const stream = this.file.stream();
+    if (options.dispose !== true) return stream;
+    const reader = stream.getReader();
+    let settled = false;
+    const dispose = async (): Promise<void> => {
+      if (settled) return;
+      settled = true;
+      reader.releaseLock();
+      await this.dispose();
+    };
+    return new ReadableStream<Uint8Array>({
+      pull: async (controller) => {
+        try {
+          const result = await reader.read();
+          if (result.done) {
+            await dispose();
+            controller.close();
+          } else {
+            controller.enqueue(result.value);
+          }
+        } catch (error) {
+          await dispose().catch(() => {});
+          controller.error(error);
+        }
+      },
+      cancel: async (reason) => {
+        try {
+          await reader.cancel(reason);
+        } finally {
+          await dispose();
+        }
+      },
+    });
+  }
+
+  arrayBuffer(): Promise<ArrayBuffer> {
+    return this.file.arrayBuffer();
+  }
+
+  async saveTo(destination: string): Promise<void> {
+    this.assertActive();
+    if (typeof destination !== "string" || destination.length === 0 || destination.includes("\0")) {
+      throw new HostError(
+        "INVALID_ARGUMENT",
+        "Captured image destination must be a non-empty path",
+      );
+    }
+    await copyFile(this.#path, destination);
+  }
+
+  dispose(): Promise<void> {
+    if (this.#disposed) return Promise.resolve();
+    return this.#session.disposeCapturedImage(this);
+  }
+
+  assertOwnedBy(session: DesktopSession): string {
+    this.assertActive();
+    if (session !== this.#session) {
+      throw new HostError(
+        "INVALID_ARGUMENT",
+        "Captured image belongs to a different Desktop session",
+      );
+    }
+    return this.#path;
+  }
+
+  markDisposed(): void {
+    this.#disposed = true;
+  }
+
+  private assertActive(): void {
+    this.#session.assertActive();
+    if (this.#disposed) throw new HostError("UNSAFE_STATE", "The captured image has been disposed");
+  }
+}
+
 export class DesktopSession implements Desktop {
   readonly raw: RawHostClient;
   readonly #windowHandles = new Map<string, BrowserWindowHandle>();
+  readonly #capturedImages = new Set<CapturedImageHandle>();
+  readonly #captureRoot: string;
+  readonly #captureDirectory: string;
+  #captureDirectoryReady: Promise<void> | undefined;
+  #capturedImageBytes = 0;
   #active = true;
+  #disposePromise: Promise<void> | undefined;
   readonly #trayHandle: TrayHandle;
   readonly #dockHandle: DockHandle;
   readonly #globalShortcutsHandle: GlobalShortcutsHandle;
@@ -997,8 +1139,10 @@ export class DesktopSession implements Desktop {
   readonly globalShortcuts: GlobalShortcuts;
   readonly notifications: Notifications;
 
-  constructor(raw: RawHostClient) {
+  constructor(raw: RawHostClient, dataDirectory: string) {
     this.raw = raw;
+    this.#captureRoot = resolve(dataDirectory, "NativePayloads");
+    this.#captureDirectory = resolve(this.#captureRoot, crypto.randomUUID());
     this.#trayHandle = new TrayHandle(this);
     this.#dockHandle = new DockHandle(this);
     this.#globalShortcutsHandle = new GlobalShortcutsHandle(this);
@@ -1020,8 +1164,32 @@ export class DesktopSession implements Desktop {
       throw new HostError("UNSAFE_STATE", "The Desktop session is no longer active");
   }
 
-  dispose(): void {
+  dispose(): Promise<void> {
+    if (this.#disposePromise !== undefined) return this.#disposePromise;
     this.#active = false;
+    for (const image of this.#capturedImages) image.markDisposed();
+    this.#capturedImages.clear();
+    this.#capturedImageBytes = 0;
+    this.#disposePromise = (async () => {
+      if (this.#captureDirectoryReady !== undefined) {
+        await this.#captureDirectoryReady.catch(() => {});
+        await rm(this.#captureDirectory, { recursive: true, force: true });
+      }
+    })();
+    return this.#disposePromise;
+  }
+
+  async disposeCapturedImage(image: CapturedImageHandle): Promise<void> {
+    const path = image.assertOwnedBy(this);
+    if (!this.#capturedImages.delete(image)) {
+      image.markDisposed();
+      return;
+    }
+    image.markDisposed();
+    this.#capturedImageBytes -= image.size;
+    await rm(path, { force: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
   }
 
   #handle(raw: RawWindowState): BrowserWindowHandle {
@@ -1046,6 +1214,65 @@ export class DesktopSession implements Desktop {
   closeWindow(handle: BrowserWindowHandle, raw?: RawWindowState): void {
     if (this.#windowHandles.get(handle.id) === handle) this.#windowHandles.delete(handle.id);
     handle.markClosed(raw);
+  }
+
+  async #captureDestination(): Promise<string> {
+    this.assertActive();
+    if (this.#capturedImages.size >= MAX_CAPTURED_IMAGES) {
+      throw new HostError(
+        "UNSAFE_STATE",
+        `At most ${MAX_CAPTURED_IMAGES} captured images may remain undisposed`,
+      );
+    }
+    this.#captureDirectoryReady ??= (async () => {
+      await rm(this.#captureRoot, { recursive: true, force: true });
+      await mkdir(this.#captureDirectory, { recursive: true });
+    })();
+    await this.#captureDirectoryReady;
+    this.assertActive();
+    return resolve(this.#captureDirectory, `${crypto.randomUUID()}.png`);
+  }
+
+  async #captureImage(
+    options: ScreenCaptureOptions,
+    callOptions?: CallOptions,
+  ): Promise<CapturedImage> {
+    const destination = await this.#captureDestination();
+    try {
+      const receipt = await this.raw.screenCapture.capture(
+        { ...options, destination },
+        callOptions,
+      );
+      this.assertActive();
+      const information = await lstat(destination);
+      this.assertActive();
+      if (
+        receipt.path !== destination ||
+        !Number.isSafeInteger(receipt.byteSize) ||
+        receipt.byteSize <= 0 ||
+        receipt.byteSize !== information.size ||
+        !Number.isSafeInteger(receipt.pixelWidth) ||
+        receipt.pixelWidth <= 0 ||
+        !Number.isSafeInteger(receipt.pixelHeight) ||
+        receipt.pixelHeight <= 0 ||
+        !information.isFile()
+      ) {
+        throw new HostError("PROTOCOL_FAILURE", "Host returned an invalid captured image receipt");
+      }
+      if (this.#capturedImageBytes + receipt.byteSize > MAX_CAPTURED_IMAGE_BYTES) {
+        throw new HostError(
+          "UNSAFE_STATE",
+          "Captured images exceed the 512 MiB temporary storage limit",
+        );
+      }
+      const image = new CapturedImageHandle(this, destination, receipt);
+      this.#capturedImages.add(image);
+      this.#capturedImageBytes += image.size;
+      return image;
+    } catch (error) {
+      await rm(destination, { force: true }).catch(() => {});
+      throw error;
+    }
   }
 
   async #rawWindows(callOptions?: CallOptions): Promise<readonly RawWindowState[]> {
@@ -1133,10 +1360,7 @@ export class DesktopSession implements Desktop {
       this.assertActive();
       return this.raw.screenCapture.requestAuthorization(callOptions);
     },
-    capture: (options, callOptions) => {
-      this.assertActive();
-      return this.raw.screenCapture.capture(options, callOptions);
-    },
+    capture: (options, callOptions) => this.#captureImage(options, callOptions),
   };
 
   readonly dialogs: Desktop["dialogs"] = {
@@ -1163,8 +1387,17 @@ export class DesktopSession implements Desktop {
       this.assertActive();
       return this.raw.clipboard.writeText(text, callOptions);
     },
-    writeImage: (path, callOptions) => {
+    writeImage: (image, callOptions) => {
       this.assertActive();
+      const path =
+        typeof image === "string"
+          ? image
+          : image instanceof CapturedImageHandle
+            ? image.assertOwnedBy(this)
+            : undefined;
+      if (path === undefined) {
+        throw new HostError("INVALID_ARGUMENT", "Image must be a path or FIA captured image");
+      }
       return this.raw.clipboard.writeImage(path, callOptions);
     },
     clear: (callOptions) => {

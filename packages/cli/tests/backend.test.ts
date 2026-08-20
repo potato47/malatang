@@ -914,18 +914,19 @@ describe("resident Bun backend runtime", () => {
             await desktop.screens.list();
             await desktop.screenCapture.getAuthorizationStatus();
             await desktop.screenCapture.requestAuthorization();
-            await desktop.screenCapture.capture({
+            const captured = await desktop.screenCapture.capture({
               screenId: "main",
               region: { x: 10, y: 20, width: 640, height: 480 },
-              destination: "/tmp/capture.png",
               showsCursor: true,
             });
+            if (captured.size !== 4) throw new Error("invalid captured image size");
             await desktop.notifications.getAuthorizationStatus();
             await desktop.notifications.requestAuthorization();
             await desktop.notifications.send({ id: "done", title: "Complete", sound: true });
             await desktop.dialogs.openFile({ allowedExtensions: ["json"], multiple: true });
             await desktop.clipboard.writeText("hello");
-            await desktop.clipboard.writeImage("/tmp/capture.png");
+            await desktop.clipboard.writeImage(captured);
+            await captured.dispose();
             await desktop.clipboard.readText();
             await desktop.keychain.set("token", "secret");
             await desktop.keychain.get("token");
@@ -1009,6 +1010,11 @@ describe("resident Bun backend runtime", () => {
           mainWindow = { ...mainWindow, minimized: false, maximized: false };
         if (frame.method === "webviews.setFullScreen")
           mainWindow = { ...mainWindow, fullScreen: true };
+        if (frame.method === "screenCapture.capture") {
+          const destination = frame.params?.destination;
+          if (typeof destination !== "string") throw new Error("missing capture destination");
+          await Bun.write(destination, new Uint8Array([137, 80, 78, 71]));
+        }
         const result =
           frame.method === "webviews.list"
             ? [mainWindow]
@@ -1034,7 +1040,12 @@ describe("resident Bun backend runtime", () => {
                       frame.method === "notifications.requestAuthorization"
                     ? "authorized"
                     : frame.method === "screenCapture.capture"
-                      ? { path: frame.params?.destination, pixelWidth: 1280, pixelHeight: 960 }
+                      ? {
+                          path: frame.params?.destination,
+                          byteSize: 4,
+                          pixelWidth: 1280,
+                          pixelHeight: 960,
+                        }
                       : frame.method === "notifications.send"
                         ? { id: frame.params?.id }
                         : frame.method === "dialogs.openFile"

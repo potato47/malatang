@@ -69,20 +69,31 @@ await desktop.clipboard.writeText(files?.join("\n") ?? "");
 await desktop.keychain.set("api-token", "secret");
 ```
 
-截图结果以 Application Support 中的 PNG 路径返回，不通过 stdio 传输图片数据：
+截图返回由 FIA 管理的临时 `CapturedImage`。PNG 保存在 Application Support 中，stdio 只传递
+文件元数据；`file`/`stream()` 按需读取图片，不受 1 MiB 帧限制：
 
 ```ts
-async start({ desktop, app }) {
+async start({ desktop }) {
   const screen = (await desktop.screens.list()).find((item) => item.containsPointer);
   if (screen !== undefined) {
     const capture = await desktop.screenCapture.capture({
       screenId: screen.id,
-      destination: `${app.dataDirectory}/capture.png`,
     });
-    await desktop.clipboard.writeImage(capture.path);
+    try {
+      await desktop.clipboard.writeImage(capture);
+      // await capture.saveTo("/absolute/persistent/capture.png");
+    } finally {
+      await capture.dispose();
+    }
   }
 }
 ```
+
+`CapturedImage` 提供 `type`、`size`、像素尺寸、`file`、`stream()`、`arrayBuffer()`、`saveTo()`
+和幂等 `dispose()`。应用应在持久化、复制或读取完成后释放；热重载和 Backend 停止也会清理当前
+Desktop session 尚未释放的截图。一个 session 最多保留 128 个、合计 512 MiB 的未释放截图。
+HTTP handler 可用 `capture.stream({ dispose: true })` 构造 `Response`，流读取完成、失败或取消
+时会自动释放临时文件。
 
 搜索框、截图遮罩等浮层可以创建完全无边框的 WebView：
 

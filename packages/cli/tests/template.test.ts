@@ -163,11 +163,9 @@ describe("generated resident backend React template", () => {
             const screens = await desktop.screens.list();
             const screen = screens[0];
             if (screen !== undefined) {
-              const receipt = await desktop.screenCapture.capture({
-                screenId: screen.id,
-                destination: app.dataDirectory + "/capture.png",
-              });
-              await desktop.clipboard.writeImage(receipt.path);
+              const image = await desktop.screenCapture.capture({ screenId: screen.id });
+              await desktop.clipboard.writeImage(image);
+              await image.dispose();
             }
             await desktop.system.openPath(app.dataDirectory);
             server.publish("events", app.name);

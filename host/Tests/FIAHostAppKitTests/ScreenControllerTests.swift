@@ -167,6 +167,7 @@ struct ScreenControllerTests {
             params: params
         ) as? [String: Any])
         #expect(receipt["path"] as? String == destination.path)
+        #expect((receipt["byteSize"] as? Int).map { $0 > 0 } == true)
         #expect(receipt["pixelWidth"] as? Int == 600)
         #expect(receipt["pixelHeight"] as? Int == 400)
         #expect(FileManager.default.fileExists(atPath: destination.path))

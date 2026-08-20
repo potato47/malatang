@@ -128,7 +128,5 @@ Contents/Helpers/FIABackend
 Contents/Resources/fia-config.json
 ```
 
-详细边界见[框架文档](./docs/framework/README.md)。
-
-仓库内的 [FIA Toolbox](./examples/fia-showcase/README.md) 是综合验证应用，使用一个常驻 Backend
-和多个 WebView 实现截图、Spotlight 式文件搜索、文件管理器与原生能力诊断。
+详细边界见[框架文档](./docs/framework/README.md)。框架的端到端能力在独立的实际项目中验证，
+本仓库不维护默认示例应用。

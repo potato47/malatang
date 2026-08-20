@@ -486,7 +486,7 @@ function generatedStandaloneBuild(
   `;
 }
 
-function fakeNativeResult(method: string, params: Record<string, unknown>): unknown {
+async function fakeNativeResult(method: string, params: Record<string, unknown>): Promise<unknown> {
   if (
     method === "application.getState" ||
     method === "application.setDockVisible" ||
@@ -550,8 +550,14 @@ function fakeNativeResult(method: string, params: Record<string, unknown>): unkn
     return "authorized";
   }
   if (method === "screenCapture.capture") {
+    if (typeof params.destination !== "string") {
+      throw new Error("Screen capture smoke request is missing its internal destination");
+    }
+    const bytes = new Uint8Array([137, 80, 78, 71]);
+    await Bun.write(params.destination, bytes);
     return {
       path: params.destination,
+      byteSize: bytes.byteLength,
       pixelWidth: 1920,
       pixelHeight: 1080,
     };
@@ -626,7 +632,7 @@ async function smokeBackend(context: BuildContext, executable: string): Promise<
               v: 2,
               type: "response",
               id: frame.id,
-              result: fakeNativeResult(frame.method, frame.params ?? {}),
+              result: await fakeNativeResult(frame.method, frame.params ?? {}),
             })}\n`,
           );
           input.flush();
