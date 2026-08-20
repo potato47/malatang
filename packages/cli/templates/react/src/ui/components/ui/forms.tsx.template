@@ -230,7 +230,10 @@ export function Select({
           className,
         )}
       >
-        <BaseSelect.Value placeholder={placeholder} />
+        <BaseSelect.Value
+          className="min-w-0 flex-1 truncate text-left"
+          placeholder={placeholder}
+        />
         <BaseSelect.Icon className="flex text-ui-text-muted">
           <ChevronDown size={15} />
         </BaseSelect.Icon>
@@ -250,9 +253,11 @@ export function Select({
                   key={option.value}
                   value={option.value}
                 >
-                  <BaseSelect.ItemIndicator className="flex text-ui-accent">
-                    <Check size={14} />
-                  </BaseSelect.ItemIndicator>
+                  <span className="flex size-[18px] items-center justify-center text-ui-accent">
+                    <BaseSelect.ItemIndicator className="flex">
+                      <Check size={14} />
+                    </BaseSelect.ItemIndicator>
+                  </span>
                   <span className="flex min-w-0 flex-col">
                     <BaseSelect.ItemText>{option.label}</BaseSelect.ItemText>
                     {option.description ? (
@@ -344,9 +349,11 @@ export function Combobox({
             <BaseCombobox.List className="max-h-[min(288px,var(--available-height))] overflow-auto">
               {(option: ComboboxOption) => (
                 <BaseCombobox.Item key={option.value} value={option} className={listItemClass}>
-                  <BaseCombobox.ItemIndicator className="flex text-ui-accent">
-                    <Check size={14} />
-                  </BaseCombobox.ItemIndicator>
+                  <span className="flex size-[18px] items-center justify-center text-ui-accent">
+                    <BaseCombobox.ItemIndicator className="flex">
+                      <Check size={14} />
+                    </BaseCombobox.ItemIndicator>
+                  </span>
                   <span className="flex min-w-0 flex-col">
                     <span>{option.label}</span>
                     {option.meta ? (

@@ -51,6 +51,11 @@ describe("FIA project creation", () => {
     expect(app).toContain('fetch("/api/greet")');
     expect(app).toContain("new WebSocket");
     expect(app).not.toContain("@semicoder/fia");
+    const forms = await readFile(resolve(root, "src/ui/components/ui/forms.tsx"), "utf8");
+    expect(forms).toContain('className="min-w-0 flex-1 truncate text-left"');
+    expect(
+      forms.match(/className="flex size-\[18px\] items-center justify-center text-ui-accent"/g),
+    ).toHaveLength(2);
     const metadata = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
