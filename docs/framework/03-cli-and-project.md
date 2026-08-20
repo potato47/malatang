@@ -16,7 +16,7 @@
 
 ## 配置
 
-`fia.config.ts` 只允许 `configVersion`、`app`、`backend`、`statusBar`、`signing`。Backend `entry`
+`fia.config.ts` 只允许 `configVersion`、`app`、`backend`、`statusBar`、`signing`、`release`。Backend `entry`
 必须是项目内可读文件；`watch` 默认是 entry 所在目录。所有未知字段和旧版本立即失败。
 
 `signing.identity` 是可选的精确 codesigning identity 名称，只接受有效的 Apple Development 或
