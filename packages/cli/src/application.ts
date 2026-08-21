@@ -1,4 +1,5 @@
 import { constants } from "node:fs";
+import { get } from "node:http";
 import {
   access,
   chmod,
@@ -647,8 +648,22 @@ async function smokeBackend(context: BuildContext, executable: string): Promise<
         }
       }
     }
-    const health = await fetch(`${ready.origin}/_fia/health`);
-    if (health.status !== 204) throw new Error(`Backend health check returned ${health.status}`);
+    const healthOrigin = ready.origin;
+    const healthStatus = await new Promise<number>((resolveStatus, reject) => {
+      const request = get(`${healthOrigin}/_fia/health`, (response) => {
+        response.resume();
+        response.once("end", () => {
+          if (response.statusCode === undefined) {
+            reject(new Error("Backend health check returned no status"));
+            return;
+          }
+          resolveStatus(response.statusCode);
+        });
+        response.once("error", reject);
+      });
+      request.once("error", reject);
+    });
+    if (healthStatus !== 204) throw new Error(`Backend health check returned ${healthStatus}`);
     input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
     input.flush();
     const exitCode = await Promise.race([

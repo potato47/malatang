@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { get } from "node:http";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
@@ -94,6 +95,23 @@ function output() {
   };
 }
 
+async function directText(url: string | URL): Promise<{ status: number; body: string }> {
+  return new Promise((resolveResponse, reject) => {
+    const request = get(url, (response) => {
+      response.setEncoding("utf8");
+      let body = "";
+      response.on("data", (chunk: string) => {
+        body += chunk;
+      });
+      response.once("end", () => {
+        resolveResponse({ status: response.statusCode ?? 0, body });
+      });
+      response.once("error", reject);
+    });
+    request.once("error", reject);
+  });
+}
+
 async function packagedStylesheet(backend: string, projectRoot: string): Promise<string> {
   const child = Bun.spawn([backend], {
     cwd: projectRoot,
@@ -148,14 +166,14 @@ async function packagedStylesheet(backend: string, projectRoot: string): Promise
         }
       }
     }
-    const htmlResponse = await fetch(origin);
+    const htmlResponse = await directText(origin);
     expect(htmlResponse.status).toBe(200);
-    const html = await htmlResponse.text();
+    const html = htmlResponse.body;
     const stylesheet = html.match(/<link[^>]+href="([^"]+\.css)"/)?.[1];
     if (stylesheet === undefined) throw new Error("Packaged HTML has no stylesheet");
-    const cssResponse = await fetch(new URL(stylesheet, origin));
+    const cssResponse = await directText(new URL(stylesheet, origin));
     expect(cssResponse.status).toBe(200);
-    const css = await cssResponse.text();
+    const css = cssResponse.body;
     input.write(`${JSON.stringify({ v: 2, type: "event", event: "host.shutdown" })}\n`);
     input.flush();
     expect(await child.exited).toBe(0);
@@ -316,10 +334,46 @@ describe("FIA resident Backend application packaging", () => {
     ).rejects.toThrow("release.identity is required for fia package");
   });
 
-  test("builds one signed standalone Backend without packaged UI or MCP directories", async () => {
+  test("builds one signed standalone Backend while a configured HTTP proxy returns 502", async () => {
     const root = await linkedProject();
-    const messages = output();
-    await executeApplicationCommand({ command: "build", cwd: root, debug: false, io: messages.io });
+    let proxyRequests = 0;
+    const proxy = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        proxyRequests += 1;
+        return new Response("Bad Gateway", {
+          status: 502,
+          headers: { "proxy-connection": "close" },
+        });
+      },
+    });
+    const child = Bun.spawn([process.execPath, resolve(packageRoot, "src/index.ts"), "build"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        HTTP_PROXY: proxy.url.href,
+        http_proxy: proxy.url.href,
+        NO_PROXY: "",
+        no_proxy: "",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdoutText = new Response(child.stdout).text();
+    const stderrText = new Response(child.stderr).text();
+    let exitCode: number;
+    try {
+      exitCode = await child.exited;
+    } finally {
+      if (child.exitCode === null) child.kill("SIGKILL");
+      proxy.stop(true);
+    }
+    const messages = { stdout: await stdoutText, stderr: await stderrText };
+    if (exitCode !== 0) {
+      throw new Error(`fia build exited with status ${exitCode}: ${messages.stderr}`);
+    }
+    expect(proxyRequests).toBe(0);
     const app = resolve(root, "dist/Packaged Service.app");
     const backend = resolve(app, "Contents/Helpers/FIABackend");
     expect(await Bun.file(backend).exists()).toBe(true);
@@ -360,7 +414,7 @@ describe("FIA resident Backend application packaging", () => {
     const css = await packagedStylesheet(backend, root);
     expect(css).toMatch(/\.flex\{/);
     expect(css).toMatch(/\.min-h-screen\{/);
-    expect(messages.stdout.join("")).toContain("Built");
-    expect(messages.stderr.join("")).toContain("using ad-hoc signing");
+    expect(messages.stdout).toContain("Built");
+    expect(messages.stderr).toContain("using ad-hoc signing");
   }, 60_000);
 });
