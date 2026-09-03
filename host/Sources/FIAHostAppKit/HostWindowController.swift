@@ -2,32 +2,97 @@ import AppKit
 import FIAHostCore
 import WebKit
 
-enum HostWindowStyle: String, Sendable {
+public enum FIAHostWindowStyle: String, Sendable {
     case native
+    case overlay
     case borderless
 }
 
-struct HostWindowDragRegion: Equatable, Sendable {
-    let height: Double
-    let leftInset: Double
-    let rightInset: Double
+typealias HostWindowStyle = FIAHostWindowStyle
+
+public struct FIAHostWindowDragRegion: Equatable, Sendable {
+    public let height: Double
+    public let leftInset: Double
+    public let rightInset: Double
+
+    public init(height: Double, leftInset: Double = 0, rightInset: Double = 0) {
+        self.height = height
+        self.leftInset = leftInset
+        self.rightInset = rightInset
+    }
 
     var state: [String: Any] {
         ["height": height, "leftInset": leftInset, "rightInset": rightInset]
     }
 }
 
+typealias HostWindowDragRegion = FIAHostWindowDragRegion
+
 @MainActor
-final class FIAHostWindow: NSWindow {
+public struct FIAHostWindowConfiguration {
+    public let id: String
+    public let title: String
+    public let contentRect: NSRect
+    public let styleMask: NSWindow.StyleMask
+    public let style: FIAHostWindowStyle
+    public let acceptsKeyAndMain: Bool
+    public let dragRegion: FIAHostWindowDragRegion?
+
+    public init(
+        id: String,
+        title: String,
+        contentRect: NSRect,
+        styleMask: NSWindow.StyleMask,
+        style: FIAHostWindowStyle,
+        acceptsKeyAndMain: Bool,
+        dragRegion: FIAHostWindowDragRegion?
+    ) {
+        self.id = id
+        self.title = title
+        self.contentRect = contentRect
+        self.styleMask = styleMask
+        self.style = style
+        self.acceptsKeyAndMain = acceptsKeyAndMain
+        self.dragRegion = dragRegion
+    }
+}
+
+@MainActor
+public protocol FIAHostWindowFactory {
+    func makeWindow(configuration: FIAHostWindowConfiguration) -> NSWindow
+}
+
+@MainActor
+public struct FIADefaultHostWindowFactory: FIAHostWindowFactory {
+    public init() {}
+
+    public func makeWindow(configuration: FIAHostWindowConfiguration) -> NSWindow {
+        let window = FIAHostWindow(
+            contentRect: configuration.contentRect,
+            styleMask: configuration.styleMask,
+            acceptsKeyAndMain: configuration.acceptsKeyAndMain,
+            dragRegion: configuration.dragRegion
+        )
+        if configuration.style == .overlay {
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.titlebarSeparatorStyle = .none
+        }
+        return window
+    }
+}
+
+@MainActor
+open class FIAHostWindow: NSWindow {
     private let acceptsKeyAndMain: Bool
-    let dragRegion: HostWindowDragRegion?
+    public let dragRegion: FIAHostWindowDragRegion?
     var onDragEnded: (() -> Void)?
 
-    init(
+    public init(
         contentRect: NSRect,
         styleMask: NSWindow.StyleMask,
         acceptsKeyAndMain: Bool,
-        dragRegion: HostWindowDragRegion?
+        dragRegion: FIAHostWindowDragRegion?
     ) {
         self.acceptsKeyAndMain = acceptsKeyAndMain
         self.dragRegion = dragRegion
@@ -35,15 +100,16 @@ final class FIAHostWindow: NSWindow {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    override var canBecomeKey: Bool { acceptsKeyAndMain || super.canBecomeKey }
-    override var canBecomeMain: Bool { acceptsKeyAndMain || super.canBecomeMain }
+    open override var canBecomeKey: Bool { acceptsKeyAndMain || super.canBecomeKey }
+    open override var canBecomeMain: Bool { acceptsKeyAndMain || super.canBecomeMain }
 
-    override func sendEvent(_ event: NSEvent) {
+    open override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown,
            let dragRegion,
            let contentView,
+           !isPointOverStandardWindowButton(event.locationInWindow),
            Self.containsDragPoint(
             contentView.convert(event.locationInWindow, from: nil),
             bounds: contentView.bounds,
@@ -55,6 +121,13 @@ final class FIAHostWindow: NSWindow {
             return
         }
         super.sendEvent(event)
+    }
+
+    func isPointOverStandardWindowButton(_ point: NSPoint) -> Bool {
+        [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].contains { type in
+            guard let button = standardWindowButton(type), !button.isHidden else { return false }
+            return button.convert(button.bounds, to: nil).contains(point)
+        }
     }
 
     static func containsDragPoint(
@@ -134,7 +207,8 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         alwaysOnTop: Bool,
         visibleOnAllSpaces: Bool,
         visibleOverFullScreen: Bool,
-        inspectable: Bool
+        inspectable: Bool,
+        windowFactory: any FIAHostWindowFactory = FIADefaultHostWindowFactory()
     ) {
         windowID = id
         currentURL = url
@@ -149,16 +223,25 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         self.visibleOnAllSpaces = visibleOnAllSpaces
         self.visibleOverFullScreen = visibleOverFullScreen
 
-        var styleMask: NSWindow.StyleMask = windowStyle == .native
-            ? [.titled, .closable, .miniaturizable]
-            : [.borderless]
+        var styleMask: NSWindow.StyleMask
+        switch windowStyle {
+        case .native:
+            styleMask = [.titled, .closable, .miniaturizable]
+        case .overlay:
+            styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        case .borderless:
+            styleMask = [.borderless]
+        }
         if resizable { styleMask.insert(.resizable) }
-        let window = FIAHostWindow(
+        let window = windowFactory.makeWindow(configuration: FIAHostWindowConfiguration(
+            id: id,
+            title: title,
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: styleMask,
+            style: windowStyle,
             acceptsKeyAndMain: windowStyle == .borderless,
             dragRegion: dragRegion
-        )
+        ))
         window.title = title
         window.minSize = NSSize(width: minWidth, height: minHeight)
         window.hasShadow = shadow
@@ -197,7 +280,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         window.contentView = webView
         super.init(window: window)
         window.delegate = self
-        window.onDragEnded = { [weak self] in self?.finishManualFrameInteraction() }
+        (window as? FIAHostWindow)?.onDragEnded = { [weak self] in self?.finishManualFrameInteraction() }
         webView.navigationDelegate = self
         applyFlags()
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15))
@@ -264,7 +347,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
         if windowStyle == .borderless, borderlessMaximized {
             borderlessMaximized = false
             if let lastKnownFrame { window.setFrame(Self.nativeRect(lastKnownFrame), display: true) }
-        } else if windowStyle == .native, window.isZoomed {
+        } else if windowStyle != .borderless, window.isZoomed {
             window.zoom(nil)
         }
         Self.makeKeyAndActivate(window)
@@ -327,7 +410,7 @@ final class HostWindowController: NSWindowController, NSWindowDelegate, WKNaviga
             width: minWidth ?? window.minSize.width,
             height: minHeight ?? window.minSize.height
         )
-        let currentContentSize = window.contentLayoutRect.size
+        let currentContentSize = window.contentView?.bounds.size ?? window.contentLayoutRect.size
         let nextContentSize = NSSize(
             width: width ?? max(currentContentSize.width, nextMinimum.width),
             height: height ?? max(currentContentSize.height, nextMinimum.height)

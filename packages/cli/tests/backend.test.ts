@@ -630,7 +630,7 @@ describe("resident Bun backend runtime", () => {
               y: 80,
               width: 640,
               height: 360,
-              frameless: true,
+              style: "frameless",
               transparent: true,
               shadow: false,
               resizable: false,

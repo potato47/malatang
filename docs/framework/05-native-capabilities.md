@@ -31,11 +31,15 @@
 `setVisibleOnAllSpaces/setVisibleOverFullScreen`。成功 response 和 Host event 都会更新同步只读的
 `state`；状态实际变化时派发 `change`，关闭时派发一次 `close`。
 
-`create` 可用 `frameless: true` 创建完全无系统装饰的窗口，并在创建时配置 `transparent`、
-`shadow`、`resizable` 和顶部原生 `dragRegion`。这些外观字段创建后不可更改；同 ID 接管时
-省略字段会保留原值，传入冲突值会返回 `INVALID_ARGUMENT`。透明窗口还需要页面 CSS 将
-`html`/`body` 背景设为透明。拖动带拦截覆盖区域内的网页左键交互，可用左右 inset 为页面按钮
-留出区域。
+`create` 的 `style` 支持 `native`、`overlay` 和 `frameless`，默认使用 `native`。`overlay` 保留
+macOS 原生红黄绿按钮并让 WebView 延伸至标题栏区域；Host 隐藏原生标题文字和背景，但不移动
+系统按钮，也不向页面注入安全区。`frameless` 创建完全无系统装饰的窗口，并且是唯一允许
+`transparent` 的样式。
+
+`overlay` 和 `frameless` 都可以配置顶部原生 `dragRegion`，`shadow` 与 `resizable` 也在创建时
+确定。这些外观字段创建后不可更改；同 ID 接管时省略字段会保留原值，传入冲突值会返回
+`INVALID_ARGUMENT`。透明窗口还需要页面 CSS 将 `html`/`body` 背景设为透明。拖动带拦截覆盖
+区域内的网页左键交互，可用左右 inset 为页面控件留出区域；系统红黄绿按钮始终从命中区排除。
 
 默认窗口为 1024×700、最小 720×480、关闭时隐藏并恢复按 ID 保存的位置。`x/y` 使用以主屏
 左上角为原点、向右/向下递增的逻辑点坐标，多屏可以出现负值；`state.frame` 返回实际窗口外框。

@@ -1,7 +1,7 @@
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 5,
+  configVersion: 6,
   app: {
     name: __FIA_APP_NAME_JSON__,
     identifier: __FIA_APP_IDENTIFIER_JSON__,
@@ -9,9 +9,13 @@ export default defineConfig({
     icon: "assets/icon.icns",
   },
   backend: {
-    entry: "src/backend.ts",
-    watch: ["src"],
+    entry: "backend/index.ts",
+    watch: ["backend", "frontend"],
   },
+  // A custom Swift Host and app-specific CLI helpers may be supplied as
+  // prebuilt, executable arm64 Mach-O files inside this project.
+  // host: { executable: "native/.build/release/MyHost", name: "MyHost" },
+  // helpers: [{ executable: "native/.build/release/my-cli", name: "my-cli" }],
   statusBar: {
     symbol: "circle.grid.2x2.fill",
     tooltip: __FIA_APP_NAME_JSON__,

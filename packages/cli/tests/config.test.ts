@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { defineConfig, FIA_CONFIG_VERSION } from "../src/config.ts";
@@ -13,27 +13,32 @@ afterEach(async () => {
 });
 
 async function project(): Promise<string> {
-  const root = await mkdtemp(resolve(tmpdir(), "fia-config-v5-"));
+  const root = await mkdtemp(resolve(tmpdir(), "fia-config-v6-"));
   temporaryDirectories.push(root);
   await mkdir(resolve(root, "src"));
+  await mkdir(resolve(root, "native"));
   await writeFile(resolve(root, "src/backend.ts"), "export default {};\n");
   await writeFile(resolve(root, "icon.icns"), "icon");
+  await writeFile(resolve(root, "native/AIXHost"), "host");
+  await writeFile(resolve(root, "native/aix"), "helper");
+  await chmod(resolve(root, "native/AIXHost"), 0o755);
+  await chmod(resolve(root, "native/aix"), 0o755);
   return root;
 }
 
 function base() {
   return {
-    configVersion: 5 as const,
+    configVersion: 6 as const,
     app: { name: "Desktop", identifier: "com.example.desktop" },
     backend: { entry: "src/backend.ts" },
   };
 }
 
-describe("FIA configVersion 5", () => {
+describe("FIA configVersion 6", () => {
   test("exports a strict defineConfig helper", () => {
     const value = defineConfig(base());
-    expect(FIA_CONFIG_VERSION).toBe(5);
-    expect(value.configVersion).toBe(5);
+    expect(FIA_CONFIG_VERSION).toBe(6);
+    expect(value.configVersion).toBe(6);
   });
 
   test("resolves required backend and defaults", async () => {
@@ -46,6 +51,72 @@ describe("FIA configVersion 5", () => {
     expect(config.statusBar.tooltip).toBe("Desktop");
     expect(config.signing).toBeUndefined();
     expect(config.release).toBeUndefined();
+    expect(config.host).toBeUndefined();
+    expect(config.helpers).toEqual([]);
+  });
+
+  test("resolves one custom Host and deterministic native helpers", async () => {
+    const root = await project();
+    const config = await resolveProjectConfig(
+      {
+        ...base(),
+        host: { executable: "native/AIXHost", name: "AIXHost" },
+        helpers: [{ executable: "native/aix", name: "aix" }],
+      },
+      root,
+    );
+    expect(config.host).toEqual({
+      executable: resolve(root, "native/AIXHost"),
+      name: "AIXHost",
+    });
+    expect(config.helpers).toEqual([{ executable: resolve(root, "native/aix"), name: "aix" }]);
+  });
+
+  test("rejects unsafe, duplicate, reserved, and non-executable native artifacts", async () => {
+    const root = await project();
+    await expect(
+      resolveProjectConfig(
+        {
+          ...base(),
+          helpers: [
+            { executable: "native/aix", name: "aix" },
+            { executable: "native/aix", name: "aix" },
+          ],
+        },
+        root,
+      ),
+    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "helpers.1.name" });
+    await expect(
+      resolveProjectConfig(
+        {
+          ...base(),
+          helpers: [{ executable: "native/aix", name: "FIABackend" }],
+        },
+        root,
+      ),
+    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "helpers.0.name" });
+    await expect(
+      resolveProjectConfig(
+        {
+          ...base(),
+          host: { executable: "native/AIXHost", name: "../AIXHost" },
+        },
+        root,
+      ),
+    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "host.name" });
+    await chmod(resolve(root, "native/aix"), 0o644);
+    await expect(
+      resolveProjectConfig(
+        {
+          ...base(),
+          helpers: [{ executable: "native/aix", name: "aix" }],
+        },
+        root,
+      ),
+    ).rejects.toMatchObject({
+      code: "CONFIG_NATIVE_ARTIFACT_INVALID",
+      path: "helpers.0.executable",
+    });
   });
 
   test("resolves strict Developer ID release and notarization settings", async () => {
@@ -141,7 +212,7 @@ describe("FIA configVersion 5", () => {
         },
       );
     }
-    await expect(resolveProjectConfig({ ...base(), configVersion: 4 }, root)).rejects.toMatchObject(
+    await expect(resolveProjectConfig({ ...base(), configVersion: 5 }, root)).rejects.toMatchObject(
       {
         code: "CONFIG_UNSUPPORTED_VERSION",
       },

@@ -2,7 +2,7 @@
 
 ## 常驻 Bun Backend 基线
 
-- [x] 公共配置升级为 `configVersion: 5`，Backend 必选并拒绝全部旧 UI/MCP 字段。
+- [x] 公共配置升级为 `configVersion: 6`，Backend 必选，支持严格校验的 custom Host/helpers，并拒绝全部旧 UI/MCP 字段。
 - [x] `defineBackend` 管理标准 HTTP routes、WebSocket、启动/停止钩子和 Backend-only Host API。
 - [x] loopback 服务使用一次性 bootstrap、HttpOnly SameSite 会话、Host/Origin 校验。
 - [x] Swift Host 升级为 schema 8 和 stdio protocol 2，启动即监管唯一 Backend。

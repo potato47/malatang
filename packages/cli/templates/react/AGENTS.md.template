@@ -5,10 +5,10 @@
 
 ## Project map
 
-- `fia.config.ts` 使用严格的 `configVersion: 5`，声明应用、必选 Backend、状态栏初始配置，以及可选的开发与发布签名身份。
-- `src/backend.ts` 使用 `defineBackend<SocketData>()({...})` 声明 HTTP、WebSocket、生命周期与 Host 原生调用。
-- `src/ui/` 是普通 React 前端；不要导入 FIA 原生 API。
-- `src/ui/components/ui/` 是可编辑的 Tailwind CSS v4 组件库。
+- `fia.config.ts` 使用严格的 `configVersion: 6`，声明应用、必选 Backend、可选 Host/helpers、状态栏初始配置，以及可选的开发与发布签名身份。
+- `backend/index.ts` 使用 `defineBackend<SocketData>()({...})` 声明 HTTP、WebSocket、生命周期与 Host 原生调用。
+- `frontend/` 是普通 React + Tailwind CSS 前端；不要导入 FIA 原生 API。
+- FIA 不提供组件库或设计系统，前端组件由应用自行选择和维护。
 - `dist/` 和 `.fia/` 是生成目录。
 
 原生能力只能在 Backend 中通过 `desktop`、`desktop.windows`、`desktop.tray`、`desktop.dock`、
@@ -20,8 +20,8 @@ route/fetch 的第三参数以及 start/stop 上下文还提供 `app.dataDirecto
 状态栏菜单 ID 必须全树唯一，不能使用保留的 `fia.*`；菜单最多 8 层、256 项。打开本机页面时
 调用 `desktop.windows.create` 或 `desktop.system.openURL`，由 Host 注入一次性 bootstrap code。
 
-从 `./components/ui` 导入已有控件，保持 `ThemeProvider` 和 `ToastProvider` 挂载。开发期日志写入
-stderr；Backend stdout 专用于 FIA JSONL 协议。
+前端优先使用 Tailwind utility classes，除非应用明确引入其他 UI 方案。开发期日志写入 stderr；
+Backend stdout 专用于 FIA JSONL 协议。
 
 修改 TypeScript 后运行 `bun run typecheck`，涉及生命周期、协议或打包时运行 `bun run build`。
 `bun run package` 和 `bun run release` 使用 Developer ID 发布配置，后者还会连接 Apple 公证服务。

@@ -47,6 +47,8 @@ export interface WindowDragRegion {
   readonly rightInset?: number;
 }
 
+export type BrowserWindowStyle = "native" | "overlay" | "frameless";
+
 export interface BrowserWindowState {
   readonly id: string;
   readonly url: string;
@@ -56,7 +58,7 @@ export interface BrowserWindowState {
   readonly minimized: boolean;
   readonly maximized: boolean;
   readonly fullScreen: boolean;
-  readonly frameless: boolean;
+  readonly style: BrowserWindowStyle;
   readonly transparent: boolean;
   readonly shadow: boolean;
   readonly resizable: boolean;
@@ -77,7 +79,7 @@ export interface BrowserWindowOptions {
   minHeight?: number;
   x?: number;
   y?: number;
-  frameless?: boolean;
+  style?: BrowserWindowStyle;
   transparent?: boolean;
   shadow?: boolean;
   resizable?: boolean;
@@ -417,7 +419,7 @@ export interface RawWindowState {
   readonly minimized: boolean;
   readonly maximized: boolean;
   readonly fullScreen: boolean;
-  readonly windowStyle: "native" | "borderless";
+  readonly windowStyle: "native" | "overlay" | "borderless";
   readonly transparent: boolean;
   readonly shadow: boolean;
   readonly resizable: boolean;
@@ -438,7 +440,7 @@ export interface RawWindowOpenOptions {
   minHeight?: number;
   x?: number;
   y?: number;
-  windowStyle?: "native" | "borderless";
+  windowStyle?: "native" | "overlay" | "borderless";
   transparent?: boolean;
   shadow?: boolean;
   resizable?: boolean;
@@ -602,7 +604,7 @@ function immutableState(raw: RawWindowState): BrowserWindowState {
     minimized: raw.minimized,
     maximized: raw.maximized,
     fullScreen: raw.fullScreen,
-    frameless: raw.windowStyle === "borderless",
+    style: raw.windowStyle === "borderless" ? "frameless" : raw.windowStyle,
     transparent: raw.transparent,
     shadow: raw.shadow,
     resizable: raw.resizable,
@@ -621,6 +623,24 @@ function sameState(left: BrowserWindowState, right: BrowserWindowState): boolean
 function assertWindowID(id: string): void {
   if (typeof id !== "string" || id.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
     throw new HostError("INVALID_ARGUMENT", `Invalid window ID: ${String(id)}`);
+  }
+}
+
+function assertWindowStyle(options: BrowserWindowOptions): void {
+  const runtimeOptions = options as BrowserWindowOptions & Record<string, unknown>;
+  if ("frameless" in runtimeOptions) {
+    throw new HostError(
+      "INVALID_ARGUMENT",
+      'BrowserWindow option "frameless" was removed; use style: "frameless"',
+    );
+  }
+  if (
+    options.style !== undefined &&
+    options.style !== "native" &&
+    options.style !== "overlay" &&
+    options.style !== "frameless"
+  ) {
+    throw new HostError("INVALID_ARGUMENT", `Invalid window style: ${String(options.style)}`);
   }
 }
 
@@ -1289,12 +1309,15 @@ export class DesktopSession implements Desktop {
     create: async (options, callOptions) => {
       this.assertActive();
       assertWindowID(options.id);
-      const { frameless, url, ...rest } = options;
+      assertWindowStyle(options);
+      const { style, url, ...rest } = options;
       const state = await this.raw.webviews.open(
         {
           ...rest,
           url: String(url),
-          ...(frameless === undefined ? {} : { windowStyle: frameless ? "borderless" : "native" }),
+          ...(style === undefined
+            ? {}
+            : { windowStyle: style === "frameless" ? "borderless" : style }),
         },
         callOptions,
       );

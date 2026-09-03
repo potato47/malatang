@@ -10,14 +10,21 @@ final class WebViewRegistry {
 
     private let appName: String
     private let inspectable: Bool
+    private let windowFactory: any FIAHostWindowFactory
     private let dataStore = WKWebsiteDataStore.nonPersistent()
     private var storedFrames: [String: DesktopWindowFrame]
     private var controllers: [String: HostWindowController] = [:]
 
-    init(appName: String, inspectable: Bool, storedFrames: [String: DesktopWindowFrame]) {
+    init(
+        appName: String,
+        inspectable: Bool,
+        storedFrames: [String: DesktopWindowFrame],
+        windowFactory: any FIAHostWindowFactory = FIADefaultHostWindowFactory()
+    ) {
         self.appName = appName
         self.inspectable = inspectable
         self.storedFrames = storedFrames
+        self.windowFactory = windowFactory
     }
 
     func execute(method: String, params: [String: Any]) throws -> Any? {
@@ -154,10 +161,10 @@ final class WebViewRegistry {
                 message: "transparent requires windowStyle borderless"
             )
         }
-        guard resolvedStyle == .borderless || dragRegion == nil else {
+        guard resolvedStyle == .borderless || resolvedStyle == .overlay || dragRegion == nil else {
             throw HostRequestExecutionError(
                 code: .invalidArgument,
-                message: "dragRegion requires windowStyle borderless"
+                message: "dragRegion requires windowStyle overlay or borderless"
             )
         }
         let restoreFrame = try optionalBool(params["restoreFrame"], field: "restoreFrame") ?? true
@@ -182,7 +189,8 @@ final class WebViewRegistry {
             alwaysOnTop: try optionalBool(params["alwaysOnTop"], field: "alwaysOnTop") ?? false,
             visibleOnAllSpaces: try optionalBool(params["visibleOnAllSpaces"], field: "visibleOnAllSpaces") ?? false,
             visibleOverFullScreen: try optionalBool(params["visibleOverFullScreen"], field: "visibleOverFullScreen") ?? false,
-            inspectable: inspectable
+            inspectable: inspectable,
+            windowFactory: windowFactory
         )
         controllers[id] = controller
         controller.onStateChanged = { [weak self, weak controller] in
@@ -257,7 +265,7 @@ final class WebViewRegistry {
         guard let value = value as? String, let style = HostWindowStyle(rawValue: value) else {
             throw HostRequestExecutionError(
                 code: .invalidArgument,
-                message: "windowStyle must be native or borderless"
+                message: "windowStyle must be native, overlay, or borderless"
             )
         }
         return style

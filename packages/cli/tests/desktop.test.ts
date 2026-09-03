@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import {
   DesktopSession,
   HostError,
+  type BrowserWindowOptions,
+  type BrowserWindowStyle,
   type MenuItem,
   type RawHostClient,
   type RawMenuNode,
@@ -215,7 +217,7 @@ describe("Desktop resource facade", () => {
     const main = await fixture.desktop.windows.create({
       id: "main",
       url: new URL("https://app.invalid/main"),
-      frameless: true,
+      style: "frameless",
     });
     expect(fixture.calls[0]).toEqual({
       method: "webviews.open",
@@ -225,7 +227,7 @@ describe("Desktop resource facade", () => {
         windowStyle: "borderless",
       },
     });
-    expect(main.state.frameless).toBe(true);
+    expect(main.state.style).toBe("frameless");
     expect(Object.isFrozen(main.state)).toBe(true);
     expect(Object.isFrozen(main.state.frame)).toBe(true);
 
@@ -243,7 +245,7 @@ describe("Desktop resource facade", () => {
       id: "main",
       url: "https://app.invalid/next",
       title: "Next",
-      frameless: true,
+      style: "frameless",
     });
     expect(adopted).toBe(main);
     expect(main.state.title).toBe("Next");
@@ -273,6 +275,47 @@ describe("Desktop resource facade", () => {
       url: "https://app.invalid/recreated",
     });
     expect(recreated).not.toBe(main);
+  });
+
+  test("maps every public window style and rejects removed or invalid options", async () => {
+    const fixture = rawFixture();
+    const expectedRawStyles = [
+      ["native", "native"],
+      ["overlay", "overlay"],
+      ["frameless", "borderless"],
+    ] as const satisfies readonly (readonly [BrowserWindowStyle, RawWindowState["windowStyle"]])[];
+
+    for (const [style, windowStyle] of expectedRawStyles) {
+      const window = await fixture.desktop.windows.create({
+        id: style,
+        url: `https://app.invalid/${style}`,
+        style,
+      });
+      expect(fixture.calls.at(-1)).toEqual({
+        method: "webviews.open",
+        value: { id: style, url: `https://app.invalid/${style}`, windowStyle },
+      });
+      expect(window.state.style).toBe(style);
+    }
+
+    const callCount = fixture.calls.length;
+    const legacy = {
+      id: "legacy",
+      url: "https://app.invalid/legacy",
+      frameless: true,
+    } as unknown as BrowserWindowOptions;
+    await expect(fixture.desktop.windows.create(legacy)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    const invalid = {
+      id: "invalid",
+      url: "https://app.invalid/invalid",
+      style: "floating",
+    } as unknown as BrowserWindowOptions;
+    await expect(fixture.desktop.windows.create(invalid)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    expect(fixture.calls.length).toBe(callCount);
   });
 
   test("refreshes get/list and invalidates missing or disposed handles", async () => {

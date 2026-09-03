@@ -16,16 +16,22 @@
 
 ## 配置
 
-`fia.config.ts` 只允许 `configVersion`、`app`、`backend`、`statusBar`、`signing`、`release`。Backend `entry`
-必须是项目内可读文件；`watch` 默认是 entry 所在目录。所有未知字段和旧版本立即失败。
+`fia.config.ts` 使用 `configVersion: 6`，只允许 `configVersion`、`app`、`backend`、`host`、
+`helpers`、`statusBar`、`signing`、`release`。Backend `entry` 必须是项目内可读文件；`watch`
+默认是 entry 所在目录。所有未知字段和旧版本立即失败。
+
+`host` 可指定一个项目内已构建的自定义 arm64 Mach-O；`helpers` 最多 32 个，按安全且唯一的
+目标名称复制到 App。所有路径必须留在项目 realpath 内并具有读/执行权限；`FIABackend` 是
+保留 helper 名称。未配置 `host` 时使用 FIA 随 CLI 发布的预编译 Host。
 
 `signing.identity` 是可选的精确 codesigning identity 名称，只接受有效的 Apple Development 或
-Developer ID Application identity，并同时用于 Backend helper 与顶层 App。省略时继续 ad-hoc
+Developer ID Application identity，并同时用于 Backend、额外 helpers、Host 与顶层 App。省略时继续 ad-hoc
 签名；CLI 会提示此模式下屏幕录制等 TCC 授权可能在重建后需要重新授予。该字段不启用 hardened
 runtime、公证或发布流程。
 
-`release.identity` 只接受 Developer ID Application identity。`fia package` 使用它对 Backend
-和 App 进行明确的 inside-out 发布签名；Backend 具有最小 JIT entitlement。`fia release` 还要求
+`release.identity` 只接受 Developer ID Application identity。`fia package` 按 Backend、按名称
+排序的 helpers、Host、App 顺序进行明确的 inside-out 发布签名；只有 Backend 具有最小 JIT
+entitlement。`fia release` 还要求
 `release.notarization.keychainProfile`，该字段是 `notarytool store-credentials` 创建的钥匙串
 profile 名称，不存储 Apple 凭据。
 
@@ -37,9 +43,12 @@ xcrun notarytool store-credentials "fia-notary" \
 
 背景参考：[Apple：为 Mac 创建分发签名代码](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac/)。
 
-项目的 `src/backend.ts` 默认导出 `defineBackend<SocketData>()({...})`；不使用 WebSocket data 时写
+项目的 `backend/index.ts` 默认导出 `defineBackend<SocketData>()({...})`；不使用 WebSocket data 时写
 `defineBackend()({...})`。React 只是模板选择，运行时不引用 React，
 应用也可换成其他前端或只提供 API。
+
+默认模板将 Backend 与前端分别放在根级 `backend/` 和 `frontend/`。前端仅包含 React、
+Tailwind CSS 和 HTTP/WebSocket 示例，不提供 FIA 组件库或设计系统；应用自行维护 UI 技术栈。
 
 受保护的 route 和 fallback `fetch` handler 第三个参数提供 `{ desktop, app }`。`app` 包含 Host
 权威的 name、identifier 和预先创建的绝对 `dataDirectory`，无需复制配置或依赖 `cwd()`。

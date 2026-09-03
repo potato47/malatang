@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { get } from "node:http";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -40,30 +49,17 @@ async function linkedProject(): Promise<string> {
     dependencies: { cliPackageSpec: `file:${packageRoot}` },
   });
   const modules = resolve(project, "node_modules");
-  await mkdir(resolve(modules, "@base-ui"), { recursive: true });
+  await mkdir(resolve(modules, ".bin"), { recursive: true });
   await mkdir(resolve(modules, "@semicoder"), { recursive: true });
   await mkdir(resolve(modules, "@types"), { recursive: true });
-  await symlink(
-    resolve(packageRoot, "node_modules/@base-ui/react"),
-    resolve(modules, "@base-ui/react"),
-    "dir",
-  );
   await symlink(packageRoot, resolve(modules, "@semicoder/fia"), "dir");
+  await symlink(resolve(packageRoot, "bin/fia"), resolve(modules, ".bin/fia"));
   await symlink(
     resolve(repositoryRoot, "node_modules/typescript"),
     resolve(modules, "typescript"),
     "dir",
   );
-  for (const dependency of [
-    "bun-plugin-tailwind",
-    "class-variance-authority",
-    "clsx",
-    "lucide-react",
-    "react",
-    "react-dom",
-    "tailwind-merge",
-    "tailwindcss",
-  ] as const) {
+  for (const dependency of ["bun-plugin-tailwind", "react", "react-dom", "tailwindcss"] as const) {
     await symlink(
       resolve(packageRoot, "node_modules", dependency),
       resolve(modules, dependency),
@@ -80,6 +76,49 @@ async function linkedProject(): Promise<string> {
     );
   }
   return project;
+}
+
+async function configureCustomNativeArtifacts(projectRoot: string): Promise<void> {
+  const native = resolve(projectRoot, "native");
+  const source = resolve(packageRoot, "assets/host/darwin-arm64/FIAHost");
+  const host = resolve(native, "AIXHost");
+  const helper = resolve(native, "aix");
+  await mkdir(native, { recursive: true });
+  await Promise.all([copyFile(source, host), copyFile(source, helper)]);
+  await Promise.all([chmod(host, 0o755), chmod(helper, 0o755)]);
+  const configPath = resolve(projectRoot, "fia.config.ts");
+  const config = await readFile(configPath, "utf8");
+  await writeFile(
+    configPath,
+    config.replace(
+      "  statusBar:",
+      '  host: { executable: "native/AIXHost", name: "AIXHost" },\n' +
+        '  helpers: [{ executable: "native/aix", name: "aix" }],\n' +
+        "  statusBar:",
+    ),
+  );
+}
+
+async function launchPackagedHost(executable: string, projectRoot: string): Promise<void> {
+  const child = Bun.spawn([executable], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      FIA_INTERNAL_AUTO_QUIT_MS: "750",
+      FIA_INTERNAL_DIAGNOSTICS: "1",
+    },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stderr = new Response(child.stderr).text();
+  const exitCode = await Promise.race([child.exited, Bun.sleep(10_000).then(() => undefined)]);
+  if (exitCode === undefined) {
+    child.kill("SIGKILL");
+    throw new Error(`Custom Host launch smoke timed out: ${await stderr}`);
+  }
+  if (exitCode !== 0)
+    throw new Error(`Custom Host exited with status ${exitCode}: ${await stderr}`);
 }
 
 function output() {
@@ -315,10 +354,10 @@ describe("FIA resident Backend application packaging", () => {
   });
 
   test("generates a protocol-clean dynamic Backend runner", () => {
-    const runner = generatedBackendRunner("/project/src/backend.ts");
+    const runner = generatedBackendRunner("/project/backend/index.ts");
     expect(runner).toContain("runBackend");
     expect(runner).toContain("console.log = writeLog");
-    expect(runner).toContain('await import("/project/src/backend.ts")');
+    expect(runner).toContain('await import("/project/backend/index.ts")');
     expect(runner).not.toContain("MCP");
   });
 
@@ -334,8 +373,9 @@ describe("FIA resident Backend application packaging", () => {
     ).rejects.toThrow("release.identity is required for fia package");
   });
 
-  test("builds one signed standalone Backend while a configured HTTP proxy returns 502", async () => {
+  test("builds through bun run while a configured HTTP proxy returns 502", async () => {
     const root = await linkedProject();
+    await configureCustomNativeArtifacts(root);
     let proxyRequests = 0;
     const proxy = Bun.serve({
       hostname: "127.0.0.1",
@@ -348,7 +388,7 @@ describe("FIA resident Backend application packaging", () => {
         });
       },
     });
-    const child = Bun.spawn([process.execPath, resolve(packageRoot, "src/index.ts"), "build"], {
+    const child = Bun.spawn([process.execPath, "run", "build"], {
       cwd: root,
       env: {
         ...process.env,
@@ -376,7 +416,12 @@ describe("FIA resident Backend application packaging", () => {
     expect(proxyRequests).toBe(0);
     const app = resolve(root, "dist/Packaged Service.app");
     const backend = resolve(app, "Contents/Helpers/FIABackend");
+    const host = resolve(app, "Contents/MacOS/AIXHost");
+    const helper = resolve(app, "Contents/Helpers/aix");
     expect(await Bun.file(backend).exists()).toBe(true);
+    expect(await Bun.file(host).exists()).toBe(true);
+    expect(await Bun.file(helper).exists()).toBe(true);
+    expect(await Bun.file(resolve(app, "Contents/MacOS/FIAHost")).exists()).toBe(false);
     expect(await Bun.file(resolve(app, "Contents/Resources/UI")).exists()).toBe(false);
     expect(await Bun.file(resolve(app, "Contents/Helpers/MCPServers")).exists()).toBe(false);
     const config = JSON.parse(
@@ -408,13 +453,14 @@ describe("FIA resident Backend application packaging", () => {
     const hasher = new Bun.CryptoHasher("sha256");
     hasher.update(await Bun.file(backend).arrayBuffer());
     expect(config.backend.sha256).toBe(hasher.digest("hex"));
-    expect(await readFile(resolve(app, "Contents/Info.plist"), "utf8")).toContain(
-      "<key>LSUIElement</key><true/>",
-    );
+    const plist = await readFile(resolve(app, "Contents/Info.plist"), "utf8");
+    expect(plist).toContain("<key>LSUIElement</key><true/>");
+    expect(plist).toContain("<key>CFBundleExecutable</key><string>AIXHost</string>");
     const css = await packagedStylesheet(backend, root);
     expect(css).toMatch(/\.flex\{/);
     expect(css).toMatch(/\.min-h-screen\{/);
     expect(messages.stdout).toContain("Built");
     expect(messages.stderr).toContain("using ad-hoc signing");
+    await launchPackagedHost(host, root);
   }, 60_000);
 });

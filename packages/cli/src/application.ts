@@ -85,6 +85,11 @@ interface BackendArtifact {
   development: boolean;
 }
 
+interface HostArtifact {
+  executable: string;
+  name: string;
+}
+
 interface CommandResult {
   exitCode: number;
   stdout: string;
@@ -335,6 +340,18 @@ async function verifyHostAsset(context: BuildContext): Promise<string> {
   }
   await verifyArm64MachO("Host", executable, context);
   return executable;
+}
+
+async function resolveHostArtifact(context: BuildContext): Promise<HostArtifact> {
+  if (context.config.host !== undefined) {
+    await verifyArm64MachO("Host", context.config.host.executable, context);
+    return context.config.host;
+  }
+  return { executable: await verifyHostAsset(context), name: HOST_EXECUTABLE };
+}
+
+function sortedHelpers(config: ResolvedFIAConfig): ResolvedFIAConfig["helpers"] {
+  return [...config.helpers].sort((left, right) => left.name.localeCompare(right.name, "en"));
 }
 
 async function verifySigningIdentity(context: BuildContext): Promise<void> {
@@ -725,7 +742,7 @@ function plistEscape(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
-function infoPlist(config: ResolvedFIAConfig): string {
+function infoPlist(config: ResolvedFIAConfig, hostExecutableName: string): string {
   const icon =
     config.app.icon === undefined ? "" : "  <key>CFBundleIconFile</key><string>AppIcon</string>\n";
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -734,7 +751,7 @@ function infoPlist(config: ResolvedFIAConfig): string {
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleDisplayName</key><string>${plistEscape(config.app.name)}</string>
-  <key>CFBundleExecutable</key><string>${HOST_EXECUTABLE}</string>
+  <key>CFBundleExecutable</key><string>${plistEscape(hostExecutableName)}</string>
   <key>CFBundleIdentifier</key><string>${plistEscape(config.app.identifier)}</string>
 ${icon}  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>${plistEscape(config.app.name)}</string>
@@ -770,7 +787,11 @@ function hostConfiguration(
 }
 
 async function assembleApp(context: BuildContext, backend: BackendArtifact): Promise<void> {
-  const host = await verifyHostAsset(context);
+  const host = await resolveHostArtifact(context);
+  const nativeHelpers = sortedHelpers(context.config);
+  for (const helper of nativeHelpers) {
+    await verifyArm64MachO(`Helper ${helper.name}`, helper.executable, context);
+  }
   const contents = resolve(context.appPath, "Contents");
   const macOS = resolve(contents, "MacOS");
   const helpers = resolve(contents, "Helpers");
@@ -778,16 +799,22 @@ async function assembleApp(context: BuildContext, backend: BackendArtifact): Pro
   await mkdir(macOS, { recursive: true });
   await mkdir(helpers, { recursive: true });
   await mkdir(resources, { recursive: true });
-  await copyFile(host, resolve(macOS, HOST_EXECUTABLE));
-  await chmod(resolve(macOS, HOST_EXECUTABLE), 0o755);
+  const packagedHost = resolve(macOS, host.name);
+  await copyFile(host.executable, packagedHost);
+  await chmod(packagedHost, 0o755);
   if (!backend.development) {
     await copyFile(backend.executable, resolve(helpers, BACKEND_EXECUTABLE));
     await chmod(resolve(helpers, BACKEND_EXECUTABLE), 0o755);
   }
+  for (const helper of nativeHelpers) {
+    const destination = resolve(helpers, helper.name);
+    await copyFile(helper.executable, destination);
+    await chmod(destination, 0o755);
+  }
   if (context.config.app.icon !== undefined) {
     await copyFile(context.config.app.icon, resolve(resources, "AppIcon.icns"));
   }
-  await Bun.write(resolve(contents, "Info.plist"), infoPlist(context.config));
+  await Bun.write(resolve(contents, "Info.plist"), infoPlist(context.config, host.name));
   let configuredBackend = backend;
   if (!backend.development) {
     const entitlements = context.distribution
@@ -808,6 +835,26 @@ async function assembleApp(context: BuildContext, backend: BackendArtifact): Pro
       sha256: await sha256(resolve(helpers, BACKEND_EXECUTABLE)),
     };
   }
+  for (const helper of nativeHelpers) {
+    await checked(
+      `Helper ${helper.name} signing`,
+      codeSigningCommand(context.signingIdentity, resolve(helpers, helper.name), {
+        distribution: context.distribution,
+      }),
+      context.config.projectRoot,
+      context.debug,
+      context.io,
+    );
+  }
+  await checked(
+    "Host signing",
+    codeSigningCommand(context.signingIdentity, packagedHost, {
+      distribution: context.distribution,
+    }),
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  );
   await Bun.write(
     resolve(resources, "fia-config.json"),
     `${JSON.stringify(hostConfiguration(context.config, configuredBackend), null, 2)}\n`,
@@ -824,12 +871,23 @@ async function assembleApp(context: BuildContext, backend: BackendArtifact): Pro
   await verifyApp(context, !backend.development);
   if (context.distribution) {
     await verifyDistributionCodeSignature(context, "Backend", resolve(helpers, BACKEND_EXECUTABLE));
+    for (const helper of nativeHelpers) {
+      await verifyDistributionCodeSignature(
+        context,
+        `Helper ${helper.name}`,
+        resolve(helpers, helper.name),
+      );
+    }
+    await verifyDistributionCodeSignature(context, "Host", packagedHost);
     await verifyDistributionCodeSignature(context, "Application", context.appPath);
   }
 }
 
 async function verifyApp(context: BuildContext, production: boolean): Promise<void> {
   const contents = resolve(context.appPath, "Contents");
+  const hostName = context.config.host?.name ?? HOST_EXECUTABLE;
+  const host = resolve(contents, "MacOS", hostName);
+  await access(host, constants.R_OK | constants.X_OK);
   const configuration = JSON.parse(
     await readFile(resolve(contents, "Resources/fia-config.json"), "utf8"),
   ) as Record<string, unknown>;
@@ -845,6 +903,24 @@ async function verifyApp(context: BuildContext, production: boolean): Promise<vo
     }
     await checked(
       "Backend signature verification",
+      ["/usr/bin/codesign", "--verify", "--strict", executable],
+      context.config.projectRoot,
+      context.debug,
+      context.io,
+    );
+  }
+  await checked(
+    "Host signature verification",
+    ["/usr/bin/codesign", "--verify", "--strict", host],
+    context.config.projectRoot,
+    context.debug,
+    context.io,
+  );
+  for (const helper of sortedHelpers(context.config)) {
+    const executable = resolve(contents, "Helpers", helper.name);
+    await access(executable, constants.R_OK | constants.X_OK);
+    await checked(
+      `Helper ${helper.name} signature verification`,
       ["/usr/bin/codesign", "--verify", "--strict", executable],
       context.config.projectRoot,
       context.debug,
@@ -888,7 +964,11 @@ async function launchHost(
   context: BuildContext,
   developmentAutomation?: DevelopmentAutomationOptions,
 ): Promise<void> {
-  const executable = resolve(context.appPath, "Contents/MacOS", HOST_EXECUTABLE);
+  const executable = resolve(
+    context.appPath,
+    "Contents/MacOS",
+    context.config.host?.name ?? HOST_EXECUTABLE,
+  );
   context.io.stdout(`Launching ${context.config.app.name}\n`);
   const environment: NodeJS.ProcessEnv = {
     ...process.env,

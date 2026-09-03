@@ -18,7 +18,9 @@
 ## 进程与包
 
 - Host 不通过 shell、PATH 或运行时下载启动生产 Backend。
-- 生产 helper 路径固定，校验签名后文件的 SHA-256，并 inside-out codesign。
+- 生产 Backend 路径固定并记录签名后 SHA-256；额外 helper 使用严格配置的唯一安全名称。
+- custom Host/helper 输入必须留在项目 realpath 内，具有读/执行权限且为纯 arm64 Mach-O。
+- Backend、按名称排序的 helpers、Host、App 依次 inside-out codesign，并逐项验证嵌套签名。
 - stdout 只允许协议；runner 在导入项目 entry 前把 `console.*` 重定向到 stderr。
 - 配置、菜单、窗口参数和 URL 均做严格形状、长度与 allowlist 校验。
 

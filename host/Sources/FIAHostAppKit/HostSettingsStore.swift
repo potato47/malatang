@@ -7,8 +7,12 @@ final class HostSettingsStore {
     private let diagnostic: (String) -> Void
     private var pendingSave: Task<Void, Never>?
 
-    init(identifier: String, diagnostic: @escaping (String) -> Void) throws {
-        let base = try FileManager.default.url(
+    init(
+        identifier: String,
+        applicationSupportDirectory: URL? = nil,
+        diagnostic: @escaping (String) -> Void
+    ) throws {
+        let base = try applicationSupportDirectory ?? FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,

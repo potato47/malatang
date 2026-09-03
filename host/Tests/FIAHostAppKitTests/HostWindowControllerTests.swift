@@ -229,6 +229,59 @@ struct HostWindowControllerTests {
         #expect(changes == 2)
     }
 
+    @Test func configuresOverlayWindowsWithNativeButtonsAndFullSizeWebContent() throws {
+        _ = NSApplication.shared
+        let dragRegion = HostWindowDragRegion(height: 52, leftInset: 88, rightInset: 24)
+        let controller = HostWindowController(
+            id: "overlay",
+            url: URL(string: "https://example.com")!,
+            title: "Overlay",
+            width: 800,
+            height: 600,
+            minWidth: 500,
+            minHeight: 400,
+            restoredFrame: nil,
+            dataStore: .nonPersistent(),
+            closeBehavior: .hide,
+            windowStyle: .overlay,
+            dragRegion: dragRegion,
+            alwaysOnTop: false,
+            visibleOnAllSpaces: false,
+            visibleOverFullScreen: false,
+            inspectable: false
+        )
+        let window = try #require(controller.window as? FIAHostWindow)
+        let webView = try #require(window.contentView as? WKWebView)
+        #expect(window.styleMask.contains(.titled))
+        #expect(window.styleMask.contains(.fullSizeContentView))
+        #expect(window.titleVisibility == .hidden)
+        #expect(window.titlebarAppearsTransparent)
+        #expect(window.titlebarSeparatorStyle == .none)
+        #expect(window.dragRegion == dragRegion)
+        #expect(webView.bounds.size == window.frame.size)
+        #expect(webView.bounds.height > window.contentLayoutRect.height)
+
+        let closeButton = try #require(window.standardWindowButton(.closeButton))
+        #expect(!closeButton.isHidden)
+        let closeButtonCenter = closeButton.convert(
+            NSPoint(x: closeButton.bounds.midX, y: closeButton.bounds.midY),
+            to: nil
+        )
+        #expect(window.isPointOverStandardWindowButton(closeButtonCenter))
+
+        let originalHeight = webView.bounds.height
+        try controller.update(
+            title: nil,
+            width: 900,
+            alwaysOnTop: nil,
+            visibleOnAllSpaces: nil,
+            visibleOverFullScreen: nil
+        )
+        #expect(webView.bounds.width == 900)
+        #expect(webView.bounds.height == originalHeight)
+        #expect(controller.state()["windowStyle"] as? String == "overlay")
+    }
+
     @Test func rejectsChangesToCreationOnlyWindowOptions() throws {
         _ = NSApplication.shared
         let controller = HostWindowController(
@@ -304,6 +357,37 @@ struct HostWindowControllerTests {
         controller.close()
     }
 
+    @Test func maximizesAndRestoresOverlayWindowsWithNativeZoom() throws {
+        _ = NSApplication.shared
+        let controller = HostWindowController(
+            id: "overlay-maximizable",
+            url: URL(string: "https://example.com")!,
+            title: "Overlay",
+            width: 640,
+            height: 360,
+            minWidth: 320,
+            minHeight: 180,
+            restoredFrame: nil,
+            dataStore: .nonPersistent(),
+            closeBehavior: .close,
+            windowStyle: .overlay,
+            alwaysOnTop: false,
+            visibleOnAllSpaces: false,
+            visibleOverFullScreen: false,
+            inspectable: false
+        )
+        let window = try #require(controller.window)
+        let normalFrame = window.frame
+
+        try controller.maximize()
+        #expect(controller.state()["maximized"] as? Bool == true)
+
+        try controller.restore()
+        #expect(controller.state()["maximized"] as? Bool == false)
+        #expect(window.frame == normalFrame)
+        controller.close()
+    }
+
     @Test func coalescesFrameChangesAndFlushesInteractionEnd() async throws {
         _ = NSApplication.shared
         let controller = HostWindowController(
@@ -338,7 +422,7 @@ struct HostWindowControllerTests {
         #expect(changes == 2)
     }
 
-    @Test func registryRejectsInvalidAndMutableBorderlessOptions() throws {
+    @Test func registryValidatesCreationOnlyWindowOptions() throws {
         _ = NSApplication.shared
         let registry = WebViewRegistry(appName: "Desktop", inspectable: false, storedFrames: [:])
         #expect(throws: HostRequestExecutionError.self) {
@@ -346,6 +430,25 @@ struct HostWindowControllerTests {
                 "id": "invalid", "url": "https://example.com", "transparent": true,
             ])
         }
+        #expect(throws: HostRequestExecutionError.self) {
+            try registry.execute(method: "webviews.open", params: [
+                "id": "transparent-overlay", "url": "https://example.com",
+                "windowStyle": "overlay", "transparent": true,
+            ])
+        }
+        #expect(throws: HostRequestExecutionError.self) {
+            try registry.execute(method: "webviews.open", params: [
+                "id": "native-drag", "url": "https://example.com",
+                "windowStyle": "native", "dragRegion": ["height": 30],
+            ])
+        }
+
+        let overlay = try #require(try registry.execute(method: "webviews.open", params: [
+            "id": "overlay", "url": "https://example.com", "focus": false,
+            "windowStyle": "overlay", "dragRegion": ["height": 52, "leftInset": 88],
+        ]) as? [String: Any])
+        #expect(overlay["windowStyle"] as? String == "overlay")
+        #expect((overlay["dragRegion"] as? [String: Any])?["height"] as? Double == 52)
 
         _ = try registry.execute(method: "webviews.open", params: [
             "id": "main", "url": "https://example.com", "focus": false,
@@ -383,7 +486,7 @@ struct HostWindowControllerTests {
         ]) as? [String: Any])
         #expect(updated["frame"] is [String: Any])
         let windows = try #require(try registry.execute(method: "webviews.list", params: [:]) as? [[String: Any]])
-        #expect(windows.count == 1)
+        #expect(windows.count == 2)
         #expect(windows[0]["windowStyle"] as? String == "borderless")
         #expect(windows[0]["transparent"] as? Bool == true)
         let unchangedFullScreen = try #require(try registry.execute(
@@ -398,6 +501,7 @@ struct HostWindowControllerTests {
             try registry.execute(method: "webviews.maximize", params: ["id": "main"])
         }
         _ = try registry.execute(method: "webviews.close", params: ["id": "main"])
+        _ = try registry.execute(method: "webviews.close", params: ["id": "overlay"])
     }
 
     @Test func buildsNestedDynamicMenuAndKeepsQuit() throws {

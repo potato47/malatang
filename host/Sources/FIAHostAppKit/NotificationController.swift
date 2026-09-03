@@ -78,19 +78,19 @@ final class SystemNotificationClient: NSObject, NotificationClient, UNUserNotifi
 final class NotificationController {
     var onEvent: (([String: Any]) -> Void)?
 
-    private let client: NotificationClient
+    private var client: NotificationClient?
     private let diagnostic: (String) -> Void
     private var backendReady = false
     private var queuedClicks: [String] = []
     private let maximumQueuedClicks = 64
 
     init(
-        client: NotificationClient = SystemNotificationClient(),
+        client: NotificationClient? = nil,
         diagnostic: @escaping (String) -> Void = { _ in }
     ) {
         self.client = client
         self.diagnostic = diagnostic
-        client.onClick = { [weak self] id in self?.clicked(id) }
+        connect(client)
     }
 
     func setBackendReady(_ ready: Bool) {
@@ -102,6 +102,7 @@ final class NotificationController {
     }
 
     func execute(method: String, params: [String: Any]) async throws -> Any? {
+        let client = notificationClient()
         switch method {
         case "notifications.getAuthorizationStatus":
             try requireKeys(params, allowed: [])
@@ -152,6 +153,18 @@ final class NotificationController {
     }
 
     private func emit(_ id: String) { onEvent?(["id": id]) }
+
+    private func notificationClient() -> NotificationClient {
+        if let client { return client }
+        let client = SystemNotificationClient()
+        self.client = client
+        connect(client)
+        return client
+    }
+
+    private func connect(_ client: NotificationClient?) {
+        client?.onClick = { [weak self] id in self?.clicked(id) }
+    }
 
     private static func canSend(_ status: UNAuthorizationStatus) -> Bool {
         switch status {

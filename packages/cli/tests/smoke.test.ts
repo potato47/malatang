@@ -95,6 +95,7 @@ describe("published FIA resident backend shape", () => {
     const legacy = await run(["create", "legacy", "--no-install", "--no-mcp"], cwd);
     expect(created.exitCode).toBe(0);
     expect(legacy.exitCode).toBe(2);
-    expect(await Bun.file(resolve(cwd, "service-app/src/backend.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(cwd, "service-app/backend/index.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(cwd, "service-app/frontend/index.html")).exists()).toBe(true);
   });
 });

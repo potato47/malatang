@@ -11,7 +11,7 @@ afterEach(async () => {
   );
 });
 async function workspace(): Promise<string> {
-  const root = await mkdtemp(resolve(tmpdir(), "fia-create-v5-"));
+  const root = await mkdtemp(resolve(tmpdir(), "fia-create-v6-"));
   temporaryDirectories.push(root);
   return root;
 }
@@ -29,40 +29,54 @@ describe("FIA project creation", () => {
     });
     for (const file of [
       "fia.config.ts",
-      "src/backend.ts",
-      "src/ui/App.tsx",
-      "src/ui/index.html",
-      "src/ui/components/ui/index.ts",
+      "backend/index.ts",
+      "frontend/App.tsx",
+      "frontend/index.html",
+      "frontend/style.css",
       "package.json",
       "AGENTS.md",
     ])
       expect(await Bun.file(resolve(root, file)).exists()).toBe(true);
+    expect(await Bun.file(resolve(root, "src/ui/components/ui/index.ts")).exists()).toBe(false);
     const config = await readFile(resolve(root, "fia.config.ts"), "utf8");
-    expect(config).toContain("configVersion: 5");
-    expect(config).toContain('entry: "src/backend.ts"');
+    expect(config).toContain("configVersion: 6");
+    expect(config).toContain('entry: "backend/index.ts"');
+    expect(config).toContain('watch: ["backend", "frontend"]');
     expect(config).not.toContain("mcp:");
-    const backend = await readFile(resolve(root, "src/backend.ts"), "utf8");
+    const backend = await readFile(resolve(root, "backend/index.ts"), "utf8");
     expect(backend).toContain("defineBackend");
+    expect(backend).toContain('import index from "../frontend/index.html"');
     expect(backend).toContain("desktop.windows.create");
     expect(backend).toContain("desktop.tray.setMenu");
     expect(backend).not.toContain("globalThis");
     expect(backend).not.toContain("stop()");
-    const app = await readFile(resolve(root, "src/ui/App.tsx"), "utf8");
+    const app = await readFile(resolve(root, "frontend/App.tsx"), "utf8");
     expect(app).toContain('fetch("/api/greet")');
     expect(app).toContain("new WebSocket");
     expect(app).not.toContain("@semicoder/fia");
-    const forms = await readFile(resolve(root, "src/ui/components/ui/forms.tsx"), "utf8");
-    expect(forms).toContain('className="min-w-0 flex-1 truncate text-left"');
-    expect(
-      forms.match(/className="flex size-\[18px\] items-center justify-center text-ui-accent"/g),
-    ).toHaveLength(2);
     const metadata = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
+      engines: Record<string, string>;
       scripts: Record<string, string>;
     };
-    expect(metadata.dependencies).not.toHaveProperty("zod");
+    expect(Object.keys(metadata.dependencies).sort()).toEqual([
+      "bun-plugin-tailwind",
+      "react",
+      "react-dom",
+      "tailwindcss",
+    ]);
+    for (const removed of [
+      "@base-ui/react",
+      "class-variance-authority",
+      "clsx",
+      "lucide-react",
+      "tailwind-merge",
+    ])
+      expect(metadata.dependencies).not.toHaveProperty(removed);
     expect(metadata.devDependencies["@semicoder/fia"]).toBe("file:../cli");
+    expect(metadata.devDependencies["@types/bun"]).toBe("1.4.0");
+    expect(metadata.engines.bun).toBe(">=1.4.0");
     expect(metadata.scripts.package).toBe("fia package");
     expect(metadata.scripts.release).toBe("fia release");
   });

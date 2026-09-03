@@ -12,10 +12,10 @@ bun run release
 bun run run
 ```
 
-- `src/backend.ts` 使用 `defineBackend<SocketData>()({...})` 声明页面、API、WebSocket 和原生宿主交互。
-- `src/ui/` 是普通 React 前端，只使用相对 `fetch` 和 WebSocket，不依赖 FIA 浏览器 SDK。
-- `fia.config.ts` 使用严格的 `configVersion: 5`，Backend 是必选项；可选的
-  `signing.identity` 让开发与生产构建使用稳定的代码签名身份。
+- `backend/index.ts` 使用 `defineBackend<SocketData>()({...})` 声明页面、API、WebSocket 和原生宿主交互。
+- `frontend/` 是普通 React + Tailwind CSS 前端，只使用相对 `fetch` 和 WebSocket，不依赖 FIA 浏览器 SDK。
+- `fia.config.ts` 使用严格的 `configVersion: 6`，Backend 是必选项；可选的
+  custom Host/helpers 可组合项目自有 arm64 Mach-O，`signing.identity` 让开发与生产构建使用稳定的代码签名身份。
 - `bun run dev` 使用 Bun 全栈 HMR，并由 Swift Host 监管常驻 Backend。
 - `bun run build` 生成包含 Swift Host 与单个 standalone `FIABackend` 的 macOS 应用；目标机器无需安装 Bun。
 - `bun run package` 生成 Developer ID 签名的 arm64 预公证 ZIP；`bun run release` 进一步完成
@@ -29,13 +29,8 @@ route/fetch 上下文的 `app.dataDirectory` 是 Host 预先创建的持久化�
 浏览器和 WebView 必须由 Backend 调用安全打开接口建立会话，前端不能直接访问原生接口。
 在 `start` 中注册的 Host 事件监听器会由 FIA 在热重载和退出时自动注销。
 
-## UI 组件
+## 前端
 
-可编辑的 Tailwind CSS v4 组件库位于 `src/ui/components/ui`，通过本地 barrel 导入：
-
-```tsx
-import { Button, Dialog, Field, Input, useToast } from "./components/ui";
-```
-
-`src/ui/main.tsx` 已挂载 `ThemeProvider` 和 `ToastProvider`。`bunfig.toml` 为开发 HMR 启用
-Tailwind 插件，FIA 在生产编译时使用相同插件。
+`frontend/App.tsx` 是不包含组件库或设计系统的基础 React 示例，可直接使用 Tailwind CSS v4
+utility classes 开发，也可以替换为其他前端方案。`bunfig.toml` 为开发 HMR 启用 Tailwind 插件，
+FIA 在生产编译时使用相同插件。FIA 只维护桌面宿主与 Backend 能力，不约束应用的 UI 技术选型。

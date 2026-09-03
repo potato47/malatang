@@ -18,10 +18,18 @@ final class HostController {
     private let screenCapture: ScreenCaptureController
     private let globalShortcuts: GlobalShortcutController
     private let settingsStore: HostSettingsStore?
+    private let capabilityProvider: (any FIAHostCapabilityProvider)?
     private var settings: HostSettings
 
-    init(configuration: HostConfiguration, backendDirectory: URL, settingsStore: HostSettingsStore?) {
+    init(
+        configuration: HostConfiguration,
+        backendDirectory: URL,
+        settingsStore: HostSettingsStore?,
+        windowFactory: any FIAHostWindowFactory = FIADefaultHostWindowFactory(),
+        capabilityProvider: (any FIAHostCapabilityProvider)? = nil
+    ) {
         self.settingsStore = settingsStore
+        self.capabilityProvider = capabilityProvider
         settings = settingsStore?.load(fallbackSymbol: configuration.statusItem.symbol)
             ?? HostSettings(statusItemSymbol: configuration.statusItem.symbol)
         statusItem = StatusBarController(
@@ -31,7 +39,8 @@ final class HostController {
         webviews = WebViewRegistry(
             appName: configuration.app.name,
             inspectable: configuration.development,
-            storedFrames: settings.windowFrames
+            storedFrames: settings.windowFrames,
+            windowFactory: windowFactory
         )
         notifications = NotificationController(diagnostic: { message in
             guard ProcessInfo.processInfo.environment["FIA_INTERNAL_DIAGNOSTICS"] == "1" else { return }
@@ -152,7 +161,14 @@ final class HostController {
             guard let id = params["id"] as? String else { throw invalid("id must be a string") }
             try statusItem.updateMenuItem(id: id, patch: params["patch"])
             return nil
-        default: throw HostRequestExecutionError(code: .invalidRequest, message: "unknown Host method: \(method)")
+        default:
+            if let capabilityProvider {
+                switch try await capabilityProvider.handle(method: method, params: params) {
+                case .unhandled: break
+                case let .handled(value): return value
+                }
+            }
+            throw HostRequestExecutionError(code: .invalidRequest, message: "unknown Host method: \(method)")
         }
     }
 

@@ -1,5 +1,5 @@
 import { defineBackend } from "@semicoder/fia/backend";
-import index from "./ui/index.html";
+import index from "../frontend/index.html";
 
 interface SocketData {
   connectedAt: number;
@@ -10,10 +10,11 @@ export default defineBackend<SocketData>()({
     publicRoutes: { "/": index },
     routes: {
       "/api/greet": {
-        GET: () => Response.json({
-          message: "Hello from the resident Bun backend!",
-          timestamp: new Date().toISOString(),
-        }),
+        GET: () =>
+          Response.json({
+            message: "Hello from the resident Bun backend!",
+            timestamp: new Date().toISOString(),
+          }),
       },
       "/ws": (request, server) => {
         if (server.upgrade(request, { data: { connectedAt: Date.now() } })) return;

@@ -11,6 +11,7 @@ export type {
   BrowserWindowEventMap,
   BrowserWindowOptions,
   BrowserWindowState,
+  BrowserWindowStyle,
   CallOptions,
   CapturedImage,
   Desktop,

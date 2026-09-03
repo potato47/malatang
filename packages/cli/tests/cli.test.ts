@@ -101,7 +101,8 @@ describe("fia command routing", () => {
       }),
     ).toBe(0);
     expect(await Bun.file(resolve(cwd, "from-cli/package.json")).exists()).toBe(true);
-    expect(await Bun.file(resolve(cwd, "from-cli/src/backend.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(cwd, "from-cli/backend/index.ts")).exists()).toBe(true);
+    expect(await Bun.file(resolve(cwd, "from-cli/frontend/App.tsx")).exists()).toBe(true);
     expect(created.stderr).toEqual([]);
   });
 

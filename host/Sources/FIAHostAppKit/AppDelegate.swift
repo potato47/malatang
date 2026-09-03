@@ -5,10 +5,8 @@ import Foundation
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var hostController: HostController?
-    private var supervisor: BackendSupervisor?
+    private var runtime: FIAHostRuntime?
     private var terminationSignalSources: [DispatchSourceSignal] = []
-    private var terminationPending = false
     private var autoQuitScheduled = false
     private var developmentActionID: String?
     private var developmentActionHandled = false
@@ -24,36 +22,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 developmentActionID = ProcessInfo.processInfo.environment["FIA_INTERNAL_EMIT_ACTION"]
             }
             NSApp.mainMenu = Self.makeMainMenu(applicationName: configuration.app.name)
-            let settingsStore = try? HostSettingsStore(
-                identifier: configuration.app.identifier,
-                diagnostic: { [weak self] message in self?.diagnostic(message) }
-            )
-            let backendDirectory = try BackendSupervisor.workingDirectory(configuration: configuration)
-            let hostController = HostController(
+            let runtime = try FIAHostRuntime(
                 configuration: configuration,
-                backendDirectory: backendDirectory,
-                settingsStore: settingsStore
+                windowFactory: FIADefaultHostWindowFactory()
             )
-            self.hostController = hostController
-            let supervisor = try BackendSupervisor(
-                configuration: configuration,
-                onRequest: { [weak hostController] method, params in
-                    guard let hostController else {
-                        throw HostRequestExecutionError(code: .nativeFailure, message: "Host controller is unavailable")
-                    }
-                    return try await hostController.execute(method: method, params: params)
-                },
-                onState: { [weak self, weak hostController] state in
-                    self?.backendStateChanged(state, hostController: hostController)
-                }
-            )
-            self.supervisor = supervisor
-            hostController.onEvent = { [weak supervisor] event, payload in
-                supervisor?.sendEvent(event, payload: payload)
+            runtime.onStateChange = { [weak self, weak runtime] state in
+                guard case .ready = state else { return }
+                self?.emitDevelopmentActionIfRequested(runtime)
             }
-            hostController.onRetry = { [weak supervisor] in supervisor?.retry() }
-            hostController.start()
-            supervisor.start()
+            runtime.onTerminationReady = { NSApp.terminate(nil) }
+            self.runtime = runtime
+            runtime.start()
             scheduleInternalAutoQuitIfRequested()
         } catch {
             showStartupFailure(error)
@@ -61,43 +40,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        hostController?.applicationReopened()
+        runtime?.applicationReopened()
         return true
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        hostController?.flushSettings()
-        guard supervisor != nil else { return .terminateNow }
-        guard !terminationPending else { return .terminateCancel }
-        guard supervisor?.stop() == true else { return .terminateNow }
-        terminationPending = true
-        return .terminateCancel
+        guard let runtime else { return .terminateNow }
+        switch runtime.prepareForTermination() {
+        case .terminateNow: return .terminateNow
+        case .waitForBackend: return .terminateCancel
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         terminationSignalSources.forEach { $0.cancel() }
         terminationSignalSources.removeAll()
-        hostController?.flushSettings()
-        hostController?.clearBackendResources()
-    }
-
-    private func backendStateChanged(_ state: BackendSupervisor.State, hostController: HostController?) {
-        switch state {
-        case .starting, .restarting:
-            hostController?.showStarting()
-        case .ready:
-            hostController?.showReady()
-            emitDevelopmentActionIfRequested(hostController)
-        case let .failed(reason):
-            hostController?.showFailure(reason)
-        case .stopping:
-            hostController?.clearBackendResources()
-        case .stopped:
-            hostController?.clearBackendResources()
-            guard terminationPending else { return }
-            terminationPending = false
-            NSApp.terminate(nil)
-        }
+        runtime?.applicationWillTerminate()
     }
 
     private func showStartupFailure(_ error: Error) {
@@ -111,14 +69,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    private func emitDevelopmentActionIfRequested(_ hostController: HostController?) {
+    private func emitDevelopmentActionIfRequested(_ runtime: FIAHostRuntime?) {
         guard !developmentActionHandled, let id = developmentActionID else { return }
         developmentActionHandled = true
         do {
-            guard let hostController else {
-                throw HostRequestExecutionError(code: .nativeFailure, message: "Host controller is unavailable")
+            guard let runtime else {
+                throw HostRequestExecutionError(code: .nativeFailure, message: "Host runtime is unavailable")
             }
-            try hostController.emitStatusItemActionForDevelopment(id: id)
+            try runtime.emitStatusItemActionForDevelopment(id: id)
             writeDevelopmentMarker("FIA_DEV_ACTION_EMITTED=\(id)")
         } catch {
             let reason = error.localizedDescription.replacingOccurrences(of: "\n", with: " ")

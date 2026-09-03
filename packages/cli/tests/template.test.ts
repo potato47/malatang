@@ -27,30 +27,15 @@ async function generatedProject(): Promise<string> {
     dependencies: { cliPackageSpec: `file:${packageRoot}` },
   });
   const modules = resolve(project, "node_modules");
-  await mkdir(resolve(modules, "@base-ui"), { recursive: true });
   await mkdir(resolve(modules, "@semicoder"), { recursive: true });
   await mkdir(resolve(modules, "@types"), { recursive: true });
-  await symlink(
-    resolve(packageRoot, "node_modules/@base-ui/react"),
-    resolve(modules, "@base-ui/react"),
-    "dir",
-  );
   await symlink(packageRoot, resolve(modules, "@semicoder/fia"), "dir");
   await symlink(
     resolve(repositoryRoot, "node_modules/typescript"),
     resolve(modules, "typescript"),
     "dir",
   );
-  for (const dependency of [
-    "bun-plugin-tailwind",
-    "class-variance-authority",
-    "clsx",
-    "lucide-react",
-    "react",
-    "react-dom",
-    "tailwind-merge",
-    "tailwindcss",
-  ] as const) {
+  for (const dependency of ["bun-plugin-tailwind", "react", "react-dom", "tailwindcss"] as const) {
     await symlink(
       resolve(packageRoot, "node_modules", dependency),
       resolve(modules, dependency),
@@ -94,12 +79,13 @@ describe("generated resident backend React template", () => {
   test("preserves route literals and exposes the shared runtime context", async () => {
     const project = await generatedProject();
     await Bun.write(
-      resolve(project, "src/backend-contract.ts"),
+      resolve(project, "backend/backend-contract.ts"),
       `
         import {
           defineBackend,
           type BackendServer,
           type BrowserWindow,
+          type BrowserWindowStyle,
           type Desktop,
           type MenuItem,
         } from "@semicoder/fia/backend";
@@ -117,12 +103,14 @@ describe("generated resident backend React template", () => {
         defaultServer.publish("events", "ready");
         declare const desktopContract: Desktop;
         declare const windowContract: BrowserWindow;
+        const windowStyleContract: BrowserWindowStyle = "overlay";
         const menuContract: MenuItem[] = [
           { item: { id: "open", label: "Open", accelerator: "CmdOrCtrl+O" } },
           "separator",
         ];
         void desktopContract;
         void windowContract;
+        void windowStyleContract;
         void menuContract;
 
         export const backend = defineBackend<SocketData>()({
@@ -153,10 +141,12 @@ describe("generated resident backend React template", () => {
             const main = await desktop.windows.create({
               id: "main",
               url: url("/"),
-              frameless: true,
+              style: "frameless",
             });
             await main.setTitle("Main");
-            // @ts-expect-error windowStyle was replaced by frameless.
+            // @ts-expect-error frameless was replaced by style.
+            await desktop.windows.create({ id: "old", url: url("/"), frameless: true });
+            // @ts-expect-error windowStyle is an internal protocol field.
             await desktop.windows.create({ id: "legacy", url: url("/"), windowStyle: "borderless" });
             // @ts-expect-error The legacy WebView manager is intentionally removed.
             desktop.webviews;
@@ -202,7 +192,7 @@ describe("generated resident backend React template", () => {
   test("exports a marked backend definition", async () => {
     const project = await generatedProject();
     const module = (await import(
-      `${pathToFileURL(resolve(project, "src/backend.ts")).href}?test=${crypto.randomUUID()}`
+      `${pathToFileURL(resolve(project, "backend/index.ts")).href}?test=${crypto.randomUUID()}`
     )) as { default: unknown };
     expect(isDefinedBackend(module.default)).toBe(true);
   });

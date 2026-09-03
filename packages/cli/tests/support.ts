@@ -17,7 +17,7 @@ export function commandResult(stdout = "", overrides: Partial<CommandResult> = {
 export class FakeDoctorProbe implements DoctorProbe {
   public platform = "darwin";
   public architecture = "arm64";
-  public bunVersion: string | undefined = "1.3.14";
+  public bunVersion: string | undefined = "1.4.0";
   public cwd = "/tmp/fia-project";
   public readonly commands = new Map<string, CommandResult>();
   public readonly accessible = new Map<string, boolean>([

@@ -1,6 +1,6 @@
 {
   "name": "@semicoder/fia",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "description": "Build resident Bun services hosted by a native macOS status bar application",
   "bin": {
     "fia": "bin/fia"
@@ -35,19 +35,14 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "@base-ui/react": "^1.6.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "bun-plugin-tailwind": "^0.1.2",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.468.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.18"
   },
   "engines": {
-    "bun": ">=1.3.14"
+    "bun": ">=1.4.0"
   }
 }

@@ -14,5 +14,5 @@
     "target": "ES2023",
     "types": ["bun"]
   },
-  "include": ["fia.config.ts", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["fia.config.ts", "backend/**/*.ts", "frontend/**/*.ts", "frontend/**/*.tsx"]
 }

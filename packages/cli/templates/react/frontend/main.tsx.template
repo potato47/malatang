@@ -1,17 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
-import { ThemeProvider, ToastProvider } from "./components/ui";
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element");
 
 createRoot(root).render(
   <StrictMode>
-    <ThemeProvider>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
-    </ThemeProvider>
+    <App />
   </StrictMode>,
 );

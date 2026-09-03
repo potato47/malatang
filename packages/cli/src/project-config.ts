@@ -14,7 +14,8 @@ export type ProjectConfigErrorCode =
   | "CONFIG_INVALID"
   | "CONFIG_UNSUPPORTED_VERSION"
   | "CONFIG_ICON_INVALID"
-  | "CONFIG_BACKEND_INVALID";
+  | "CONFIG_BACKEND_INVALID"
+  | "CONFIG_NATIVE_ARTIFACT_INVALID";
 
 export class ProjectConfigError extends Error {
   readonly code: ProjectConfigErrorCode;
@@ -46,6 +47,14 @@ export interface ResolvedFIAConfig {
     readonly entry: string;
     readonly watch: readonly string[];
   };
+  readonly host?: {
+    readonly executable: string;
+    readonly name: string;
+  };
+  readonly helpers: readonly {
+    readonly executable: string;
+    readonly name: string;
+  }[];
   readonly statusBar: {
     readonly symbol: string;
     readonly tooltip: string;
@@ -162,6 +171,37 @@ async function requireProjectPath(
   return path;
 }
 
+function nativeExecutableName(value: unknown, path: string): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 128) {
+    invalid(path, "expected a non-empty executable name of at most 128 characters");
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value) || value === "." || value === "..") {
+    invalid(path, "must be a safe bundle executable name");
+  }
+  return value;
+}
+
+async function nativeExecutable(
+  projectRoot: string,
+  value: unknown,
+  field: string,
+): Promise<string> {
+  const path = await requireProjectPath(projectRoot, value, field, {
+    kind: "file",
+    code: "CONFIG_NATIVE_ARTIFACT_INVALID",
+  });
+  try {
+    await access(path, constants.R_OK | constants.X_OK);
+  } catch (error) {
+    throw new ProjectConfigError(
+      "CONFIG_NATIVE_ARTIFACT_INVALID",
+      `${field}: executable is not readable and executable`,
+      { path: field, cause: error },
+    );
+  }
+  return path;
+}
+
 export async function resolveProjectConfig(
   value: unknown,
   projectDirectory: string,
@@ -169,7 +209,11 @@ export async function resolveProjectConfig(
 ): Promise<ResolvedFIAConfig> {
   const projectRoot = resolve(projectDirectory);
   const root = objectAt(value, "config");
-  exactKeys(root, ["configVersion", "app", "backend", "statusBar", "signing", "release"], "config");
+  exactKeys(
+    root,
+    ["configVersion", "app", "backend", "host", "helpers", "statusBar", "signing", "release"],
+    "config",
+  );
   if (root.configVersion !== FIA_CONFIG_VERSION) {
     if (typeof root.configVersion === "number" && Number.isInteger(root.configVersion)) {
       throw new ProjectConfigError(
@@ -241,6 +285,37 @@ export async function resolveProjectConfig(
   if (symbol.length > 128) invalid("statusBar.symbol", "must be at most 128 characters");
   if (tooltip.length > 512) invalid("statusBar.tooltip", "must be at most 512 characters");
 
+  let host: ResolvedFIAConfig["host"];
+  if (root.host !== undefined) {
+    const value = objectAt(root.host, "host");
+    exactKeys(value, ["executable", "name"], "host");
+    host = {
+      executable: await nativeExecutable(projectRoot, value.executable, "host.executable"),
+      name: nativeExecutableName(value.name, "host.name"),
+    };
+  }
+
+  const helpers: Array<ResolvedFIAConfig["helpers"][number]> = [];
+  if (root.helpers !== undefined) {
+    if (!Array.isArray(root.helpers) || root.helpers.length === 0 || root.helpers.length > 32) {
+      invalid("helpers", "expected an array containing 1 to 32 native helpers");
+    }
+    const names = new Set<string>();
+    for (const [index, item] of root.helpers.entries()) {
+      const path = `helpers.${index}`;
+      const value = objectAt(item, path);
+      exactKeys(value, ["executable", "name"], path);
+      const name = nativeExecutableName(value.name, `${path}.name`);
+      if (name === "FIABackend") invalid(`${path}.name`, "FIABackend is reserved by FIA");
+      if (names.has(name)) invalid(`${path}.name`, `duplicate helper name: ${name}`);
+      names.add(name);
+      helpers.push({
+        executable: await nativeExecutable(projectRoot, value.executable, `${path}.executable`),
+        name,
+      });
+    }
+  }
+
   let signing: ResolvedFIAConfig["signing"];
   if (root.signing !== undefined) {
     const value = objectAt(root.signing, "signing");
@@ -297,6 +372,8 @@ export async function resolveProjectConfig(
     configPath,
     app: { name, identifier, version, ...(icon === undefined ? {} : { icon }) },
     backend: { entry, watch },
+    ...(host === undefined ? {} : { host }),
+    helpers,
     statusBar: { symbol, tooltip },
     ...(signing === undefined ? {} : { signing }),
     ...(release === undefined ? {} : { release }),

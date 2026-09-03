@@ -8,7 +8,7 @@ Backend 再通过严格的 JSONL stdio 协议调用原生能力。
 
 - macOS 14+
 - Apple Silicon arm64
-- Bun 1.3.14+（仅开发、构建时需要）
+- Bun 1.4.0+（仅开发、构建时需要）
 
 生产 `.app` 内的 Backend 是 standalone Mach-O，不依赖用户安装 Bun。
 
@@ -21,20 +21,23 @@ bun install
 bun run dev
 ```
 
-配置使用严格的 `configVersion: 5`：
+配置使用严格的 `configVersion: 6`：
 
 ```ts
 import { defineConfig } from "@semicoder/fia/config";
 
 export default defineConfig({
-  configVersion: 5,
+  configVersion: 6,
   app: {
     name: "Hello",
     identifier: "com.example.hello",
     version: "0.1.0",
     icon: "assets/icon.icns",
   },
-  backend: { entry: "src/backend.ts", watch: ["src"] },
+  backend: { entry: "backend/index.ts", watch: ["backend", "frontend"] },
+  // 可选：使用项目内已构建的 arm64 Mach-O 自定义 Host 和 CLI helper。
+  // host: { executable: "native/.build/release/HelloHost", name: "HelloHost" },
+  // helpers: [{ executable: "native/.build/release/hello", name: "hello" }],
   statusBar: { symbol: "bolt.fill", tooltip: "Hello" },
   // 可选：为需要稳定隐私授权的开发构建指定本机签名 identity。
   // signing: { identity: "Apple Development: Example (TEAMID)" },
@@ -50,7 +53,7 @@ Backend 直接声明 Bun HTTP/WS handlers，并在启动钩子中使用 Desktop 
 
 ```ts
 import { defineBackend } from "@semicoder/fia/backend";
-import page from "./ui/index.html";
+import page from "../frontend/index.html";
 
 export default defineBackend()({
   http: {
@@ -85,11 +88,14 @@ Desktop API 还提供全局快捷键、屏幕枚举与截图、系统通知、�
 文本/PNG 剪贴板和按 bundle identifier 隔离的 Keychain。所有 Promise 方法都接受可选的
 `{ signal }` 尾参数；取消文件面板会同时关闭原生面板。
 
-BrowserWindow 支持原生窗口和完全无边框窗口。无边框模式可配置透明背景、阴影、用户缩放、顶部
-原生拖动带及主屏左上坐标，适合搜索框、HUD 和截图遮罩等浮层。窗口打开后支持最小化、
-最大化/恢复、全屏切换，并通过 `change`/`close` 事件报告变化。
+BrowserWindow 通过 `style: "native" | "overlay" | "frameless"` 支持标准原生标题栏、保留系统
+红黄绿按钮且由 WebView 覆盖标题栏的沉浸模式，以及完全无边框窗口。沉浸和无边框模式可以配置
+顶部原生拖动带；无边框模式还支持透明背景。窗口打开后支持最小化、最大化/恢复、全屏切换，
+并通过 `change`/`close` 事件报告变化。
 
 网页不导入 FIA 包，只使用 `fetch`、WebSocket 和普通 URL。原生 API 仅存在于 Backend。
+默认项目仅提供基础 React + Tailwind CSS 前端骨架，不包含 FIA 组件库或设计系统；应用可以自行选择
+前端框架和组件方案，FIA 只维护桌面宿主、Backend 生命周期与原生能力。
 
 ## 开发与构建
 
@@ -127,6 +133,10 @@ Contents/MacOS/FIAHost
 Contents/Helpers/FIABackend
 Contents/Resources/fia-config.json
 ```
+
+配置 custom Host/helper 时，`FIAHost` 替换为 `host.name`，额外 helper 位于
+`Contents/Helpers/<helper.name>`。这些输入必须是项目目录内可读、可执行且仅包含 arm64 的 Mach-O；
+`FIABackend` 名称由 FIA 保留。
 
 详细边界见[框架文档](./docs/framework/README.md)。框架的端到端能力在独立的实际项目中验证，
 本仓库不维护默认示例应用。

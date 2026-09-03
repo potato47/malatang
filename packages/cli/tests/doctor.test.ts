@@ -33,7 +33,7 @@ describe("fia doctor", () => {
   test("fails unsupported macOS, architecture, and Bun versions", async () => {
     const probe = new FakeDoctorProbe();
     probe.architecture = "x64";
-    probe.bunVersion = "1.3.13";
+    probe.bunVersion = "1.3.14";
     probe.setCommand(["/usr/bin/sw_vers", "-productVersion"], commandResult("13.7.1\n"));
 
     const report = await runDoctor(probe);
@@ -48,14 +48,14 @@ describe("fia doctor", () => {
 
   test("accepts Bun versions newer than the minimum", async () => {
     const probe = new FakeDoctorProbe();
-    probe.bunVersion = "1.4.0";
+    probe.bunVersion = "1.4.1";
 
     const report = await runDoctor(probe);
 
     expect(report.ok).toBe(true);
     expect(report.checks.find((check) => check.id === "bun")).toMatchObject({
       status: "pass",
-      message: "Bun 1.4.0",
+      message: "Bun 1.4.1",
     });
   });
 
