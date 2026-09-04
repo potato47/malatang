@@ -1,0 +1,13 @@
+import FIA
+
+@main
+enum App {
+    @MainActor
+    static func main() {
+        FIAApplication.run { runtime in
+            runtime.windows.registerSwiftUI("main", title: __FIA_APP_NAME_JSON__) {
+                ContentView()
+            }
+        }
+    }
+}

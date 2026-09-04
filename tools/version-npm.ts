@@ -1,85 +1,39 @@
-import { constants } from "node:fs";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import cliPackage from "../packages/cli/package.json";
 import { repositoryRoot, requireBunVersion, run } from "./shared.ts";
 
 const PACKAGE_PATH = resolve(repositoryRoot, "packages/cli/package.json");
+const ROOT_PACKAGE_PATH = resolve(repositoryRoot, "package.json");
 const METADATA_PATH = resolve(repositoryRoot, "packages/cli/src/metadata.ts");
+const SWIFT_VERSION_PATH = resolve(repositoryRoot, "Sources/FIACore/FIAVersion.swift");
 const LOCK_PATH = resolve(repositoryRoot, "bun.lock");
-const HOST_PATH = resolve(repositoryRoot, "packages/cli/assets/host/darwin-arm64/FIAHost");
-const HOST_MANIFEST_PATH = resolve(
-  repositoryRoot,
-  "packages/cli/assets/host/darwin-arm64/manifest.json",
-);
 const VERSIONED_PATHS = [
   PACKAGE_PATH,
+  ROOT_PACKAGE_PATH,
   METADATA_PATH,
+  SWIFT_VERSION_PATH,
   LOCK_PATH,
-  HOST_PATH,
-  HOST_MANIFEST_PATH,
 ] as const;
-
-const help = `Update the @semicoder/fia release version
-
-Usage:
-  bun run version:npm -- <version>
-
-Example:
-  bun run version:npm -- 0.5.1
-
-The command updates package and CLI metadata, refreshes bun.lock, rebuilds the embedded arm64 Host,
-and rolls back all versioned files if any step fails.
-`;
 
 export interface VersionArguments {
   readonly help: boolean;
   readonly version?: string;
 }
-
 interface ParsedVersion {
   readonly core: readonly [number, number, number];
   readonly prerelease: readonly string[];
 }
-
-interface HostManifest {
-  readonly schemaVersion: number;
-  readonly cliVersion: string;
-  readonly hostVersion: string;
-  readonly sha256: string;
-  readonly architecture: string;
-  readonly minimumSystemVersion: string;
-  readonly configurationSchema: number;
-  readonly stdioProtocol: number;
-  readonly hostCapabilities: readonly string[];
-}
-
-const HOST_CAPABILITIES = [
-  "application",
-  "statusItem",
-  "webviews",
-  "system",
-  "notifications",
-  "dialogs",
-  "clipboard",
-  "keychain",
-  "globalShortcuts",
-  "screens",
-  "screenCapture",
-] as const;
-
 interface Snapshot {
   readonly path: string;
   readonly contents: Uint8Array;
 }
 
 export function parseVersionArguments(arguments_: readonly string[]): VersionArguments {
-  if (arguments_.length === 1 && (arguments_[0] === "-h" || arguments_[0] === "--help")) {
+  if (arguments_.length === 1 && (arguments_[0] === "-h" || arguments_[0] === "--help"))
     return { help: true };
-  }
-  if (arguments_.some((argument) => argument.startsWith("-"))) {
-    throw new Error(`unknown option: ${arguments_.find((argument) => argument.startsWith("-"))}`);
-  }
+  const option = arguments_.find((argument) => argument.startsWith("-"));
+  if (option !== undefined) throw new Error(`unknown option: ${option}`);
   if (arguments_.length !== 1) throw new Error("exactly one target version is required");
   return { help: false, version: arguments_[0]! };
 }
@@ -91,50 +45,43 @@ function parseVersion(value: string): ParsedVersion {
     );
   if (match === null) throw new Error(`invalid semantic version: ${value}`);
   const prerelease = match[4]?.split(".") ?? [];
-  if (
-    prerelease.some(
-      (identifier) =>
-        /^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith("0"),
-    )
-  ) {
+  if (prerelease.some((part) => /^\d+$/.test(part) && part.length > 1 && part.startsWith("0"))) {
     throw new Error(`invalid semantic version: ${value}`);
   }
-  return {
-    core: [Number(match[1]), Number(match[2]), Number(match[3])],
-    prerelease,
-  };
+  return { core: [Number(match[1]), Number(match[2]), Number(match[3])], prerelease };
 }
 
-function compareIdentifiers(left: string, right: string): number {
-  const leftNumeric = /^\d+$/.test(left);
-  const rightNumeric = /^\d+$/.test(right);
-  if (leftNumeric && rightNumeric) {
-    if (left.length !== right.length) return left.length - right.length;
-    return left.localeCompare(right);
-  }
-  if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+function compareIdentifier(left: string, right: string): number {
+  const leftNumber = /^\d+$/.test(left),
+    rightNumber = /^\d+$/.test(right);
+  if (leftNumber && rightNumber) return Number(left) - Number(right);
+  if (leftNumber !== rightNumber) return leftNumber ? -1 : 1;
   return left.localeCompare(right);
 }
 
 export function compareSemanticVersions(leftValue: string, rightValue: string): number {
-  const left = parseVersion(leftValue);
-  const right = parseVersion(rightValue);
-  for (let index = 0; index < left.core.length; index += 1) {
+  const left = parseVersion(leftValue),
+    right = parseVersion(rightValue);
+  for (let index = 0; index < 3; index += 1) {
     const difference = left.core[index]! - right.core[index]!;
     if (difference !== 0) return difference;
   }
   if (left.prerelease.length === 0 || right.prerelease.length === 0) {
-    if (left.prerelease.length === right.prerelease.length) return 0;
-    return left.prerelease.length === 0 ? 1 : -1;
+    return left.prerelease.length === right.prerelease.length
+      ? 0
+      : left.prerelease.length === 0
+        ? 1
+        : -1;
   }
-  const length = Math.max(left.prerelease.length, right.prerelease.length);
-  for (let index = 0; index < length; index += 1) {
-    const leftIdentifier = left.prerelease[index];
-    const rightIdentifier = right.prerelease[index];
-    if (leftIdentifier === undefined || rightIdentifier === undefined) {
-      return leftIdentifier === undefined ? -1 : 1;
-    }
-    const difference = compareIdentifiers(leftIdentifier, rightIdentifier);
+  for (
+    let index = 0;
+    index < Math.max(left.prerelease.length, right.prerelease.length);
+    index += 1
+  ) {
+    const leftPart = left.prerelease[index],
+      rightPart = right.prerelease[index];
+    if (leftPart === undefined || rightPart === undefined) return leftPart === undefined ? -1 : 1;
+    const difference = compareIdentifier(leftPart, rightPart);
     if (difference !== 0) return difference;
   }
   return 0;
@@ -143,9 +90,8 @@ export function compareSemanticVersions(leftValue: string, rightValue: string): 
 export function requireIncreasingVersion(current: string, target: string): void {
   parseVersion(current);
   parseVersion(target);
-  if (compareSemanticVersions(target, current) <= 0) {
+  if (compareSemanticVersions(target, current) <= 0)
     throw new Error(`target version ${target} must be greater than current version ${current}`);
-  }
 }
 
 export function readMetadataVersion(source: string): string {
@@ -156,146 +102,105 @@ export function readMetadataVersion(source: string): string {
 }
 
 export function replaceMetadataVersion(source: string, current: string, target: string): string {
-  if (readMetadataVersion(source) !== current) {
+  if (readMetadataVersion(source) !== current)
     throw new Error(`CLI metadata does not match package version ${current}`);
-  }
   return source.replace(
     `export const CLI_VERSION = "${current}";`,
     `export const CLI_VERSION = "${target}";`,
   );
 }
 
+export function readSwiftFrameworkVersion(source: string): string {
+  const matches = [...source.matchAll(/public static let current = "([^"]+)"/g)];
+  if (matches.length !== 1)
+    throw new Error("Swift Runtime must contain exactly one FIAVersion.current declaration");
+  return matches[0]![1]!;
+}
+
+export function replaceSwiftFrameworkVersion(
+  source: string,
+  current: string,
+  target: string,
+): string {
+  if (readSwiftFrameworkVersion(source) !== current)
+    throw new Error(`Swift Runtime version does not match package version ${current}`);
+  return source.replace(
+    `public static let current = "${current}"`,
+    `public static let current = "${target}"`,
+  );
+}
+
 export function readWorkspaceVersionFromLock(source: string): string {
   const start = source.indexOf('"packages/cli":');
   const remaining = start < 0 ? "" : source.slice(start);
-  const packagesSection = /\n\s*"packages"\s*:/.exec(remaining);
-  if (start < 0 || packagesSection?.index === undefined) {
+  const boundary = /\n\s*"packages"\s*:/.exec(remaining);
+  if (start < 0 || boundary?.index === undefined)
     throw new Error("bun.lock does not contain the CLI workspace");
-  }
-  const end = start + packagesSection.index;
-  const match = /"version":\s*"([^"]+)"/.exec(source.slice(start, end));
+  const match = /"version":\s*"([^"]+)"/.exec(source.slice(start, start + boundary.index));
   if (match === null) throw new Error("bun.lock CLI workspace does not contain a version");
   return match[1]!;
 }
 
-export function replaceLockVersion(source: string, current: string, target: string): string {
-  if (readWorkspaceVersionFromLock(source) !== current) {
-    throw new Error(`bun.lock workspace version does not match package version ${current}`);
-  }
+function replaceLockVersion(source: string, current: string, target: string): string {
+  if (readWorkspaceVersionFromLock(source) !== current)
+    throw new Error("bun.lock workspace version does not match package version");
   const start = source.indexOf('"packages/cli":');
-  const remaining = source.slice(start);
-  const packagesSection = /\n\s*"packages"\s*:/.exec(remaining);
-  const end = start + packagesSection!.index;
-  const block = source.slice(start, end);
-  const replaced = block.replace(`"version": "${current}"`, `"version": "${target}"`);
-  return source.slice(0, start) + replaced + source.slice(end);
-}
-
-async function snapshotFiles(): Promise<Snapshot[]> {
-  return await Promise.all(
-    VERSIONED_PATHS.map(async (path) => ({ path, contents: await readFile(path) })),
+  const boundary = /\n\s*"packages"\s*:/.exec(source.slice(start))!;
+  const end = start + boundary.index;
+  return (
+    source.slice(0, start) +
+    source.slice(start, end).replace(`"version": "${current}"`, `"version": "${target}"`) +
+    source.slice(end)
   );
-}
-
-async function restoreFiles(snapshots: readonly Snapshot[]): Promise<void> {
-  await Promise.all(snapshots.map((snapshot) => writeFile(snapshot.path, snapshot.contents)));
-}
-
-async function writeVersionSources(current: string, target: string): Promise<void> {
-  const packageSource = JSON.parse(await readFile(PACKAGE_PATH, "utf8")) as Record<string, unknown>;
-  if (packageSource.version !== current)
-    throw new Error("package version changed during the version update");
-  packageSource.version = target;
-  const metadataSource = await readFile(METADATA_PATH, "utf8");
-  const lockSource = await readFile(LOCK_PATH, "utf8");
-  await Promise.all([
-    writeFile(PACKAGE_PATH, `${JSON.stringify(packageSource, null, 2)}\n`, "utf8"),
-    writeFile(METADATA_PATH, replaceMetadataVersion(metadataSource, current, target), "utf8"),
-    writeFile(LOCK_PATH, replaceLockVersion(lockSource, current, target), "utf8"),
-  ]);
-}
-
-async function validateVersionedFiles(target: string): Promise<void> {
-  const packageSource = JSON.parse(await readFile(PACKAGE_PATH, "utf8")) as { version?: string };
-  const metadataVersion = readMetadataVersion(await readFile(METADATA_PATH, "utf8"));
-  const lockVersion = readWorkspaceVersionFromLock(await readFile(LOCK_PATH, "utf8"));
-  const manifest = JSON.parse(await readFile(HOST_MANIFEST_PATH, "utf8")) as HostManifest;
-  await access(HOST_PATH, constants.R_OK | constants.X_OK);
-  const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(await Bun.file(HOST_PATH).arrayBuffer());
-  if (
-    packageSource.version !== target ||
-    metadataVersion !== target ||
-    lockVersion !== target ||
-    manifest.schemaVersion !== 3 ||
-    manifest.cliVersion !== target ||
-    manifest.hostVersion !== target ||
-    manifest.architecture !== "arm64" ||
-    manifest.minimumSystemVersion !== "14.0" ||
-    manifest.configurationSchema !== 8 ||
-    manifest.stdioProtocol !== 2 ||
-    JSON.stringify(manifest.hostCapabilities) !== JSON.stringify(HOST_CAPABILITIES) ||
-    manifest.sha256 !== hasher.digest("hex")
-  ) {
-    throw new Error(`generated release metadata is not consistently versioned as ${target}`);
-  }
 }
 
 export async function updateNPMVersion(target: string): Promise<void> {
   requireBunVersion();
   const current = cliPackage.version;
   requireIncreasingVersion(current, target);
-  const metadataVersion = readMetadataVersion(await readFile(METADATA_PATH, "utf8"));
-  if (metadataVersion !== current) {
-    throw new Error(`package version ${current} does not match CLI metadata ${metadataVersion}`);
-  }
-  const snapshots = await snapshotFiles();
-
-  try {
-    process.stdout.write(`\n[version 1/4] Update ${current} to ${target}\n`);
-    await writeVersionSources(current, target);
-    process.stdout.write("\n[version 2/4] Refresh bun.lock\n");
-    await run([process.execPath, "install", "--lockfile-only"]);
-    process.stdout.write("\n[version 3/4] Rebuild the embedded Host\n");
-    await run([process.execPath, "run", "host:package"]);
-    process.stdout.write("\n[version 4/4] Validate synchronized release metadata\n");
-    await validateVersionedFiles(target);
-  } catch (error) {
-    try {
-      await restoreFiles(snapshots);
-    } catch (rollbackError) {
-      throw new AggregateError(
-        [error, rollbackError],
-        "version update failed and rollback was incomplete",
-      );
-    }
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`version update failed; versioned files were rolled back: ${detail}`, {
-      cause: error,
-    });
-  }
-
-  process.stdout.write(`\nPrepared @semicoder/fia@${target}. Next run:\n`);
-  process.stdout.write("  bun run release:npm --dry-run\n");
-  process.stdout.write(
-    "  git add packages/cli/package.json packages/cli/src/metadata.ts bun.lock packages/cli/assets/host\n",
+  const snapshots: Snapshot[] = await Promise.all(
+    VERSIONED_PATHS.map(async (path) => ({ path, contents: await readFile(path) })),
   );
-  process.stdout.write(`  git commit -m "release: v${target}"\n`);
-  process.stdout.write("  bun run release:npm\n");
-}
-
-async function main(): Promise<void> {
-  const arguments_ = parseVersionArguments(process.argv.slice(2));
-  if (arguments_.help) {
-    process.stdout.write(help);
-    return;
+  try {
+    const packageValue = JSON.parse(await readFile(PACKAGE_PATH, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const rootPackageValue = JSON.parse(await readFile(ROOT_PACKAGE_PATH, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    if (rootPackageValue.version !== current)
+      throw new Error(`root package version does not match package version ${current}`);
+    packageValue.version = target;
+    rootPackageValue.version = target;
+    const metadata = replaceMetadataVersion(await readFile(METADATA_PATH, "utf8"), current, target);
+    const swiftVersion = replaceSwiftFrameworkVersion(
+      await readFile(SWIFT_VERSION_PATH, "utf8"),
+      current,
+      target,
+    );
+    const lock = replaceLockVersion(await readFile(LOCK_PATH, "utf8"), current, target);
+    await Promise.all([
+      writeFile(PACKAGE_PATH, `${JSON.stringify(packageValue, null, 2)}\n`),
+      writeFile(ROOT_PACKAGE_PATH, `${JSON.stringify(rootPackageValue, null, 2)}\n`),
+      writeFile(METADATA_PATH, metadata),
+      writeFile(SWIFT_VERSION_PATH, swiftVersion),
+      writeFile(LOCK_PATH, lock),
+    ]);
+    await run([process.execPath, "install", "--lockfile-only"]);
+    await run([process.execPath, "run", "cli:build"]);
+  } catch (error) {
+    await Promise.all(snapshots.map((snapshot) => writeFile(snapshot.path, snapshot.contents)));
+    throw new Error("version update failed; versioned files were rolled back", { cause: error });
   }
-  await updateNPMVersion(arguments_.version!);
 }
 
 if (import.meta.main) {
   try {
-    await main();
+    const arguments_ = parseVersionArguments(process.argv.slice(2));
+    if (arguments_.help) process.stdout.write("Usage: bun run version:npm -- <version>\n");
+    else await updateNPMVersion(arguments_.version!);
   } catch (error) {
     process.stderr.write(
       `version:npm: ${error instanceof Error ? error.message : String(error)}\n`,

@@ -1,199 +1,101 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { createProject } from "../src/create.ts";
-import { isDefinedBackend } from "../src/backend.ts";
+import { generateNativeAPI } from "../src/generate.ts";
 
-const packageRoot = resolve(import.meta.dir, "..");
-const repositoryRoot = resolve(packageRoot, "../..");
-const temporaryDirectories: string[] = [];
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
-  );
-});
+const roots: string[] = [];
+afterEach(async () =>
+  Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))),
+);
 
-async function generatedProject(): Promise<string> {
-  const cwd = await mkdtemp(resolve(tmpdir(), "fia-template-backend-"));
-  temporaryDirectories.push(cwd);
-  const project = await createProject({
-    name: "template-app",
-    cwd,
-    install: false,
-    initializeGit: false,
-    io: { stdout: () => {} },
-    dependencies: { cliPackageSpec: `file:${packageRoot}` },
-  });
-  const modules = resolve(project, "node_modules");
-  await mkdir(resolve(modules, "@semicoder"), { recursive: true });
-  await mkdir(resolve(modules, "@types"), { recursive: true });
-  await symlink(packageRoot, resolve(modules, "@semicoder/fia"), "dir");
-  await symlink(
-    resolve(repositoryRoot, "node_modules/typescript"),
-    resolve(modules, "typescript"),
-    "dir",
-  );
-  for (const dependency of ["bun-plugin-tailwind", "react", "react-dom", "tailwindcss"] as const) {
-    await symlink(
-      resolve(packageRoot, "node_modules", dependency),
-      resolve(modules, dependency),
-      "dir",
+describe("generated source contract", () => {
+  test("pins the matching FIA Swift package and generates deterministically", async () => {
+    const cwd = await mkdtemp(resolve(tmpdir(), "fia-template-v2-"));
+    roots.push(cwd);
+    const root = await createProject({
+      name: "contract-app",
+      cwd,
+      install: false,
+      initializeGit: false,
+      template: "hybrid",
+      backend: false,
+      io: { stdout() {} },
+      dependencies: { cliPackageSpec: "2.0.0", swiftPackageURL: "https://example.dev/fia.git" },
+    });
+    expect(await readFile(resolve(root, "native/Package.swift"), "utf8")).toContain(
+      '.package(url: "https://example.dev/fia.git", exact: "2.0.0")',
     );
-  }
-  for (const dependency of ["bun", "react", "react-dom"] as const) {
-    await symlink(
-      dependency === "bun"
-        ? resolve(repositoryRoot, "node_modules/@types/bun")
-        : resolve(packageRoot, "node_modules/@types", dependency),
-      resolve(modules, "@types", dependency),
-      "dir",
-    );
-  }
-  return project;
-}
-
-describe("generated resident backend React template", () => {
-  test("typechecks against the published FIA API", async () => {
-    const project = await generatedProject();
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
-        "--noEmit",
-        "-p",
-        resolve(project, "tsconfig.json"),
-      ],
-      { cwd: project, stdout: "pipe", stderr: "pipe" },
-    );
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    if (exitCode !== 0)
-      throw new Error(`Generated template did not typecheck:\n${stdout}${stderr}`);
+    const packageJSON = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(packageJSON.devDependencies["@semicoder/fia"]).toBe("2.0.0");
+    expect((await generateNativeAPI({ cwd: root, check: true })).changed).toEqual([]);
+    expect((await generateNativeAPI({ cwd: root })).changed).toEqual([]);
   });
 
-  test("preserves route literals and exposes the shared runtime context", async () => {
-    const project = await generatedProject();
-    await Bun.write(
-      resolve(project, "backend/backend-contract.ts"),
-      `
-        import {
-          defineBackend,
-          type BackendServer,
-          type BrowserWindow,
-          type BrowserWindowStyle,
-          type Desktop,
-          type MenuItem,
-        } from "@semicoder/fia/backend";
-        // @ts-expect-error Legacy Backend types are intentionally removed.
-        import type { FIAHost } from "@semicoder/fia/backend";
-        // @ts-expect-error Legacy window types are intentionally removed.
-        import type { FIAWebViewState } from "@semicoder/fia/backend";
-        // @ts-expect-error Legacy server types are intentionally removed.
-        import type { FIAServer } from "@semicoder/fia/backend";
-        // @ts-expect-error Legacy error classes are intentionally removed.
-        import { FIAHostError } from "@semicoder/fia/backend";
-
-        interface SocketData { connectedAt: number }
-        declare const defaultServer: BackendServer;
-        defaultServer.publish("events", "ready");
-        declare const desktopContract: Desktop;
-        declare const windowContract: BrowserWindow;
-        const windowStyleContract: BrowserWindowStyle = "overlay";
-        const menuContract: MenuItem[] = [
-          { item: { id: "open", label: "Open", accelerator: "CmdOrCtrl+O" } },
-          "separator",
-        ];
-        void desktopContract;
-        void windowContract;
-        void windowStyleContract;
-        void menuContract;
-
-        export const backend = defineBackend<SocketData>()({
-          http: {
-            routes: {
-              "/api/cards/:id": (request, server, { desktop, app }) => {
-                const id: string = request.params.id;
-                const directory: string = app.dataDirectory;
-                const identifier: string = app.identifier;
-                void desktop.clipboard.writeText(id);
-                server.publish("events", directory + identifier);
-                // @ts-expect-error The route does not declare a missing parameter.
-                request.params.missing;
-                return Response.json({ id });
-              },
+  test("generates a typed contract and detects drift on either output", async () => {
+    const cwd = await mkdtemp(resolve(tmpdir(), "fia-template-contract-v2-"));
+    roots.push(cwd);
+    const root = await createProject({
+      name: "typed-contract",
+      cwd,
+      install: false,
+      initializeGit: false,
+      template: "web",
+      backend: false,
+      io: { stdout() {} },
+    });
+    await writeFile(
+      resolve(root, "native-api/api.fia.json"),
+      `${JSON.stringify(
+        {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          schemaVersion: 1,
+          namespace: "AppNativeAPI",
+          $defs: {
+            Greeting: {
+              type: "object",
+              properties: { "display-name": { type: "string" }, count: { type: "integer" } },
+              required: ["display-name"],
             },
           },
-          async start(context) {
-            const { desktop, app, server, url } = context;
-            void desktop.getState();
-            desktop.dock.addEventListener("reopen", () => {});
-            desktop.globalShortcuts.addEventListener("pressed", ({ detail }) =>
-              server.publish("events", detail.id)
-            );
-            await desktop.globalShortcuts.set([
-              { id: "search", key: "space", modifiers: ["option"] },
-            ]);
-            const main = await desktop.windows.create({
-              id: "main",
-              url: url("/"),
-              style: "frameless",
-            });
-            await main.setTitle("Main");
-            // @ts-expect-error frameless was replaced by style.
-            await desktop.windows.create({ id: "old", url: url("/"), frameless: true });
-            // @ts-expect-error windowStyle is an internal protocol field.
-            await desktop.windows.create({ id: "legacy", url: url("/"), windowStyle: "borderless" });
-            // @ts-expect-error The legacy WebView manager is intentionally removed.
-            desktop.webviews;
-            const screens = await desktop.screens.list();
-            const screen = screens[0];
-            if (screen !== undefined) {
-              const image = await desktop.screenCapture.capture({ screenId: screen.id });
-              await desktop.clipboard.writeImage(image);
-              await image.dispose();
-            }
-            await desktop.system.openPath(app.dataDirectory);
-            server.publish("events", app.name);
-            url("/");
-            // @ts-expect-error The legacy context property is intentionally removed.
-            context.host;
-          },
-        });
-
-        // @ts-expect-error defineBackend is now a zero-argument builder.
-        defineBackend({ http: {} });
-      `,
+          methods: [
+            {
+              name: "greeting.make",
+              input: { $ref: "#/$defs/Greeting" },
+              output: { type: "string" },
+              errors: ["unavailable"],
+            },
+          ],
+          errors: [{ code: "unavailable", recoverable: true }],
+          events: [{ name: "greeting.changed", payload: { $ref: "#/$defs/Greeting" } }],
+        },
+        null,
+        2,
+      )}\n`,
     );
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
-        "--noEmit",
-        "-p",
-        resolve(project, "tsconfig.json"),
-      ],
-      { cwd: project, stdout: "pipe", stderr: "pipe" },
-    );
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
+    await generateNativeAPI({ cwd: root });
+    const swift = resolve(root, "native/Sources/FIAApp/Generated/NativeAPI.generated.swift");
+    const typescript = resolve(root, "generated/native-api.ts");
+    const generatedSwift = await readFile(swift, "utf8");
+    expect(generatedSwift).toContain('case displayName = "display-name"');
+    expect(generatedSwift).toContain("AppNativeAPIProtocol: NativeMethodProvider");
+    const generatedTypeScript = await readFile(typescript, "utf8");
+    expect(generatedTypeScript).toContain("options?: NativeCallOptions");
+    expect(generatedTypeScript).toContain("createAppNativeAPI(transport: NativeTransport)");
+    expect(generatedTypeScript).toContain("onAppNativeAPIEvent");
+    expect(generatedTypeScript).toContain('readonly "greeting.changed": Greeting');
+    expect((await generateNativeAPI({ cwd: root, check: true })).changed).toEqual([]);
+    await writeFile(swift, "// stale Swift\n");
+    expect((await generateNativeAPI({ cwd: root, check: true })).changed).toEqual([
+      "native/Sources/FIAApp/Generated/NativeAPI.generated.swift",
     ]);
-    if (exitCode !== 0) {
-      throw new Error(`Backend contract did not typecheck:\n${stdout}${stderr}`);
-    }
-  });
-
-  test("exports a marked backend definition", async () => {
-    const project = await generatedProject();
-    const module = (await import(
-      `${pathToFileURL(resolve(project, "backend/index.ts")).href}?test=${crypto.randomUUID()}`
-    )) as { default: unknown };
-    expect(isDefinedBackend(module.default)).toBe(true);
+    await generateNativeAPI({ cwd: root });
+    await writeFile(typescript, "// stale TypeScript\n");
+    expect((await generateNativeAPI({ cwd: root, check: true })).changed).toEqual([
+      "generated/native-api.ts",
+    ]);
   });
 });

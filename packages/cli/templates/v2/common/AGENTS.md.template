@@ -1,0 +1,6 @@
+# FIA 2.0 project
+
+- Run `bun run generate` after editing `native-api/api.fia.json`.
+- Do not edit files under `Generated/` or `generated/` by hand.
+- Use `bun run check` before committing.
+- Swift owns application lifecycle and native UI; Web and Bun are optional clients of the Native Runtime.

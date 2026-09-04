@@ -15,7 +15,7 @@ describe("npm release workflow", () => {
     );
   });
 
-  test("validates package, CLI, and embedded Host release metadata", async () => {
+  test("validates npm and source Swift Package release metadata", async () => {
     await expect(validateReleaseMetadata()).resolves.toBeUndefined();
   });
 });

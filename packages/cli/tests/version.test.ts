@@ -3,8 +3,10 @@ import {
   compareSemanticVersions,
   parseVersionArguments,
   readMetadataVersion,
+  readSwiftFrameworkVersion,
   readWorkspaceVersionFromLock,
   replaceMetadataVersion,
+  replaceSwiftFrameworkVersion,
   requireIncreasingVersion,
 } from "../../../tools/version-npm.ts";
 
@@ -33,12 +35,16 @@ describe("npm version workflow", () => {
     }
   });
 
-  test("rewrites only CLI metadata and reads the CLI lock workspace", () => {
+  test("rewrites CLI and Swift metadata and reads the CLI lock workspace", () => {
     const metadata = 'export const CLI_VERSION = "0.2.0";\nexport const OTHER = "0.2.0";\n';
     const updated = replaceMetadataVersion(metadata, "0.2.0", "0.3.0");
     expect(readMetadataVersion(updated)).toBe("0.3.0");
     expect(updated).toContain('export const OTHER = "0.2.0";');
     expect(() => replaceMetadataVersion(metadata, "0.1.0", "0.3.0")).toThrow("does not match");
+    const swift = 'public static let current = "0.2.0"\n';
+    const updatedSwift = replaceSwiftFrameworkVersion(swift, "0.2.0", "0.3.0");
+    expect(readSwiftFrameworkVersion(updatedSwift)).toBe("0.3.0");
+    expect(() => replaceSwiftFrameworkVersion(swift, "0.1.0", "0.3.0")).toThrow("does not match");
     expect(
       readWorkspaceVersionFromLock(`{
       "workspaces": {

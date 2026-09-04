@@ -192,13 +192,13 @@ async function swiftCheck(context: CheckContext): Promise<DoctorCheckResult> {
   return result(
     "swift",
     "Swift",
-    false,
-    supported ? "pass" : "warn",
+    true,
+    supported ? "pass" : "fail",
     supported
-      ? (line ?? "Swift 6 is available for FIA Host development")
+      ? (line ?? "Swift 6 is available")
       : available
-        ? `Swift ${major} is unsupported for FIA Host development; Swift 6 or newer is optional`
-        : "Swift is not available (optional; only needed for FIA Host development)",
+        ? `Swift ${major} is unsupported; Swift 6 or newer is required`
+        : "Swift 6 is required to build FIA applications",
     context.debug ? commandDetails(command, commandResult) : undefined,
   );
 }
@@ -210,6 +210,7 @@ async function xcodeCheck(context: CheckContext): Promise<DoctorCheckResult> {
     "Xcode",
     ["/usr/bin/xcodebuild", "-version"],
     (commandResult) => firstLine(commandResult.stdout) ?? "Xcode is available",
+    true,
   );
 }
 

@@ -85,7 +85,7 @@ describe("fia doctor", () => {
     ).toEqual(["codesign", "working-directory"]);
   });
 
-  test("treats missing native and release tools as optional warnings", async () => {
+  test("requires Swift and Xcode but keeps release credentials optional", async () => {
     const probe = new FakeDoctorProbe();
     for (const command of [
       ["/usr/bin/xcrun", "swift", "--version"],
@@ -100,25 +100,26 @@ describe("fia doctor", () => {
     const report = await runDoctor(probe);
     const optional = report.checks.filter((check) => !check.required);
 
-    expect(report.ok).toBe(true);
-    expect(optional.map((check) => check.status)).toEqual(["warn", "warn", "warn", "warn", "warn"]);
+    expect(report.ok).toBe(false);
+    expect(
+      report.checks.filter((check) => check.status === "fail").map((check) => check.id),
+    ).toEqual(["swift", "xcode"]);
+    expect(optional.map((check) => check.status)).toEqual(["warn", "warn", "warn"]);
   });
 
-  test("treats Swift as an optional Host development tool", async () => {
+  test("requires Swift 6 for application builds", async () => {
     const old = new FakeDoctorProbe();
     old.setCommand(
       ["/usr/bin/xcrun", "swift", "--version"],
       commandResult("Apple Swift version 5.10\n"),
     );
     const report = await runDoctor(old);
-    expect(report.ok).toBe(true);
+    expect(report.ok).toBe(false);
     expect(report.checks.find((check) => check.id === "swift")).toMatchObject({
-      required: false,
-      status: "warn",
+      required: true,
+      status: "fail",
     });
-    expect(report.checks.find((check) => check.id === "swift")?.message).toContain(
-      "Host development",
-    );
+    expect(report.checks.find((check) => check.id === "swift")?.message).toContain("required");
   });
 
   test("adds command details only in debug mode", async () => {

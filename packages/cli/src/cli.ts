@@ -1,12 +1,17 @@
-import { renderDoctorText, runDoctor } from "./doctor.ts";
-import { createProject, type CreateProjectDependencies } from "./create.ts";
-import { CLI_VERSION } from "./metadata.ts";
-import { SystemDoctorProbe, type DoctorProbe } from "./system-probe.ts";
 import {
   executeApplicationCommand,
   type ApplicationCommand,
   type ApplicationCommandDependencies,
+  type BrowserCompanion,
 } from "./application.ts";
+import { checkProject, renderCheck } from "./check.ts";
+import { createProject, type CreateProjectDependencies } from "./create.ts";
+import { describeProject } from "./describe.ts";
+import { renderDoctorText, runDoctor } from "./doctor.ts";
+import { generateNativeAPI } from "./generate.ts";
+import { CLI_VERSION } from "./metadata.ts";
+import type { ProjectTemplate, UpdateChannel } from "./project-config.ts";
+import { SystemDoctorProbe, type DoctorProbe } from "./system-probe.ts";
 
 export interface CLIIO {
   stdout(value: string): void;
@@ -27,117 +32,50 @@ const defaultIO: CLIIO = {
   stderr: (value) => process.stderr.write(value),
 };
 
-const rootHelp = `FIA command-line interface
+const rootHelp = `FIA 2.0 — Swift-first macOS application framework
 
 Usage:
-  fia [--help]
-  fia [--version]
-  fia [--debug] create <name> [--no-install] [--git]
-  fia [--debug] dev
-  fia [--debug] build
-  fia [--debug] package
-  fia [--debug] release
-  fia [--debug] run
-  fia [--debug] doctor [--json]
-
-Commands:
-  create       Create a React FIA project with a resident Bun backend
-  dev          Launch the application with Bun full-stack HMR
-  build        Build and sign a production .app
-  package      Build a Developer ID-signed pre-notarization ZIP
-  release      Notarize and staple a distribution ZIP
-  run          Build and launch the current source in production mode
-  doctor       Check the local FIA development environment
+  fia create <name> [--template native|web|hybrid] [--backend bun] [--no-install] [--git]
+  fia dev [--browser chrome|edge] [--app]
+  fia run
+  fia generate [--check]
+  fia check [--json]
+  fia test
+  fia describe [--json]
+  fia build
+  fia release [--channel stable|beta]
+  fia doctor [--json]
 
 Global options:
-  -h, --help   Show help
-  -V, --version
-               Show the CLI version
-  --debug      Include diagnostic command details
+  -h, --help       Show help
+  -V, --version    Show the CLI version
+  --debug          Include diagnostic details
 `;
 
-const createHelp = `Create a React FIA project with a resident Bun backend
+const commandHelp: Readonly<Record<string, string>> = {
+  create: `Create a FIA 2.0 application
 
 Usage:
-  fia [--debug] create <name> [--no-install] [--git]
+  fia create <name> [--template native|web|hybrid] [--backend bun] [--no-install] [--git]
 
-Options:
-  -h, --help   Show help for create
-  --no-install Generate files without running bun install
-  --git        Initialize a Git repository
-  --debug      Include diagnostic error details
-`;
-
-const doctorHelp = `Check the local FIA development environment
-
-Usage:
-  fia [--debug] doctor [--json]
-
-Options:
-  -h, --help   Show help for doctor
-  --json       Emit a machine-readable DoctorReport
-  --debug      Include diagnostic command details
-`;
-
-const applicationHelp: Record<ApplicationCommand, string> = {
-  dev: `Launch the FIA application with hot module replacement
-
-Usage:
-  fia [--debug] dev [--print-session-url] [--emit-action <id>]
-
-Options:
-  -h, --help          Show help for dev
-  --print-session-url Print a one-time development session URL
-  --emit-action <id>  Emit one status menu action after Backend readiness
-  --debug             Include diagnostic command details
+The default template is a React + Vite Web main window with no Bun Backend.
 `,
-  build: `Build and sign a production FIA application
+  dev: `Build and launch a stable development application
 
 Usage:
-  fia [--debug] build
+  fia dev [--browser chrome|edge] [--app]
 
-Output:
-  dist/<application name>.app
-
-Options:
-  -h, --help   Show help for build
-  --debug      Include diagnostic command details
+Without options, FIA launches only the native App. With --browser it launches a
+Browser Companion; add --app to show the native App at the same time.
 `,
-  package: `Build a Developer ID-signed FIA pre-notarization archive
-
-Usage:
-  fia [--debug] package
-
-Output:
-  dist/<application name>-<version>-mac-arm64.zip
-  dist/<application name>-<version>-mac-arm64.zip.sha256
-
-Options:
-  -h, --help   Show help for package
-  --debug      Include diagnostic command details
-`,
-  release: `Build, notarize and staple a FIA distribution archive
-
-Usage:
-  fia [--debug] release
-
-Output:
-  dist/<application name>-<version>-mac-arm64.zip
-  dist/<application name>-<version>-mac-arm64.zip.sha256
-
-Options:
-  -h, --help   Show help for release
-  --debug      Include diagnostic command details
-`,
-  run: `Build and launch the current source using the production protocol
-
-Usage:
-  fia [--debug] run
-
-Options:
-  -h, --help   Show help for run
-  --debug      Include diagnostic command details
-`,
+  run: "Usage:\n  fia run\n",
+  generate: "Usage:\n  fia generate [--check]\n",
+  check: "Usage:\n  fia check [--json]\n",
+  test: "Usage:\n  fia test\n",
+  describe: "Usage:\n  fia describe [--json]\n",
+  build: "Usage:\n  fia build\n\nOutput: dist/<App>.app\n",
+  release: "Usage:\n  fia release [--channel stable|beta]\n",
+  doctor: "Usage:\n  fia doctor [--json]\n",
 };
 
 function usageError(io: CLIIO, message: string): number {
@@ -146,13 +84,65 @@ function usageError(io: CLIIO, message: string): number {
 }
 
 function debugError(error: unknown): string {
-  if (error instanceof Error) {
-    const description = error.stack ?? error.message;
-    return error.cause === undefined
-      ? description
-      : `${description}\nCaused by: ${debugError(error.cause)}`;
+  if (!(error instanceof Error)) return String(error);
+  const current = error.stack ?? error.message;
+  return error.cause === undefined ? current : `${current}\nCaused by: ${debugError(error.cause)}`;
+}
+
+function writeCommandError(
+  io: CLIIO,
+  error: unknown,
+  fallback: string,
+  options: { debug: boolean; json: boolean; method: string },
+): void {
+  const message = error instanceof Error ? error.message : fallback;
+  if (options.json) {
+    io.stderr(
+      `${JSON.stringify({
+        code: "invalid_request",
+        component: "cli",
+        method: options.method,
+        message,
+        recoverable: false,
+        ...(options.debug ? { details: debugError(error) } : {}),
+      })}\n`,
+    );
+    return;
   }
-  return String(error);
+  io.stderr(`fia: error: ${message}\n`);
+  if (options.debug) io.stderr(`${debugError(error)}\n`);
+}
+
+function repeated(flags: readonly string[], value: string): boolean {
+  return flags.filter((flag) => flag === value).length > 1;
+}
+
+function optionValue(flags: readonly string[], option: string): string | undefined {
+  const index = flags.indexOf(option);
+  if (index < 0) return undefined;
+  const value = flags[index + 1];
+  if (value === undefined || value.startsWith("-")) throw new Error(`${option} requires a value`);
+  return value;
+}
+
+async function execute(
+  io: CLIIO,
+  debug: boolean,
+  fallback: string,
+  operation: () => Promise<void>,
+  options: { json?: boolean; method?: string } = {},
+): Promise<number> {
+  try {
+    await operation();
+    return 0;
+  } catch (error) {
+    writeCommandError(io, error, fallback, {
+      debug,
+      json: options.json ?? false,
+      method: options.method ?? "execute",
+    });
+    return 1;
+  }
 }
 
 export async function runCLI(
@@ -160,20 +150,11 @@ export async function runCLI(
   dependencies: CLIDependencies = {},
 ): Promise<number> {
   const io = dependencies.io ?? defaultIO;
-  const remaining = [...args];
-  const debug = remaining.includes("--debug");
-  for (let index = remaining.length - 1; index >= 0; index -= 1) {
-    if (remaining[index] === "--debug") remaining.splice(index, 1);
-  }
-
-  if (remaining.length === 0) {
-    io.stdout(rootHelp);
-    return 0;
-  }
-
+  const remaining = args.filter((value) => value !== "--debug");
+  const debug = args.length !== remaining.length;
   const command = remaining[0];
-  if (command === "-h" || command === "--help") {
-    if (remaining.length !== 1) return usageError(io, "--help does not accept arguments");
+  if (command === undefined || command === "-h" || command === "--help") {
+    if (remaining.length > 1) return usageError(io, "--help does not accept arguments");
     io.stdout(rootHelp);
     return 0;
   }
@@ -182,132 +163,190 @@ export async function runCLI(
     io.stdout(`fia ${CLI_VERSION}\n`);
     return 0;
   }
+  if (!(command in commandHelp)) return usageError(io, `unknown command: ${command}`);
+  const flags = remaining.slice(1);
+  if (flags.includes("-h") || flags.includes("--help")) {
+    if (flags.length !== 1)
+      return usageError(io, `${command} --help does not accept other options`);
+    io.stdout(commandHelp[command]!);
+    return 0;
+  }
+  const cwd = dependencies.workingDirectory ?? process.cwd();
+
   if (command === "create") {
-    const createArguments = remaining.slice(1);
-    if (createArguments.includes("-h") || createArguments.includes("--help")) {
-      if (createArguments.length !== 1)
-        return usageError(io, "create --help does not accept other arguments");
-      io.stdout(createHelp);
-      return 0;
-    }
-    const name = createArguments[0];
+    const name = flags[0];
     if (name === undefined || name.startsWith("-"))
       return usageError(io, "create requires a project name");
-    const flags = createArguments.slice(1);
-    const unknown = flags.find((flag) => flag !== "--no-install" && flag !== "--git");
-    if (unknown !== undefined) return usageError(io, `unknown create option: ${unknown}`);
-    for (const flag of ["--no-install", "--git"] as const) {
-      if (flags.filter((value) => value === flag).length > 1) {
-        return usageError(io, `create ${flag} may only be specified once`);
-      }
+    const options = flags.slice(1);
+    for (const option of ["--template", "--backend", "--no-install", "--git"] as const) {
+      if (repeated(options, option))
+        return usageError(io, `create ${option} may only be specified once`);
     }
-
+    let template: ProjectTemplate = "web";
+    let backend = false;
     try {
+      const templateValue = optionValue(options, "--template");
+      if (templateValue !== undefined) {
+        if (!(["native", "web", "hybrid"] as const).includes(templateValue as ProjectTemplate)) {
+          return usageError(io, `invalid template: ${templateValue}`);
+        }
+        template = templateValue as ProjectTemplate;
+      }
+      const backendValue = optionValue(options, "--backend");
+      if (backendValue !== undefined) {
+        if (backendValue !== "bun")
+          return usageError(io, `unsupported Backend runtime: ${backendValue}`);
+        backend = true;
+      }
+    } catch (error) {
+      return usageError(io, error instanceof Error ? error.message : "invalid create option");
+    }
+    const consumed = new Set<number>();
+    for (let index = 0; index < options.length; index += 1) {
+      const value = options[index];
+      if (value === "--template" || value === "--backend") {
+        consumed.add(index);
+        consumed.add(index + 1);
+      } else if (value === "--no-install" || value === "--git") consumed.add(index);
+    }
+    const unknownIndex = options.findIndex((_value, index) => !consumed.has(index));
+    if (unknownIndex >= 0) return usageError(io, `unknown create option: ${options[unknownIndex]}`);
+    return await execute(io, debug, "project creation failed", async () => {
       await createProject({
         name,
-        cwd: dependencies.workingDirectory ?? process.cwd(),
-        install: !flags.includes("--no-install"),
-        initializeGit: flags.includes("--git"),
+        cwd,
+        install: !options.includes("--no-install"),
+        initializeGit: options.includes("--git"),
+        template,
+        backend,
         io,
         dependencies: dependencies.create,
       });
-      return 0;
-    } catch (error) {
-      io.stderr(
-        `fia: error: ${error instanceof Error ? error.message : "project creation failed"}\n`,
-      );
-      if (debug) io.stderr(`${debugError(error)}\n`);
-      return 1;
-    }
+    });
   }
-  if (
-    command === "dev" ||
-    command === "build" ||
-    command === "package" ||
-    command === "release" ||
-    command === "run"
-  ) {
-    const flags = remaining.slice(1);
-    if (flags.includes("-h") || flags.includes("--help")) {
-      if (flags.length !== 1)
-        return usageError(io, `${command} --help does not accept other options`);
-      io.stdout(applicationHelp[command]);
-      return 0;
-    }
-    let printSessionURL = false;
-    let emitAction: string | undefined;
-    if (command === "dev") {
-      for (let index = 0; index < flags.length; index += 1) {
-        const flag = flags[index];
-        if (flag === "--print-session-url") {
-          if (printSessionURL)
-            return usageError(io, "dev --print-session-url may only be specified once");
-          printSessionURL = true;
-          continue;
-        }
-        if (flag === "--emit-action") {
-          if (emitAction !== undefined)
-            return usageError(io, "dev --emit-action may only be specified once");
-          const id = flags[index + 1];
-          if (id === undefined || id.startsWith("-")) {
-            return usageError(io, "dev --emit-action requires a menu ID");
-          }
-          if (
-            id.length > 128 ||
-            !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) ||
-            id.startsWith("fia.")
-          ) {
-            return usageError(io, `invalid dev action ID: ${id}`);
-          }
-          emitAction = id;
-          index += 1;
-          continue;
-        }
-        return usageError(io, `unknown dev option: ${flag}`);
+
+  if (command === "generate") {
+    const unknown = flags.find((flag) => flag !== "--check");
+    if (unknown !== undefined) return usageError(io, `unknown generate option: ${unknown}`);
+    if (repeated(flags, "--check"))
+      return usageError(io, "generate --check may only be specified once");
+    return await execute(io, debug, "generation failed", async () => {
+      const result = await generateNativeAPI({ cwd, check: flags.includes("--check") });
+      if (flags.includes("--check") && result.changed.length > 0) {
+        throw new Error(`generated files are stale: ${result.changed.join(", ")}`);
       }
-    } else if (flags.length > 0) {
-      return usageError(io, `unknown ${command} option: ${flags[0]}`);
-    }
-    try {
-      await (dependencies.applicationExecutor ?? executeApplicationCommand)({
-        command,
-        cwd: dependencies.workingDirectory ?? process.cwd(),
-        debug,
-        io,
-        dependencies: dependencies.application,
-        ...(command === "dev" ? { developmentAutomation: { printSessionURL, emitAction } } : {}),
-      });
-      return 0;
-    } catch (error) {
-      io.stderr(`fia: error: ${error instanceof Error ? error.message : `${command} failed`}\n`);
-      if (debug) io.stderr(`${debugError(error)}\n`);
-      return 1;
-    }
-  }
-  if (command !== "doctor") return usageError(io, `unknown command: ${command}`);
-
-  const flags = remaining.slice(1);
-  if (flags.includes("-h") || flags.includes("--help")) {
-    if (flags.length !== 1) return usageError(io, "doctor --help does not accept other options");
-    io.stdout(doctorHelp);
-    return 0;
-  }
-  const unknown = flags.find((flag) => flag !== "--json");
-  if (unknown !== undefined) return usageError(io, `unknown doctor option: ${unknown}`);
-  if (flags.filter((flag) => flag === "--json").length > 1) {
-    return usageError(io, "doctor --json may only be specified once");
+      io.stdout(
+        flags.includes("--check")
+          ? "Generated Native API is current.\n"
+          : `${result.outputs.join("\n")}\n`,
+      );
+    });
   }
 
-  try {
-    const probe = dependencies.doctorProbe ?? new SystemDoctorProbe();
-    const report = await runDoctor(probe, { debug });
+  if (command === "check") {
+    const unknown = flags.find((flag) => flag !== "--json");
+    if (unknown !== undefined) return usageError(io, `unknown check option: ${unknown}`);
+    const report = await checkProject(cwd);
     io.stdout(
-      flags.includes("--json") ? `${JSON.stringify(report, null, 2)}\n` : renderDoctorText(report),
+      flags.includes("--json") ? `${JSON.stringify(report, null, 2)}\n` : renderCheck(report),
     );
     return report.ok ? 0 : 1;
-  } catch (error) {
-    io.stderr("fia: error: doctor could not complete\n");
-    if (debug) io.stderr(`${debugError(error)}\n`);
-    return 1;
   }
+
+  if (command === "describe") {
+    const unknown = flags.find((flag) => flag !== "--json");
+    if (unknown !== undefined) return usageError(io, `unknown describe option: ${unknown}`);
+    return await execute(
+      io,
+      debug,
+      "description failed",
+      async () => {
+        const description = await describeProject(cwd);
+        io.stdout(`${JSON.stringify(description, null, 2)}\n`);
+      },
+      { json: flags.includes("--json"), method: "describe" },
+    );
+  }
+
+  if (command === "doctor") {
+    const unknown = flags.find((flag) => flag !== "--json");
+    if (unknown !== undefined) return usageError(io, `unknown doctor option: ${unknown}`);
+    try {
+      const report = await runDoctor(dependencies.doctorProbe ?? new SystemDoctorProbe(), {
+        debug,
+      });
+      io.stdout(
+        flags.includes("--json")
+          ? `${JSON.stringify(report, null, 2)}\n`
+          : renderDoctorText(report),
+      );
+      return report.ok ? 0 : 1;
+    } catch (error) {
+      writeCommandError(io, error, "doctor could not complete", {
+        debug,
+        json: flags.includes("--json"),
+        method: "doctor",
+      });
+      return 1;
+    }
+  }
+
+  const applicationCommand = command as ApplicationCommand;
+  let browser: BrowserCompanion | undefined;
+  let app: boolean | undefined;
+  let channel: UpdateChannel | undefined;
+  if (command === "dev") {
+    if (repeated(flags, "--browser"))
+      return usageError(io, "dev --browser may only be specified once");
+    if (repeated(flags, "--app")) return usageError(io, "dev --app may only be specified once");
+    const browserValue = (() => {
+      try {
+        return optionValue(flags, "--browser");
+      } catch {
+        return "__missing__";
+      }
+    })();
+    if (browserValue === "__missing__") return usageError(io, "--browser requires a value");
+    if (browserValue !== undefined && browserValue !== "chrome" && browserValue !== "edge") {
+      return usageError(io, `unsupported browser: ${browserValue}`);
+    }
+    browser = browserValue as BrowserCompanion | undefined;
+    app = flags.includes("--app") ? true : undefined;
+    const consumed = new Set<number>();
+    for (let index = 0; index < flags.length; index += 1) {
+      if (flags[index] === "--browser") {
+        consumed.add(index);
+        consumed.add(index + 1);
+      } else if (flags[index] === "--app") consumed.add(index);
+    }
+    const unknownIndex = flags.findIndex((_flag, index) => !consumed.has(index));
+    if (unknownIndex >= 0) return usageError(io, `unknown dev option: ${flags[unknownIndex]}`);
+  } else if (command === "release") {
+    let value: string | undefined;
+    try {
+      value = optionValue(flags, "--channel");
+    } catch (error) {
+      return usageError(io, error instanceof Error ? error.message : "invalid channel");
+    }
+    if (value !== undefined && value !== "stable" && value !== "beta") {
+      return usageError(io, `invalid release channel: ${value}`);
+    }
+    channel = value as UpdateChannel | undefined;
+    if (flags.length !== (value === undefined ? 0 : 2))
+      return usageError(io, `unknown release option: ${flags[0]}`);
+  } else if (flags.length > 0) {
+    return usageError(io, `unknown ${command} option: ${flags[0]}`);
+  }
+  return await execute(io, debug, `${command} failed`, async () => {
+    await (dependencies.applicationExecutor ?? executeApplicationCommand)({
+      command: applicationCommand,
+      cwd,
+      debug,
+      io,
+      ...(browser === undefined ? {} : { browser }),
+      ...(app === undefined ? {} : { app }),
+      ...(channel === undefined ? {} : { channel }),
+      dependencies: dependencies.application,
+    });
+  });
 }

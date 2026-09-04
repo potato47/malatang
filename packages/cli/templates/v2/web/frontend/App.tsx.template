@@ -1,0 +1,26 @@
+import { useEffect, useState } from "react";
+import { native, type NativeCapabilities } from "@semicoder/fia/client";
+
+export default function App() {
+  const [capabilities, setCapabilities] = useState<NativeCapabilities>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    native.capabilities().then(setCapabilities).catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    });
+  }, []);
+
+  return (
+    <main>
+      <span className="eyebrow">FIA 2.0</span>
+      <h1>__FIA_DISPLAY_NAME__</h1>
+      <p>Swift owns the application. This Web UI is an optional runtime.</p>
+      {capabilities ? (
+        <pre>{JSON.stringify(capabilities, null, 2)}</pre>
+      ) : (
+        <p className="status">{error ?? "Connecting to the Native Runtime…"}</p>
+      )}
+    </main>
+  );
+}

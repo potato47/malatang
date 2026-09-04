@@ -1,231 +1,95 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { defineConfig, FIA_CONFIG_VERSION } from "../src/config.ts";
-import { ProjectConfigError, resolveProjectConfig } from "../src/project-config.ts";
+import { loadProjectConfig, ProjectConfigError } from "../src/project-config.ts";
 
-const temporaryDirectories: string[] = [];
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
-  );
-});
+const roots: string[] = [];
+afterEach(async () =>
+  Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))),
+);
 
-async function project(): Promise<string> {
-  const root = await mkdtemp(resolve(tmpdir(), "fia-config-v6-"));
-  temporaryDirectories.push(root);
-  await mkdir(resolve(root, "src"));
-  await mkdir(resolve(root, "native"));
-  await writeFile(resolve(root, "src/backend.ts"), "export default {};\n");
-  await writeFile(resolve(root, "icon.icns"), "icon");
-  await writeFile(resolve(root, "native/AIXHost"), "host");
-  await writeFile(resolve(root, "native/aix"), "helper");
-  await chmod(resolve(root, "native/AIXHost"), 0o755);
-  await chmod(resolve(root, "native/aix"), 0o755);
+async function project(source: string): Promise<string> {
+  const root = await mkdtemp(resolve(tmpdir(), "fia-config-v2-"));
+  roots.push(root);
+  await mkdir(resolve(root, "frontend"));
+  await writeFile(resolve(root, "fia.toml"), source);
   return root;
 }
 
-function base() {
-  return {
-    configVersion: 6 as const,
-    app: { name: "Desktop", identifier: "com.example.desktop" },
-    backend: { entry: "src/backend.ts" },
-  };
-}
+const minimal = `schema = 2
 
-describe("FIA configVersion 6", () => {
-  test("exports a strict defineConfig helper", () => {
-    const value = defineConfig(base());
-    expect(FIA_CONFIG_VERSION).toBe(6);
-    expect(value.configVersion).toBe(6);
+[app]
+name = "Example"
+identifier = "dev.example.fia"
+version = "2.0.0"
+build = 1
+minimumMacOS = "14.0"
+activationPolicy = "regular"
+
+[web]
+enabled = true
+root = "frontend"
+dist = "frontend/dist"
+
+[backend]
+enabled = false
+runtime = "bun"
+mount = "/api"
+
+[native.permissions]
+application = true
+windows = true
+`;
+
+describe("fia.toml schema 2", () => {
+  test("resolves defaults and keeps Bun, updater, and status item optional", async () => {
+    const config = await loadProjectConfig(await project(minimal));
+    expect(config.schema).toBe(2);
+    expect(config.web.enabled).toBe(true);
+    expect(config.backend.enabled).toBe(false);
+    expect(config.statusItem).toBeUndefined();
+    expect(config.updater).toBeUndefined();
+    expect(config.native.permissions.clipboard).toBe(false);
   });
 
-  test("resolves required backend and defaults", async () => {
-    const root = await project();
-    const config = await resolveProjectConfig(base(), root);
-    expect(config.backend.entry).toBe(resolve(root, "src/backend.ts"));
-    expect(config.backend.watch).toEqual([resolve(root, "src")]);
-    expect(config.app.version).toBe("0.1.0");
-    expect(config.statusBar.symbol).toBe("circle.grid.2x2.fill");
-    expect(config.statusBar.tooltip).toBe("Desktop");
-    expect(config.signing).toBeUndefined();
-    expect(config.release).toBeUndefined();
-    expect(config.host).toBeUndefined();
-    expect(config.helpers).toEqual([]);
-  });
-
-  test("resolves one custom Host and deterministic native helpers", async () => {
-    const root = await project();
-    const config = await resolveProjectConfig(
-      {
-        ...base(),
-        host: { executable: "native/AIXHost", name: "AIXHost" },
-        helpers: [{ executable: "native/aix", name: "aix" }],
-      },
-      root,
-    );
-    expect(config.host).toEqual({
-      executable: resolve(root, "native/AIXHost"),
-      name: "AIXHost",
-    });
-    expect(config.helpers).toEqual([{ executable: resolve(root, "native/aix"), name: "aix" }]);
-  });
-
-  test("rejects unsafe, duplicate, reserved, and non-executable native artifacts", async () => {
-    const root = await project();
-    await expect(
-      resolveProjectConfig(
-        {
-          ...base(),
-          helpers: [
-            { executable: "native/aix", name: "aix" },
-            { executable: "native/aix", name: "aix" },
-          ],
-        },
-        root,
-      ),
-    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "helpers.1.name" });
-    await expect(
-      resolveProjectConfig(
-        {
-          ...base(),
-          helpers: [{ executable: "native/aix", name: "FIABackend" }],
-        },
-        root,
-      ),
-    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "helpers.0.name" });
-    await expect(
-      resolveProjectConfig(
-        {
-          ...base(),
-          host: { executable: "native/AIXHost", name: "../AIXHost" },
-        },
-        root,
-      ),
-    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "host.name" });
-    await chmod(resolve(root, "native/aix"), 0o644);
-    await expect(
-      resolveProjectConfig(
-        {
-          ...base(),
-          helpers: [{ executable: "native/aix", name: "aix" }],
-        },
-        root,
-      ),
-    ).rejects.toMatchObject({
-      code: "CONFIG_NATIVE_ARTIFACT_INVALID",
-      path: "helpers.0.executable",
-    });
-  });
-
-  test("resolves strict Developer ID release and notarization settings", async () => {
-    const root = await project();
-    const config = await resolveProjectConfig(
-      {
-        ...base(),
-        release: {
-          identity: "Developer ID Application: Example (TEAMID)",
-          notarization: { keychainProfile: "fia-notary" },
-        },
-      },
-      root,
-    );
-    expect(config.release).toEqual({
-      identity: "Developer ID Application: Example (TEAMID)",
-      notarization: { keychainProfile: "fia-notary" },
-    });
-    await expect(
-      resolveProjectConfig(
-        { ...base(), release: { identity: "Apple Development: Example (TEAMID)" } },
-        root,
-      ),
-    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "release.identity" });
-    await expect(
-      resolveProjectConfig(
-        {
-          ...base(),
-          release: {
-            identity: "Developer ID Application: Example (TEAMID)",
-            notarization: { keychainProfile: " fia-notary " },
-          },
-        },
-        root,
-      ),
-    ).rejects.toMatchObject({
-      code: "CONFIG_INVALID",
-      path: "release.notarization.keychainProfile",
-    });
-  });
-
-  test("resolves a strict code signing identity", async () => {
-    const root = await project();
-    const config = await resolveProjectConfig(
-      { ...base(), signing: { identity: "Developer ID Application: Example (TEAMID)" } },
-      root,
-    );
-    expect(config.signing).toEqual({
-      identity: "Developer ID Application: Example (TEAMID)",
-    });
-    await expect(
-      resolveProjectConfig({ ...base(), signing: { identity: "  Developer ID  " } }, root),
-    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "signing.identity" });
-    await expect(
-      resolveProjectConfig({ ...base(), signing: { identity: "Mac Developer: Example" } }, root),
-    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "signing.identity" });
-    await expect(
-      resolveProjectConfig(
-        { ...base(), signing: { identity: "Developer ID", team: "TEAMID" } },
-        root,
-      ),
-    ).rejects.toMatchObject({ code: "CONFIG_INVALID", path: "signing.team" });
-  });
-
-  test("resolves explicit watch, icon and status item", async () => {
-    const root = await project();
-    const config = await resolveProjectConfig(
-      {
-        ...base(),
-        app: { ...base().app, version: "1.2.3", icon: "icon.icns" },
-        backend: { entry: "src/backend.ts", watch: ["src"] },
-        statusBar: { symbol: "bolt.fill", tooltip: "Service" },
-      },
-      root,
-    );
-    expect(config.backend.watch).toEqual([resolve(root, "src")]);
-    expect(config.app.icon).toBe(resolve(root, "icon.icns"));
-    expect(config.statusBar).toEqual({ symbol: "bolt.fill", tooltip: "Service" });
-  });
-
-  test("rejects all legacy architecture fields without compatibility", async () => {
-    const root = await project();
-    for (const [field, value] of [
-      ["ui", "src/ui/index.html"],
-      ["window", {}],
-      ["mcp", {}],
-      ["runtime", {}],
-    ] as const) {
-      await expect(resolveProjectConfig({ ...base(), [field]: value }, root)).rejects.toMatchObject(
-        {
-          code: "CONFIG_INVALID",
-          path: field,
-        },
+  test("rejects old schemas and unknown fields", async () => {
+    for (const source of [
+      minimal.replace("schema = 2", "schema = 6"),
+      `${minimal}\nlegacy = true\n`,
+    ]) {
+      await expect(loadProjectConfig(await project(source))).rejects.toBeInstanceOf(
+        ProjectConfigError,
       );
     }
-    await expect(resolveProjectConfig({ ...base(), configVersion: 5 }, root)).rejects.toMatchObject(
-      {
-        code: "CONFIG_UNSUPPORTED_VERSION",
-      },
-    );
   });
 
-  test("requires safe accessible project paths", async () => {
-    const root = await project();
-    await expect(
-      resolveProjectConfig({ ...base(), backend: { entry: "../outside.ts" } }, root),
-    ).rejects.toBeInstanceOf(ProjectConfigError);
-    await expect(
-      resolveProjectConfig({ ...base(), backend: { entry: "missing.ts" } }, root),
-    ).rejects.toMatchObject({ code: "CONFIG_BACKEND_INVALID" });
+  test("accepts a complete Sparkle configuration", async () => {
+    const source = `${minimal}
+[updater]
+publicKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+channel = "stable"
+ui = "native"
+
+[updater.feeds]
+stable = "https://updates.example.dev/stable.xml"
+`;
+    const config = await loadProjectConfig(await project(source));
+    expect(config.updater?.feeds.stable).toBe("https://updates.example.dev/stable.xml");
+  });
+
+  test("rejects non-canonical updater keys", async () => {
+    const source = `${minimal}
+[updater]
+publicKey = "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+channel = "stable"
+ui = "native"
+
+[updater.feeds]
+stable = "https://updates.example.dev/stable.xml"
+`;
+    await expect(loadProjectConfig(await project(source))).rejects.toBeInstanceOf(
+      ProjectConfigError,
+    );
   });
 });

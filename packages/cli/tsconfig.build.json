@@ -7,5 +7,5 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src/config.ts", "src/backend.ts"]
+  "include": ["src/client.ts", "src/backend.ts", "src/vite.ts"]
 }
