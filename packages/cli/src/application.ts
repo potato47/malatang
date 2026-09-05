@@ -60,7 +60,7 @@ interface RuntimeManifest {
   readonly schema: 1;
   readonly frameworkVersion: string;
   readonly nativeProtocolVersion: number;
-  readonly app: ResolvedFIAConfig["app"];
+  readonly app: Omit<ResolvedFIAConfig["app"], "icon">;
   readonly web: { enabled: boolean; directory?: string };
   readonly backend: {
     enabled: boolean;
@@ -199,7 +199,7 @@ async function copySparkleFramework(projectRoot: string, frameworks: string): Pr
     );
   }
   const destination = resolve(frameworks, "Sparkle.framework");
-  await cp(source, destination, { recursive: true });
+  await cp(source, destination, { recursive: true, verbatimSymlinks: true });
   return destination;
 }
 
@@ -308,6 +308,9 @@ async function assembleApplication(
       resolve(root, "native"),
       "--scratch-path",
       scratch,
+      ...(config.updater === undefined
+        ? []
+        : ["--manifest-cache", "none", "--disable-build-manifest-caching"]),
       "--product",
       APP_EXECUTABLE,
       "--configuration",
@@ -317,12 +320,23 @@ async function assembleApplication(
     ],
     root,
     "Swift application build",
+    {
+      env: config.updater === undefined ? undefined : { FIA_BUILD_SPARKLE: "1" },
+    },
   );
   const sourceExecutable = resolve(scratch, "arm64-apple-macosx", configuration, APP_EXECUTABLE);
   await access(sourceExecutable);
   const executable = resolve(macOS, APP_EXECUTABLE);
   await copyFile(sourceExecutable, executable);
   await chmod(executable, 0o755);
+  if (config.updater !== undefined) {
+    await runChecked(
+      runner,
+      ["/usr/bin/install_name_tool", "-add_rpath", "@executable_path/../Frameworks", executable],
+      root,
+      "Sparkle runtime search path",
+    );
+  }
 
   if (config.web.enabled && options.buildWeb) {
     await cp(config.web.dist, resolve(resources, "web"), { recursive: true });
@@ -350,7 +364,14 @@ async function assembleApplication(
     schema: 1,
     frameworkVersion: CLI_VERSION,
     nativeProtocolVersion: FIA_NATIVE_PROTOCOL_VERSION,
-    app: config.app,
+    app: {
+      name: config.app.name,
+      identifier: config.app.identifier,
+      version: config.app.version,
+      build: config.app.build,
+      minimumMacOS: config.app.minimumMacOS,
+      activationPolicy: config.app.activationPolicy,
+    },
     web: { enabled: config.web.enabled, ...(config.web.enabled ? { directory: "web" } : {}) },
     backend: {
       enabled: config.backend.enabled,

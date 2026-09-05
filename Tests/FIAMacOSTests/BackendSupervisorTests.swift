@@ -89,6 +89,45 @@ struct BackendSupervisorTests {
         _ = supervisor.stop()
     }
 
+    @Test func roundTripsTopLevelJSONFragments() async throws {
+        let responseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fia-fragment-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: responseURL) }
+        let configuration = FIABunConfiguration(
+            development: true,
+            appName: "Fragments",
+            appIdentifier: "com.example.fragments",
+            executable: "/bin/sh",
+            arguments: [
+                "-c",
+                #"IFS= read -r initialize; printf '%s\n' '{"v":3,"type":"ready","port":45682,"origin":"http://127.0.0.1:45682"}'; printf '%s\n' '{"v":3,"type":"request","id":9,"method":"e2e.fragment","params":"input"}'; IFS= read -r response; printf '%s' "$response" > "$0"; sleep 2"#,
+                responseURL.path,
+            ],
+            sha256: String(repeating: "0", count: 64),
+            nativeOrigin: "http://127.0.0.1:45670",
+            nativeSession: String(repeating: "n", count: 64)
+        )
+        let supervisor = try BackendSupervisor(
+            configuration: configuration,
+            applicationSupportDirectory: FileManager.default.temporaryDirectory,
+            onRequest: { method, params in
+                #expect(method == "e2e.fragment")
+                #expect(params as? String == "input")
+                return "output"
+            },
+            onState: { _ in }
+        )
+        supervisor.start()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !FileManager.default.fileExists(atPath: responseURL.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let data = try Data(contentsOf: responseURL)
+        let frame = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(frame["result"] as? String == "output")
+        _ = supervisor.stop()
+    }
+
     @Test func staysReadyAfterCancellingReadinessTimeout() async throws {
         let configuration = FIABunConfiguration(
             development: true,

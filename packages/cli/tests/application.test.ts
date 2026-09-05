@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { executeApplicationCommand, type ApplicationProcessRunner } from "../src/application.ts";
@@ -84,6 +93,11 @@ describe("Swift-first application build", () => {
     expect(await Bun.file(resolve(app, "Contents/MacOS/FIABunBackend")).exists()).toBe(false);
     expect(await Bun.file(resolve(app, "Contents/Resources/web/index.html")).exists()).toBe(true);
     expect(await Bun.file(resolve(app, "Contents/Info.plist")).text()).not.toContain("LSUIElement");
+    const runtimeManifest = JSON.parse(
+      await readFile(resolve(app, "Contents/Resources/fia.runtime.json"), "utf8"),
+    ) as { app: Record<string, unknown> };
+    expect(runtimeManifest.app.icon).toBeUndefined();
+    expect(JSON.stringify(runtimeManifest)).not.toContain(root);
     expect(stdout[0]).toContain("Build App.app");
   });
 
@@ -118,8 +132,12 @@ releaseIdentity = "Developer ID Application: Example (TEAMID1234)"
 notarizationProfile = "fia-notary"
 `,
     );
-    const runner: ApplicationProcessRunner = async (command) => {
+    let swiftBuildEnvironment: Readonly<Record<string, string>> | undefined;
+    const commands: string[][] = [];
+    const runner: ApplicationProcessRunner = async (command, options) => {
+      commands.push([...command]);
       if (command.includes("swift")) {
+        swiftBuildEnvironment = options.env;
         const executable = resolve(
           root,
           ".fia/swift-build/arm64-apple-macosx/release/FIAAppExecutable",
@@ -132,8 +150,10 @@ notarizationProfile = "fia-notary"
           mkdir(resolve(sparkle, "Downloader.xpc"), { recursive: true }),
           mkdir(resolve(sparkle, "Installer.xpc"), { recursive: true }),
           mkdir(resolve(sparkle, "Updater.app"), { recursive: true }),
+          mkdir(resolve(sparkle, "Versions/B"), { recursive: true }),
         ]);
         await writeFile(resolve(sparkle, "Autoupdate"), "helper");
+        await symlink("B", resolve(sparkle, "Versions/Current"));
         const appcastTool = resolve(root, ".fia/swift-build/artifacts/fia/generate_appcast");
         await writeFile(appcastTool, "tool");
       }
@@ -170,5 +190,22 @@ notarizationProfile = "fia-notary"
     ) as { channel: string; ed25519Signature: string };
     expect(report.channel).toBe("beta");
     expect(report.ed25519Signature).toBe(`${archive}.ed25519`);
+    expect(swiftBuildEnvironment?.FIA_BUILD_SPARKLE).toBe("1");
+    expect(swiftBuildEnvironment).toEqual({ FIA_BUILD_SPARKLE: "1" });
+    expect(
+      commands.some(
+        (command) =>
+          command[0] === "/usr/bin/install_name_tool" &&
+          command.includes("@executable_path/../Frameworks"),
+      ),
+    ).toBe(true);
+    expect(
+      await readlink(
+        resolve(
+          root,
+          "dist/Release App.app/Contents/Frameworks/Sparkle.framework/Versions/Current",
+        ),
+      ),
+    ).toBe("B");
   });
 });

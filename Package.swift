@@ -1,6 +1,12 @@
 // swift-tools-version: 6.0
 
+import Foundation
 import PackageDescription
+
+var fiaDependencies: [Target.Dependency] = ["FIACore", "FIAMacOS", "FIAWeb", "FIAUpdater"]
+if ProcessInfo.processInfo.environment["FIA_BUILD_SPARKLE"] == "1" {
+    fiaDependencies.append("FIASparkleProvider")
+}
 
 let package = Package(
     name: "FIA",
@@ -67,7 +73,7 @@ let package = Package(
         ),
         .target(
             name: "FIA",
-            dependencies: ["FIACore", "FIAMacOS", "FIAWeb", "FIAUpdater"],
+            dependencies: fiaDependencies,
             path: "Sources/FIA"
         ),
         .testTarget(

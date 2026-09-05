@@ -62,9 +62,10 @@ public final class BunSupervisor {
         )
         do {
             let supervisor = try BackendSupervisor(configuration: configuration) { method, params in
-                let input = try JSONSerialization.data(withJSONObject: params)
+                let input = try JSONSerialization.data(withJSONObject: params, options: .fragmentsAllowed)
                 switch await native.dispatch(method: method, params: input) {
-                case let .success(data): return try JSONSerialization.jsonObject(with: data)
+                case let .success(data):
+                    return try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
                 case let .failure(error): throw error
                 }
             } onState: { [weak self] state in
@@ -237,7 +238,9 @@ public final class FIARuntime {
                     let payload = WindowEventPayload(event: name, window: state)
                     let data = try? JSONEncoder().encode(payload)
                     gateway?.publish(event: "windows.changed", payload: data)
-                    self.bun.send(event: "windows.changed", payload: data.flatMap { try? JSONSerialization.jsonObject(with: $0) })
+                    self.bun.send(event: "windows.changed", payload: data.flatMap {
+                        try? JSONSerialization.jsonObject(with: $0, options: .fragmentsAllowed)
+                    })
                 }
             }
             if updaterAvailable {
@@ -248,7 +251,9 @@ public final class FIARuntime {
                         let payload = UpdateStatePayload(state)
                         let data = try? JSONEncoder().encode(payload)
                         gateway?.publish(event: "updater.stateChanged", payload: data)
-                        self.bun.send(event: "updater.stateChanged", payload: data.flatMap { try? JSONSerialization.jsonObject(with: $0) })
+                        self.bun.send(event: "updater.stateChanged", payload: data.flatMap {
+                            try? JSONSerialization.jsonObject(with: $0, options: .fragmentsAllowed)
+                        })
                     }
                 }
             }
@@ -285,7 +290,7 @@ public final class FIARuntime {
     public func emit<Event: Encodable & Sendable>(_ event: String, payload: Event) throws {
         let data = try JSONEncoder().encode(payload)
         gateway?.publish(event: event, payload: data)
-        bun.send(event: event, payload: try JSONSerialization.jsonObject(with: data))
+        bun.send(event: event, payload: try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed))
     }
 
     func stop() async {

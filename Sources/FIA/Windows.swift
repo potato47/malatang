@@ -67,6 +67,7 @@ open class AppKitWindow: NSObject, AppWindow, NSWindowDelegate {
         self.window = window
         self.emit = emit
         super.init()
+        window.isReleasedWhenClosed = false
         window.delegate = self
         window.setFrameAutosaveName("fia.window.\(id)")
     }
@@ -140,10 +141,13 @@ public final class SwiftUIWindow: AppKitWindow {
 public final class WebWindow: AppKitWindow, WKNavigationDelegate {
     public let webView: WKWebView
 
+    private typealias SetRubberBandingEdges = @convention(c) (AnyObject, Selector, UInt) -> Void
+
     public init(id: String, title: String, size: CGSize, url: URL, emit: @escaping (AppWindowEvent) -> Void = { _ in }) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        Self.disableRubberBanding(in: webView)
         self.webView = webView
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
@@ -161,6 +165,15 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
     }
 
     public func reload() { webView.reload() }
+
+    private static func disableRubberBanding(in webView: WKWebView) {
+        // WKWebView has no public macOS scroll-elasticity API. WebKit has exposed this
+        // selector since macOS 10.13.4; resolve it dynamically so no private header is linked.
+        let selector = NSSelectorFromString("_setRubberBandingEnabled:")
+        guard webView.responds(to: selector) else { return }
+        let setter = unsafeBitCast(webView.method(for: selector), to: SetRubberBandingEdges.self)
+        setter(webView, selector, 0)
+    }
 }
 
 @MainActor

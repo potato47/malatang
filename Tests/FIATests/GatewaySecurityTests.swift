@@ -208,6 +208,41 @@ final class GatewaySecurityTests: XCTestCase {
         XCTAssertEqual(application, "application")
     }
 
+    func testNativeWebSocketRoundTripsTopLevelJSONFragments() async throws {
+        let gateway = FIAGateway(
+            staticDirectory: nil,
+            developmentOrigin: nil,
+            backendEndpoint: { nil },
+            dispatcher: { _, params, _ in .success(params) },
+            resource: { _, _ in nil }
+        )
+        let endpoint = try startGateway(gateway)
+        addTeardownBlock { await gateway.stop() }
+
+        var request = URLRequest(url: try XCTUnwrap(URL(string: endpoint.origin + "/_fia/native")))
+        request.setValue(endpoint.session, forHTTPHeaderField: "x-fia-session")
+        request.setValue(endpoint.origin, forHTTPHeaderField: "origin")
+        request.setValue("application", forHTTPHeaderField: "x-fia-client-mode")
+        let socket = URLSession.shared.webSocketTask(with: request)
+        socket.resume()
+        defer { socket.cancel(with: .normalClosure, reason: nil) }
+
+        let stringResult = try await nativeResult(socket: socket, id: 1, paramsJSON: #""input""#)
+        XCTAssertEqual(stringResult as? String, "input")
+
+        let nullResult = try await nativeResult(socket: socket, id: 2, paramsJSON: "null")
+        XCTAssertTrue(nullResult is NSNull)
+
+        gateway.publish(event: "test.fragment", payload: Data(#""payload""#.utf8))
+        let message = try await socket.receive()
+        guard case let .string(text) = message,
+              let data = text.data(using: .utf8),
+              let frame = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return XCTFail("Native WebSocket did not return an event frame") }
+        XCTAssertEqual(frame["event"] as? String, "test.fragment")
+        XCTAssertEqual(frame["payload"] as? String, "payload")
+    }
+
     private func nativeMode(endpoint: FIAGatewayEndpoint, query: String, trustedMode: String?) async throws -> String {
         var request = URLRequest(url: try XCTUnwrap(URL(string: endpoint.origin + "/_fia/native" + query)))
         request.setValue(endpoint.session, forHTTPHeaderField: "x-fia-session")
@@ -228,6 +263,24 @@ final class GatewaySecurityTests: XCTestCase {
             return ""
         }
         return mode
+    }
+
+    private func nativeResult(
+        socket: URLSessionWebSocketTask,
+        id: Int,
+        paramsJSON: String
+    ) async throws -> Any {
+        let request = #"{"v":1,"type":"request","id":\#(id),"method":"test.fragment","params":\#(paramsJSON)}"#
+        try await socket.send(.string(request))
+        let message = try await socket.receive()
+        guard case let .string(text) = message,
+              let data = text.data(using: .utf8),
+              let frame = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            XCTFail("Native WebSocket did not return a result frame")
+            return NSNull()
+        }
+        return try XCTUnwrap(frame["result"])
     }
 }
 

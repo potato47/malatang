@@ -45,7 +45,7 @@ public final class BackendSupervisor {
         case stopped
     }
 
-    public typealias RequestHandler = @MainActor (_ method: String, _ params: [String: Any]) async throws -> Any?
+    public typealias RequestHandler = @MainActor (_ method: String, _ params: Any) async throws -> Any?
 
     private let configuration: FIABunConfiguration
     private let executableURL: URL
@@ -267,7 +267,7 @@ public final class BackendSupervisor {
             guard Set(frame.keys) == ["v", "type", "id", "method", "params"],
                   let id = frame["id"] as? Int, id > 0,
                   let method = frame["method"] as? String, !method.isEmpty,
-                  let params = frame["params"] as? [String: Any],
+                  let params = frame["params"],
                   requestTasks[id] == nil,
                   requestTasks.count < FIAMaximumPendingRequests
             else { throw BackendProtocolError.invalidFrame }
@@ -362,7 +362,7 @@ public final class BackendSupervisor {
         guard self.generation == generation, requestTasks.removeValue(forKey: id) != nil else { return }
         let details: Any = error.details.flatMap { value in
             guard let data = try? JSONEncoder().encode(value) else { return nil }
-            return try? JSONSerialization.jsonObject(with: data)
+            return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
         } ?? NSNull()
         var payload: [String: Any] = [
             "code": error.code.rawValue,

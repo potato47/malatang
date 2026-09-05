@@ -1,4 +1,6 @@
 @testable import FIA
+import SwiftUI
+import WebKit
 import XCTest
 
 @MainActor
@@ -56,6 +58,41 @@ final class RuntimeContractTests: XCTestCase {
         XCTAssertEqual(try manager.state("main").visibility, .visible)
         XCTAssertEqual(creations, 2)
         try manager.close("main")
+    }
+
+    func testWindowManagerRecreatesClosedSwiftUIWindows() throws {
+        let manager = WindowManager()
+        manager.registerSwiftUI("reopen", title: "Reopen") { Text("FIA") }
+
+        let first = try manager.show("reopen")
+        let firstWindow = try XCTUnwrap(first as? AppKitWindow)
+        XCTAssertFalse(firstWindow.window.isReleasedWhenClosed)
+        try manager.close("reopen")
+        XCTAssertEqual(first.state.visibility, .closed)
+
+        let second = try manager.show("reopen")
+        XCTAssertFalse(first === second)
+        XCTAssertEqual(second.state.visibility, .visible)
+        try manager.close("reopen")
+    }
+
+    func testWebWindowDisablesRubberBanding() throws {
+        let window = WebWindow(
+            id: "web",
+            title: "Web",
+            size: CGSize(width: 320, height: 240),
+            url: URL(string: "about:blank")!
+        )
+        defer { try? window.close() }
+
+        let selector = NSSelectorFromString("_rubberBandingEnabled")
+        XCTAssertTrue(window.webView.responds(to: selector))
+        typealias GetRubberBandingEdges = @convention(c) (AnyObject, Selector) -> UInt
+        let getter = unsafeBitCast(
+            window.webView.method(for: selector),
+            to: GetRubberBandingEdges.self
+        )
+        XCTAssertEqual(getter(window.webView, selector), 0)
     }
 
     func testResourcesAreSessionIsolatedAndDisposable() async throws {

@@ -27,6 +27,13 @@ describe("generated source contract", () => {
     expect(await readFile(resolve(root, "native/Package.swift"), "utf8")).toContain(
       '.package(url: "https://example.dev/fia.git", exact: "2.0.0")',
     );
+    const tsconfig = JSON.parse(await readFile(resolve(root, "tsconfig.json"), "utf8")) as {
+      compilerOptions: { jsx?: string };
+    };
+    expect(tsconfig.compilerOptions.jsx).toBe("react-jsx");
+    expect(await readFile(resolve(root, "frontend/style.css"), "utf8")).toContain(
+      "overscroll-behavior: none",
+    );
     const packageJSON = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as {
       devDependencies: Record<string, string>;
     };
@@ -57,8 +64,12 @@ describe("generated source contract", () => {
           $defs: {
             Greeting: {
               type: "object",
-              properties: { "display-name": { type: "string" }, count: { type: "integer" } },
-              required: ["display-name"],
+              properties: {
+                "display-name": { type: "string" },
+                count: { type: "integer" },
+                repeat: { type: "integer" },
+              },
+              required: ["display-name", "repeat"],
             },
           },
           methods: [
@@ -81,6 +92,7 @@ describe("generated source contract", () => {
     const typescript = resolve(root, "generated/native-api.ts");
     const generatedSwift = await readFile(swift, "utf8");
     expect(generatedSwift).toContain('case displayName = "display-name"');
+    expect(generatedSwift).toContain("public let `repeat`: Int");
     expect(generatedSwift).toContain("AppNativeAPIProtocol: NativeMethodProvider");
     const generatedTypeScript = await readFile(typescript, "utf8");
     expect(generatedTypeScript).toContain("options?: NativeCallOptions");

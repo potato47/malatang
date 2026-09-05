@@ -242,7 +242,10 @@ private final class GatewayState: @unchecked Sendable {
 
     func publish(event: String, payload: Data?) {
         var object: [String: Any] = ["v": 1, "type": "event", "event": event]
-        if let payload, let value = try? JSONSerialization.jsonObject(with: payload) { object["payload"] = value }
+        if let payload,
+           let value = try? JSONSerialization.jsonObject(with: payload, options: .fragmentsAllowed) {
+            object["payload"] = value
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               let string = String(data: data, encoding: .utf8)
         else { return }
@@ -615,18 +618,26 @@ private final class NativeWebSocketHandler: ChannelInboundHandler, @unchecked Se
             ], context: context)
             return
         }
-        let params = (try? JSONSerialization.data(withJSONObject: value["params"] ?? [:])) ?? Data("{}".utf8)
+        let params = (try? JSONSerialization.data(
+            withJSONObject: value["params"] ?? [:],
+            options: .fragmentsAllowed
+        )) ?? Data("{}".utf8)
         let context = UncheckedBox(context)
         let task = Task { [state] in
             let result = await state.dispatcher(method, params, mode)
             let object: [String: Any]
             switch result {
             case let .success(data):
-                object = ["v": 1, "type": "response", "id": id, "result": (try? JSONSerialization.jsonObject(with: data)) ?? NSNull()]
+                object = [
+                    "v": 1,
+                    "type": "response",
+                    "id": id,
+                    "result": (try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)) ?? NSNull(),
+                ]
             case let .failure(error):
                 if let error = error as? (any Encodable),
                    let data = try? JSONEncoder().encode(AnyEncodable(error)),
-                   let encoded = try? JSONSerialization.jsonObject(with: data) {
+                   let encoded = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) {
                     object = ["v": 1, "type": "response", "id": id, "error": encoded]
                 } else {
                     object = ["v": 1, "type": "response", "id": id, "error": ["code": "native_failure", "component": "native", "method": method, "message": error.localizedDescription, "recoverable": false]]
