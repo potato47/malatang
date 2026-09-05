@@ -51,3 +51,15 @@ Sparkle 2.9.6。`build` 仅包含启用的 Web assets、Bun helper 和 Sparkle f
 使用 Developer ID、notarytool、staple 与 Gatekeeper，生成 full update，不实现 delta 或上传。
 
 FIA 2.0 不保留 1.x 配置/API/协议、预编译 Host、Mac App Store、跨平台或远程 Native RPC。
+
+## 应用扩展点
+
+应用可在 `FIAApplication.run` 的配置闭包内调用：
+
+- `runtime.onShutdown { ... }`：注册 `@MainActor` 异步清理，在应用退出或更新前等待执行。
+  按注册的逆序执行；更新和退出并发或重复触发时共享同一个清理任务，每个处理器只运行一次。
+  处理器应自行限制 I/O 等待时间，不应递归触发或等待 Runtime 关闭；关闭开始后禁止注册新处理器。
+- `runtime.customizeMenu { menu in ... }`：在标准菜单安装后修改菜单，支持应用自定义快捷键
+  （例如将 Command-W 从关闭窗口改为关闭标签）。无界面模式不会安装或定制菜单。
+
+这些扩展无需替换 FIA 的 `NSApplicationDelegate`。

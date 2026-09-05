@@ -114,6 +114,7 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         main.addItem(windowItem)
         NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = main
+        runtime.customizeApplicationMenu(main)
     }
 
     private func installStatusItem() {

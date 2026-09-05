@@ -133,6 +133,35 @@ public final class FIARuntime {
     public let bun: BunSupervisor
     public let permissions: FIAPermissions
 
+    /// Application cleanup runs once, before either termination or an update.
+    private var shutdownHandlers: [@MainActor () async -> Void] = []
+    private var shutdownTask: Task<Void, Never>?
+    private var menuHandlers: [@MainActor (NSMenu) -> Void] = []
+
+    public func onShutdown(_ handler: @escaping @MainActor () async -> Void) {
+        precondition(shutdownTask == nil, "Cannot register cleanup after shutdown has started")
+        shutdownHandlers.append(handler)
+    }
+
+    /// Runs after FIA installs its standard application menu.
+    public func customizeMenu(_ handler: @escaping @MainActor (NSMenu) -> Void) {
+        menuHandlers.append(handler)
+    }
+
+    func customizeApplicationMenu(_ menu: NSMenu) {
+        for handler in menuHandlers { handler(menu) }
+    }
+
+    func runShutdownHandlers() async {
+        if let shutdownTask { await shutdownTask.value; return }
+        let handlers = shutdownHandlers
+        let task = Task { @MainActor in
+            for handler in handlers.reversed() { await handler() }
+        }
+        shutdownTask = task
+        await task.value
+    }
+
     private let manifest: RuntimeManifest
     private let backendOrigin: BackendOrigin
     private var updaterAvailable = false
@@ -280,6 +309,7 @@ public final class FIARuntime {
     }
 
     public func prepareForUpdate() async {
+        await runShutdownHandlers()
         native.beginShutdown()
         try? emit("app.willUpdate", payload: UpdateWillInstall())
         await bun.stop()
@@ -294,6 +324,7 @@ public final class FIARuntime {
     }
 
     func stop() async {
+        await runShutdownHandlers()
         windowEventsTask?.cancel()
         updaterEventsTask?.cancel()
         native.beginShutdown()
