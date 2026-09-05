@@ -56,8 +56,7 @@ public final class BackendSupervisor {
     public var sessionToken: String { sessionSecret }
     private let retryDelays: [Duration] = [.milliseconds(500), .seconds(1), .seconds(2), .seconds(4), .seconds(8)]
 
-    private var process: Process?
-    private var stdinPipe: Pipe?
+    private var process: ManagedProcess?
     private var stdoutDecoder = BackendStdoutDecoder()
     private var generation = UUID()
     private var preferredPort = 0
@@ -67,7 +66,8 @@ public final class BackendSupervisor {
     private var startupTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
     private var stableTask: Task<Void, Never>?
-    private var shutdownTask: Task<Void, Never>?
+    private var shutdownTask: Task<Void, Error>?
+    private var recoveryTask: Task<Void, Never>?
 
     public init(
         configuration: FIABunConfiguration,
@@ -116,10 +116,10 @@ public final class BackendSupervisor {
     }
 
     public func retry() {
+        guard !stopping else { return }
         retryTask?.cancel()
         retryAttempt = 0
-        stopping = false
-        if let process, process.isRunning { process.terminate() } else { launch() }
+        if process != nil { failCurrent("Manual retry") } else { launch() }
     }
 
     public func sendEvent(_ event: String, payload: Any? = nil) {
@@ -129,29 +129,27 @@ public final class BackendSupervisor {
         try? write(frame)
     }
 
-    @discardableResult
-    public func stop() -> Bool {
-        guard !stopping else { return process?.isRunning == true }
+    public func stop() async throws {
+        if let shutdownTask { return try await shutdownTask.value }
         stopping = true
         retryTask?.cancel()
+        startupTask?.cancel()
         stableTask?.cancel()
         Array(requestTasks.keys).forEach { cancelRequest($0) }
         onState(.stopping)
-        guard let process, process.isRunning else {
-            cleanup()
-            onState(.stopped)
-            return false
+        let task = Task { @MainActor in
+            if let process = self.process {
+                try await process.stop { self.sendEvent("runtime.shutdown") }
+                self.cleanup(process: process)
+            }
+            self.onState(.stopped)
         }
-        sendEvent("runtime.shutdown")
-        shutdownTask?.cancel()
-        shutdownTask = Task { @MainActor [weak process] in
-            try? await Task.sleep(for: .seconds(5))
-            guard let process, process.isRunning else { return }
-            process.terminate()
-            try? await Task.sleep(for: .seconds(2))
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        shutdownTask = task
+        do { try await task.value } catch {
+            shutdownTask = nil
+            onState(.failed(reason: error.localizedDescription))
+            throw error
         }
-        return true
     }
 
     private func launch() {
@@ -161,51 +159,32 @@ public final class BackendSupervisor {
         let currentGeneration = generation
         stdoutDecoder.reset()
         onState(retryAttempt == 0 ? .starting : .restarting(attempt: retryAttempt))
-        let process = Process()
-        let stdinPipe = Pipe()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.executableURL = executableURL
-        process.arguments = configuration.arguments
-        process.currentDirectoryURL = configuration.development
-            ? URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-            : workingDirectoryURL
-        process.standardInput = stdinPipe
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-        process.environment = configuration.development
-            ? ProcessInfo.processInfo.environment
-            : ["PATH": "/usr/bin:/bin", "TMPDIR": FileManager.default.temporaryDirectory.path]
-        diagnostic(
-            "launching Backend: \(executableURL.path) "
-                + configuration.arguments.map { String(reflecting: $0) }.joined(separator: " ")
+        let process = ManagedProcess(
+            executable: executableURL,
+            arguments: configuration.arguments,
+            workingDirectory: configuration.development
+                ? URL(fileURLWithPath: FileManager.default.currentDirectoryPath) : workingDirectoryURL,
+            environment: configuration.development ? ProcessInfo.processInfo.environment
+                : ["PATH": "/usr/bin:/bin", "TMPDIR": FileManager.default.temporaryDirectory.path]
         )
-        process.terminationHandler = { [weak self] process in
-            DispatchQueue.main.async { [weak self] in
-                self?.terminated(process: process, generation: currentGeneration)
-            }
+        process.onExit = { [weak self, weak process] status in
+            guard let self, let process, self.generation == currentGeneration else { return }
+            if !self.stopping { self.failCurrent("Backend exited with status \(status)") }
+            _ = process
         }
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            Task { @MainActor [weak self] in self?.consumeStdout(data, generation: currentGeneration) }
+        process.onInputError = { [weak self] error in
+            guard self?.generation == currentGeneration else { return }
+            self?.failCurrent(error.localizedDescription)
         }
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            try? FileHandle.standardError.write(contentsOf: Data("[backend] ".utf8) + data)
+        process.onOutput = { [weak self] output in
+            if case .stdout = output.channel { self?.consumeStdout(output.data, generation: currentGeneration) }
         }
-        do {
-            try process.run()
-        } catch {
-            diagnostic("Backend launch failed: \(error.localizedDescription)")
+        self.process = process
+        do { try process.start() } catch {
             cleanup(process: process)
             scheduleRetry(reason: "could not start Backend: \(error.localizedDescription)")
             return
         }
-        diagnostic("Backend launched with pid \(process.processIdentifier)")
-        self.process = process
-        self.stdinPipe = stdinPipe
         do {
             try write([
                 "v": FIAStdioProtocolVersion,
@@ -221,7 +200,7 @@ public final class BackendSupervisor {
             diagnostic("sent Backend initialize frame")
         } catch {
             diagnostic("could not send Backend initialize frame: \(error.localizedDescription)")
-            process.terminate()
+            failCurrent("Could not initialize Backend")
             return
         }
         startupTask?.cancel()
@@ -381,36 +360,28 @@ public final class BackendSupervisor {
     }
 
     private func write(_ frame: [String: Any]) throws {
-        guard let stdinPipe else { throw BackendSupervisorError.notRunning }
+        guard let process else { throw BackendSupervisorError.notRunning }
         var data = try JSONSerialization.data(withJSONObject: frame)
         guard data.count <= FIAMaximumStdioFrameBytes else { throw BackendSupervisorError.frameTooLarge }
         data.append(0x0A)
-        try stdinPipe.fileHandleForWriting.write(contentsOf: data)
+        try process.write(data)
     }
 
     private func failCurrent(_ reason: String) {
-        diagnostic("failing Backend: \(reason)")
+        guard !stopping, recoveryTask == nil else { return }
         startupTask?.cancel()
         stableTask?.cancel()
-        guard let process else {
-            scheduleRetry(reason: reason)
-            return
-        }
-        process.terminationHandler = nil
-        if process.isRunning { process.terminate() }
-        cleanup(process: process)
-        scheduleRetry(reason: reason)
-    }
-
-    private func terminated(process: Process, generation: UUID) {
-        guard self.generation == generation else { return }
-        let status = process.terminationStatus
-        diagnostic("Backend pid \(process.processIdentifier) exited with status \(status)")
-        cleanup(process: process)
-        if stopping {
-            onState(.stopped)
-        } else {
-            scheduleRetry(reason: "Backend exited with status \(status)")
+        let oldGeneration = generation
+        recoveryTask = Task { @MainActor in
+            defer { self.recoveryTask = nil }
+            do {
+                if let process = self.process {
+                    try await process.stop(policy: .init(graceful: .zero))
+                    guard self.generation == oldGeneration else { return }
+                    self.cleanup(process: process)
+                }
+                self.scheduleRetry(reason: reason)
+            } catch { self.onState(.failed(reason: error.localizedDescription)) }
         }
     }
 
@@ -439,15 +410,12 @@ public final class BackendSupervisor {
         try? FileHandle.standardError.write(contentsOf: Data("FIA Bun runtime: \(message)\n".utf8))
     }
 
-    private func cleanup(process: Process? = nil) {
+    private func cleanup(process: ManagedProcess? = nil) {
         requestTasks.values.forEach { $0.cancel() }
         requestTasks.removeAll()
-        let target = process ?? self.process
-        if let output = target?.standardOutput as? Pipe { output.fileHandleForReading.readabilityHandler = nil }
-        if let error = target?.standardError as? Pipe { error.fileHandleForReading.readabilityHandler = nil }
-        if self.process === target || process == nil {
+        if let process { process.onOutput = nil; process.onExit = nil; process.onInputError = nil }
+        if process == nil || self.process === process {
             self.process = nil
-            stdinPipe = nil
             stdoutDecoder.reset()
         }
         startupTask?.cancel()

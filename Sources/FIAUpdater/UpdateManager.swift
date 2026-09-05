@@ -14,9 +14,13 @@ public enum UpdateState: Sendable, Equatable {
 public final class UpdateManager: NSObject {
     public private(set) var state: UpdateState = .disabled
     public var isEnabled: Bool { controller != nil }
-    public var beforeInstall: (@MainActor () async -> Void)?
+    public var beforeInstall: (@MainActor () async throws -> Void)?
 
+    var reportPreparationFailure: (Error) -> Void = { NSAlert(error: $0).runModal() }
     private var controller: Any?
+    private var pendingRelaunch: (@MainActor () -> Void)?
+    private var preparationTask: Task<Void, Never>?
+    private var preparationGeneration = UUID()
     private var continuations: [UUID: AsyncStream<UpdateState>.Continuation] = [:]
 
     public override init() { super.init() }
@@ -33,6 +37,7 @@ public final class UpdateManager: NSObject {
     }
 
     public func checkForUpdates() throws {
+        if pendingRelaunch != nil { prepareRelaunch(); return }
         guard let controller else { throw UpdateManagerError.disabled }
         transition(to: .checking)
         FIASparkleCheckForUpdates(controller)
@@ -60,17 +65,40 @@ public final class UpdateManager: NSObject {
         item: AnyObject,
         untilInvoking invocation: @escaping @convention(block) () -> Void
     ) -> Bool {
-        guard let beforeInstall else { return false }
-        transition(to: .installing)
-        Task { @MainActor in
-            await beforeInstall()
-            invocation()
-        }
+        postponeRelaunch { invocation() }
+    }
+
+    func postponeRelaunch(_ invocation: @escaping @MainActor () -> Void) -> Bool {
+        guard beforeInstall != nil else { return false }
+        if pendingRelaunch == nil { pendingRelaunch = invocation }
+        prepareRelaunch()
         return true
+    }
+
+    private func prepareRelaunch() {
+        guard preparationTask == nil, pendingRelaunch != nil, let beforeInstall else { return }
+        transition(to: .installing)
+        let generation = preparationGeneration
+        preparationTask = Task { @MainActor in
+            defer { self.preparationTask = nil }
+            do {
+                try await beforeInstall()
+                guard generation == self.preparationGeneration else { return }
+                let invocation = self.pendingRelaunch
+                self.pendingRelaunch = nil
+                invocation?()
+            } catch {
+                guard generation == self.preparationGeneration else { return }
+                self.transition(to: .failed(error.localizedDescription))
+                self.reportPreparationFailure(error)
+            }
+        }
     }
 
     @objc(updater:didAbortWithError:)
     private func updaterDidAbort(_ updater: AnyObject, error: NSError) {
+        pendingRelaunch = nil
+        preparationGeneration = UUID()
         transition(to: .failed(error.localizedDescription))
     }
 

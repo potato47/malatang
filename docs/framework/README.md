@@ -56,10 +56,11 @@ FIA 2.0 不保留 1.x 配置/API/协议、预编译 Host、Mac App Store、跨�
 
 应用可在 `FIAApplication.run` 的配置闭包内调用：
 
-- `runtime.onShutdown { ... }`：注册 `@MainActor` 异步清理，在应用退出或更新前等待执行。
-  按注册的逆序执行；更新和退出并发或重复触发时共享同一个清理任务，每个处理器只运行一次。
-  处理器应自行限制 I/O 等待时间，不应递归触发或等待 Runtime 关闭；关闭开始后禁止注册新处理器。
-- `runtime.customizeMenu { menu in ... }`：在标准菜单安装后修改菜单，支持应用自定义快捷键
-  （例如将 Command-W 从关闭窗口改为关闭标签）。无界面模式不会安装或定制菜单。
+- `runtime.onShutdown(name:timeout:_:)`：逆序运行可抛错的 MainActor 异步清理，默认每项 10 秒。
+  更新和退出共享完整清理任务；超时或错误记录在 `shutdownReport`，进程停止失败阻止退出/更新。
+- `runtime.startProcess(_:)`：启动并登记无协议进程组，Runtime 在退出时确认停止。
+- `runtime.customizeMenu { menu in ... }`：配置阶段注册，标准菜单安装后修改一次；headless 不执行。
+- 默认关闭最后窗口后继续运行，Dock 恢复主窗口；使用 `lastWindowClosedAction`、`reopenAction`
+  和窗口 `userCloseAction` 配置行为，无需替换框架 delegate。
 
-这些扩展无需替换 FIA 的 `NSApplicationDelegate`。
+完整状态、Web 容器与破坏性变化见 [原生能力迁移](native-refactor-migration.md)。

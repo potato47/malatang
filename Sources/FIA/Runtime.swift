@@ -6,6 +6,7 @@ import FIAWeb
 import Foundation
 
 @_exported import FIAUpdater
+@_exported import FIAMacOS
 
 public enum BunServiceState: Sendable, Equatable {
     case disabled
@@ -98,17 +99,12 @@ public final class BunSupervisor {
         }
     }
 
-    public func retry() { supervisor?.retry() }
+    private var startsDisabled = false
+    fileprivate func disableStarts() { startsDisabled = true }
+    public func retry() { if !startsDisabled { supervisor?.retry() } }
     public func send(event: String, payload: Any? = nil) { supervisor?.sendEvent(event, payload: payload) }
-    fileprivate func stop(timeout: Duration = .seconds(5)) async {
-        guard let supervisor else { return }
-        _ = supervisor.stop()
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while state != .stopped, state != .disabled, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-    }
+    fileprivate func stop() async throws { try await supervisor?.stop() }
+
 }
 
 public struct FIAPermissions: Codable, Sendable {
@@ -133,33 +129,62 @@ public final class FIARuntime {
     public let bun: BunSupervisor
     public let permissions: FIAPermissions
 
-    /// Application cleanup runs once, before either termination or an update.
-    private var shutdownHandlers: [@MainActor () async -> Void] = []
-    private var shutdownTask: Task<Void, Never>?
+    public private(set) var lifecycle: RuntimeLifecycle = .running
+    public private(set) var shutdownReport: ShutdownReport?
+    public var lastWindowClosedAction: LastWindowClosedAction = .keepRunning
+    public var reopenAction: ReopenAction = .restoreMainWindow
+    private var shutdownHandlers: [(name: String, timeout: Duration, handler: @MainActor () async throws -> Void)] = []
+    private var shutdownTask: Task<ShutdownReport, Never>?
+    private var handlerTask: Task<[ShutdownIssue], Never>?
+    private var shutdownReason: ShutdownReason?
+    private var managedProcesses: [ManagedProcess] = []
     private var menuHandlers: [@MainActor (NSMenu) -> Void] = []
+    private var configuring = true
+    private var menuInstalled = false
 
-    public func onShutdown(_ handler: @escaping @MainActor () async -> Void) {
-        precondition(shutdownTask == nil, "Cannot register cleanup after shutdown has started")
-        shutdownHandlers.append(handler)
+    public func onShutdown(name: String = "Application cleanup", timeout: Duration = .seconds(10), _ handler: @escaping @MainActor () async throws -> Void) {
+        precondition(lifecycle == .running, "Cannot register cleanup after shutdown has started")
+        precondition(timeout > .zero, "Cleanup timeout must be positive")
+        shutdownHandlers.append((name, timeout, handler))
     }
 
-    /// Runs after FIA installs its standard application menu.
+    /// Runtime ownership guarantees that process stop failures block termination.
+    public func startProcess(_ process: ManagedProcess) throws {
+        guard lifecycle == .running else { throw ManagedProcessError("Runtime is shutting down") }
+        try process.start()
+        managedProcesses.append(process)
+    }
+
     public func customizeMenu(_ handler: @escaping @MainActor (NSMenu) -> Void) {
+        precondition(configuring, "Register menu customization during application configuration")
         menuHandlers.append(handler)
     }
 
+    func finishConfiguration() { configuring = false }
+
     func customizeApplicationMenu(_ menu: NSMenu) {
+        guard !menuInstalled else { return }
+        menuInstalled = true
         for handler in menuHandlers { handler(menu) }
+        menuHandlers.removeAll()
     }
 
-    func runShutdownHandlers() async {
-        if let shutdownTask { await shutdownTask.value; return }
+    @discardableResult
+    func runShutdownHandlers() async -> [ShutdownIssue] {
+        if let handlerTask { return await handlerTask.value }
         let handlers = shutdownHandlers
+        shutdownHandlers.removeAll()
         let task = Task { @MainActor in
-            for handler in handlers.reversed() { await handler() }
+            var issues: [ShutdownIssue] = []
+            for entry in handlers.reversed() {
+                if let issue = await ShutdownRace().run(name: entry.name, timeout: entry.timeout, handler: entry.handler) {
+                    issues.append(issue)
+                }
+            }
+            return issues
         }
-        shutdownTask = task
-        await task.value
+        handlerTask = task
+        return await task.value
     }
 
     private let manifest: RuntimeManifest
@@ -188,10 +213,16 @@ public final class FIARuntime {
             if updater.isEnabled { registerUpdaterService() }
         }
         updaterAvailable = updater.isEnabled
-        updater.beforeInstall = { [weak self] in await self?.prepareForUpdate() }
+        updater.beforeInstall = { [weak self] in
+            guard let self else { return }
+            let report = await self.prepareForUpdate()
+            guard report.completed else { throw ManagedProcessError(report.issues.map(\.message).joined(separator: "\n")) }
+        }
     }
 
     func start() async throws {
+        guard lifecycle == .running else { throw ManagedProcessError("Runtime is shutting down") }
+        finishConfiguration()
         let environment = ProcessInfo.processInfo.environment
         let developmentOrigin = environment["FIA_WEB_DEV_URL"].flatMap(URL.init(string:))
         let needsGateway = manifest.web.enabled || manifest.backend.enabled || environment["FIA_ENDPOINT_FILE"] != nil
@@ -244,27 +275,19 @@ public final class FIARuntime {
             let endpoint = try gateway.start()
             self.gateway = gateway
             self.endpoint = endpoint
-            windows.configureWebURL { [weak gateway] route in gateway?.makeBootstrapURL(target: route) }
+            windows.configureWebURL(trustedOrigins: [URL(string: endpoint.origin)!] + (developmentOrigin.map { [$0] } ?? [])) { [weak gateway] route in gateway?.makeBootstrapURL(target: route) }
             if let path = environment["FIA_ENDPOINT_FILE"] {
                 let data = try JSONEncoder().encode(endpoint)
                 let file = URL(fileURLWithPath: path)
                 try data.write(to: file, options: .atomic)
                 try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
             }
+            let windowEvents = windows.events()
             windowEventsTask = Task { @MainActor [weak self, weak gateway] in
                 guard let self else { return }
-                for await event in self.windows.events() {
+                for await event in windowEvents {
                     guard !Task.isCancelled else { return }
-                    let state: AppWindowState
-                    let name: String
-                    switch event {
-                    case let .opened(value): name = "opened"; state = value
-                    case let .shown(value): name = "shown"; state = value
-                    case let .hidden(value): name = "hidden"; state = value
-                    case let .focused(value): name = "focused"; state = value
-                    case let .closed(value): name = "closed"; state = value
-                    }
-                    let payload = WindowEventPayload(event: name, window: state)
+                    let payload = event
                     let data = try? JSONEncoder().encode(payload)
                     gateway?.publish(event: "windows.changed", payload: data)
                     self.bun.send(event: "windows.changed", payload: data.flatMap {
@@ -308,14 +331,8 @@ public final class FIARuntime {
         if environment["FIA_HEADLESS"] != "1" { try windows.showInitialWindow() }
     }
 
-    public func prepareForUpdate() async {
-        await runShutdownHandlers()
-        native.beginShutdown()
-        try? emit("app.willUpdate", payload: UpdateWillInstall())
-        await bun.stop()
-        native.cancelActive()
-        await resources.cleanupAll()
-    }
+    @discardableResult
+    public func prepareForUpdate() async -> ShutdownReport { await shutdown(reason: .update) }
 
     public func emit<Event: Encodable & Sendable>(_ event: String, payload: Event) throws {
         let data = try JSONEncoder().encode(payload)
@@ -323,15 +340,50 @@ public final class FIARuntime {
         bun.send(event: event, payload: try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed))
     }
 
-    func stop() async {
-        await runShutdownHandlers()
-        windowEventsTask?.cancel()
-        updaterEventsTask?.cancel()
+    @discardableResult
+    func stop() async -> ShutdownReport { await shutdown(reason: .quit) }
+
+    private func shutdown(reason: ShutdownReason) async -> ShutdownReport {
+        if let shutdownTask { return await shutdownTask.value }
+        let first = shutdownReason == nil
+        if first { shutdownReason = reason }
+        lifecycle = .shuttingDown
+        windows.beginShutdown()
+        bun.disableStarts()
         native.beginShutdown()
+        if first, shutdownReason == .update { try? emit("app.willUpdate", payload: UpdateWillInstall()) }
         native.cancelActive()
-        await bun.stop()
-        await resources.cleanupAll()
-        await gateway?.stop()
+        let task = Task { @MainActor in
+            var issues = await self.runShutdownHandlers()
+            var processesStopped = true
+            do { try await self.bun.stop() } catch {
+                processesStopped = false
+                issues.append(ShutdownIssue(name: "Bun backend", message: error.localizedDescription))
+            }
+            for process in self.managedProcesses {
+                do { try await process.stop() } catch {
+                    processesStopped = false
+                    issues.append(ShutdownIssue(name: "Process \(process.processIdentifier)", message: error.localizedDescription))
+                }
+            }
+            if processesStopped {
+                self.shortcuts.clear()
+                await self.resources.cleanupAll()
+                self.windowEventsTask?.cancel()
+                self.updaterEventsTask?.cancel()
+                await self.gateway?.stop()
+                self.lifecycle = .stopped
+            }
+            return ShutdownReport(reason: self.shutdownReason!, issues: issues, completed: processesStopped)
+        }
+        shutdownTask = task
+        let report = await task.value
+        shutdownReport = report
+        for issue in report.issues {
+            try? FileHandle.standardError.write(contentsOf: Data("FIA cleanup [\(issue.name)]: \(issue.message)\n".utf8))
+        }
+        if !report.completed { shutdownTask = nil }
+        return report
     }
 
     private func registerServices() {
@@ -339,7 +391,7 @@ public final class FIARuntime {
             ApplicationInfo(name: manifest.app.name, identifier: manifest.app.identifier, version: manifest.app.version, build: manifest.app.build)
         }
         native.register("application.quit", input: FIAEmpty.self, output: FIAEmpty.self, permission: "application") { _ in
-            await MainActor.run { NSApp.terminate(nil) }
+            await MainActor.run { FIAApplication.requestQuit() }
             return FIAEmpty()
         }
         native.register("clipboard.readText", input: FIAEmpty.self, output: Optional<String>.self, permission: "clipboard") { [clipboard] _ in
@@ -437,7 +489,6 @@ private struct URLInput: Codable, Sendable { let url: String }
 private struct PathInput: Codable, Sendable { let path: String }
 private struct ShortcutsInput: Codable, Sendable { let shortcuts: [ShortcutService.Shortcut] }
 private struct ShortcutPressed: Codable, Sendable { let id: String }
-private struct WindowEventPayload: Codable, Sendable { let event: String; let window: AppWindowState }
 private struct UpdateStatePayload: Codable, Sendable {
     let state: String
     let message: String?

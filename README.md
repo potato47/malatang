@@ -104,3 +104,9 @@ fia create script-app --yes --no-install
 
 `-y` / `--yes` 跳过所有问题，未指定选项采用默认值。CI 或 stdin/stdout 非 TTY 时也不会
 进入交互；这些情况下必须提供项目名。项目名须为小写 kebab-case，目标目录不能已存在。
+
+## 原生应用扩展
+
+窗口关闭/恢复策略、可等待进程组、退出回调和可嵌入 Web 内容见
+[迁移与 API 说明](docs/framework/native-refactor-migration.md)。
+运行 `swift run FIAWorkbenchExample` 查看[原生工作台参考实现](examples/native-workbench/README.md)。

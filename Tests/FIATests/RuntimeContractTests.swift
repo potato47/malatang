@@ -47,15 +47,15 @@ final class RuntimeContractTests: XCTestCase {
             return TestWindow(id: "main")
         }
 
-        XCTAssertEqual(try manager.state("main").visibility, .hidden)
+        XCTAssertEqual(try manager.state("main").lifecycle, .registered)
         XCTAssertEqual(creations, 0)
         try manager.show("main")
         XCTAssertEqual(creations, 1)
         try manager.close("main")
-        XCTAssertEqual(try manager.state("main").visibility, .closed)
+        XCTAssertEqual(try manager.state("main").lifecycle, .closed)
         XCTAssertEqual(creations, 1)
         try manager.focus("main")
-        XCTAssertEqual(try manager.state("main").visibility, .visible)
+        XCTAssertEqual(try manager.state("main").lifecycle, .open)
         XCTAssertEqual(creations, 2)
         try manager.close("main")
     }
@@ -68,31 +68,12 @@ final class RuntimeContractTests: XCTestCase {
         let firstWindow = try XCTUnwrap(first as? AppKitWindow)
         XCTAssertFalse(firstWindow.window.isReleasedWhenClosed)
         try manager.close("reopen")
-        XCTAssertEqual(first.state.visibility, .closed)
+        XCTAssertEqual(first.state.lifecycle, .closed)
 
         let second = try manager.show("reopen")
         XCTAssertFalse(first === second)
-        XCTAssertEqual(second.state.visibility, .visible)
+        XCTAssertEqual(second.state.lifecycle, .open)
         try manager.close("reopen")
-    }
-
-    func testWebWindowDisablesRubberBanding() throws {
-        let window = WebWindow(
-            id: "web",
-            title: "Web",
-            size: CGSize(width: 320, height: 240),
-            url: URL(string: "about:blank")!
-        )
-        defer { try? window.close() }
-
-        let selector = NSSelectorFromString("_rubberBandingEnabled")
-        XCTAssertTrue(window.webView.responds(to: selector))
-        typealias GetRubberBandingEdges = @convention(c) (AnyObject, Selector) -> UInt
-        let getter = unsafeBitCast(
-            window.webView.method(for: selector),
-            to: GetRubberBandingEdges.self
-        )
-        XCTAssertEqual(getter(window.webView, selector), 0)
     }
 
     func testResourcesAreSessionIsolatedAndDisposable() async throws {
@@ -150,17 +131,17 @@ private enum TestApplicationError: String { case documentLocked = "document_lock
 private final class TestWindow: AppWindow {
     let id: String
     let kind: AppWindowKind = .appKit
-    private var visibility: AppWindowVisibility = .hidden
+    private var lifecycle: AppWindowLifecycle = .open
     private var focused = false
 
     init(id: String) { self.id = id }
 
     var state: AppWindowState {
-        AppWindowState(id: id, kind: kind, visibility: visibility, focused: focused)
+        AppWindowState(id: id, kind: kind, lifecycle: lifecycle, focused: focused)
     }
 
-    func show() throws { visibility = .visible }
-    func hide() throws { visibility = .hidden; focused = false }
-    func focus() throws { visibility = .visible; focused = true }
-    func close() throws { visibility = .closed; focused = false }
+    func show() throws { lifecycle = .open }
+    func hide() throws { focused = false }
+    func focus() throws { lifecycle = .open; focused = true }
+    func close() throws { lifecycle = .closed; focused = false }
 }

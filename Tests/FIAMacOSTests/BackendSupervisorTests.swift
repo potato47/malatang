@@ -41,7 +41,7 @@ struct BackendSupervisorTests {
         #expect(frame["nativeOrigin"] as? String == "http://127.0.0.1:45670")
         #expect(frame["nativeSession"] as? String == nativeSession)
         #expect((frame["sessionSecret"] as? String)?.count ?? 0 >= 64)
-        _ = supervisor.stop()
+        try await supervisor.stop()
     }
 
     @Test func rejectsDuplicateRequestIDsAndConcurrencyOverflow() async throws {
@@ -86,7 +86,7 @@ struct BackendSupervisorTests {
         }
         let response = try String(contentsOf: responseURL, encoding: .utf8)
         #expect(response.contains(#""code":"cancelled""#))
-        _ = supervisor.stop()
+        try await supervisor.stop()
     }
 
     @Test func roundTripsTopLevelJSONFragments() async throws {
@@ -125,7 +125,7 @@ struct BackendSupervisorTests {
         let data = try Data(contentsOf: responseURL)
         let frame = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(frame["result"] as? String == "output")
-        _ = supervisor.stop()
+        try await supervisor.stop()
     }
 
     @Test func staysReadyAfterCancellingReadinessTimeout() async throws {
@@ -160,7 +160,7 @@ struct BackendSupervisorTests {
         #expect(!states.contains(where: { if case .restarting = $0 { true } else { false } }))
         #expect(!states.contains(where: { if case .failed = $0 { true } else { false } }))
 
-        #expect(supervisor.stop())
+        try await supervisor.stop()
         let stoppedDeadline = ContinuousClock.now + .seconds(2)
         while !states.contains(.stopped), ContinuousClock.now < stoppedDeadline {
             try await Task.sleep(for: .milliseconds(20))
@@ -193,7 +193,32 @@ struct BackendSupervisorTests {
         }
         #expect(states.contains(where: { if case .starting = $0 { true } else { false } }))
         #expect(states.contains(where: { if case .restarting = $0 { true } else { false } }))
-        supervisor.stop()
+        try await supervisor.stop()
+    }
+
+    @Test func manualRetryReapsOldGroupBeforeNewBackendIsReady() async throws {
+        let record = FileManager.default.temporaryDirectory.appendingPathComponent("fia-retry-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: record) }
+        let configuration = FIABunConfiguration(
+            development: true, appName: "Retry", appIdentifier: "com.example.retry",
+            executable: "/bin/sh",
+            arguments: ["-c", #"printf '%s\n' "$$" >> "$0"; IFS= read -r initialize; printf '%s\n' '{"v":3,"type":"ready","port":45678,"origin":"http://127.0.0.1:45678"}'; IFS= read -r shutdown"#, record.path],
+            sha256: String(repeating: "0", count: 64), nativeOrigin: "http://127.0.0.1:45670", nativeSession: String(repeating: "n", count: 64)
+        )
+        var ready = 0
+        let supervisor = try BackendSupervisor(configuration: configuration, applicationSupportDirectory: FileManager.default.temporaryDirectory, onRequest: { _, _ in nil }, onState: { if case .ready = $0 { ready += 1 } })
+        supervisor.start()
+        let initialDeadline = ContinuousClock.now + .seconds(2)
+        while ready == 0, ContinuousClock.now < initialDeadline { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(ready == 1)
+        supervisor.retry()
+        let retryDeadline = ContinuousClock.now + .seconds(3)
+        while ready < 2, ContinuousClock.now < retryDeadline { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(ready == 2)
+        let pids = try String(contentsOf: record, encoding: .utf8).split(separator: "\n").compactMap { Int32($0) }
+        #expect(pids.count == 2)
+        if let first = pids.first { #expect(kill(-first, 0) == -1 && errno == ESRCH) }
+        try await supervisor.stop()
     }
 
     private func expectProtocolRestart(script: String, identifier: String) async throws {
@@ -224,6 +249,6 @@ struct BackendSupervisorTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(states.contains(where: { if case .restarting = $0 { true } else { false } }))
-        _ = supervisor.stop()
+        try await supervisor.stop()
     }
 }

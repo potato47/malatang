@@ -31,6 +31,12 @@ export interface ApplicationDescription {
     readonly updater: boolean;
   };
   readonly windows: readonly { readonly id: string; readonly type: string }[];
+  readonly windowContract: {
+    readonly stateFields: readonly string[];
+    readonly lifecycle: readonly string[];
+    readonly fullscreen: readonly string[];
+    readonly changedFields: readonly string[];
+  };
   readonly nativeMethods: readonly string[];
   readonly nativeEvents: readonly string[];
   readonly nativeErrors: readonly { readonly code: string; readonly recoverable: boolean }[];
@@ -52,11 +58,16 @@ async function swiftRegistrations(cwd: string): Promise<Array<{ id: string; type
   for (const file of files.sort()) {
     const source = await readFile(file, "utf8");
     for (const match of source.matchAll(
-      /\.register(Web|SwiftUI|AppKit)\(\s*"([A-Za-z0-9._-]+)"/gu,
+      /\.register(FIAWeb|ExternalWeb|SwiftUI|AppKit)\(\s*"([A-Za-z0-9._-]+)"/gu,
     )) {
       windows.push({
         id: match[2]!,
-        type: match[1] === "Web" ? "web" : match[1] === "SwiftUI" ? "swiftUI" : "appKit",
+        type:
+          match[1] === "FIAWeb" || match[1] === "ExternalWeb"
+            ? "web"
+            : match[1] === "SwiftUI"
+              ? "swiftUI"
+              : "appKit",
       });
     }
   }
@@ -91,6 +102,21 @@ export async function describeProject(cwd: string): Promise<ApplicationDescripti
       updater: config.updater !== undefined,
     },
     windows,
+    windowContract: {
+      stateFields: [
+        "id",
+        "kind",
+        "lifecycle",
+        "orderedIn",
+        "applicationHidden",
+        "miniaturized",
+        "focused",
+        "fullscreen",
+      ],
+      lifecycle: ["registered", "open", "closed"],
+      fullscreen: ["windowed", "entering", "fullscreen", "exiting"],
+      changedFields: ["previous", "current", "cause"],
+    },
     nativeMethods: [
       "application.info",
       "application.quit",

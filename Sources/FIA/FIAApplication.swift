@@ -2,12 +2,23 @@ import AppKit
 import Foundation
 
 public enum FIAApplication {
+    /// Schedule outside a main-dispatch callback: AppKit's terminateLater loop must
+    /// remain able to service the main queue while asynchronous cleanup runs.
+    @MainActor
+    public static func requestQuit() {
+        RunLoop.main.perform(inModes: [.common]) {
+            MainActor.assumeIsolated { NSApp.terminate(nil) }
+        }
+        CFRunLoopWakeUp(CFRunLoopGetMain())
+    }
+
     @MainActor
     public static func run(configure: (FIARuntime) throws -> Void) {
         do {
             let manifest = try RuntimeManifest.load()
             let runtime = try FIARuntime(manifest: manifest)
             try configure(runtime)
+            runtime.finishConfiguration()
             let application = NSApplication.shared
             let headless = ProcessInfo.processInfo.environment["FIA_HEADLESS"] == "1"
             let delegate = ApplicationDelegate(runtime: runtime, manifest: manifest, headless: headless)
@@ -23,12 +34,13 @@ public enum FIAApplication {
 }
 
 @MainActor
-private final class ApplicationDelegate: NSObject, NSApplicationDelegate {
+final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     private let runtime: FIARuntime
     private let manifest: RuntimeManifest
     private let headless: Bool
     private var statusItem: NSStatusItem?
     private var stopping = false
+    private var menuInstalled = false
 
     init(runtime: FIARuntime, manifest: RuntimeManifest, headless: Bool) {
         self.runtime = runtime
@@ -52,20 +64,26 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        manifest.statusItem == nil
+        runtime.lastWindowClosedAction == .quit
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !stopping else { return .terminateLater }
         stopping = true
         Task { @MainActor in
-            await runtime.stop()
-            sender.reply(toApplicationShouldTerminate: true)
+            let report = await runtime.stop()
+            sender.reply(toApplicationShouldTerminate: report.completed)
+            if !report.completed {
+                stopping = false
+                NSAlert(error: ManagedProcessError(report.issues.map(\.message).joined(separator: "\n"))).runModal()
+            }
         }
         return .terminateLater
     }
 
-    private func installMenu() {
+    func installMenu() {
+        guard !headless, !menuInstalled else { return }
+        menuInstalled = true
         let main = NSMenu()
         let applicationItem = NSMenuItem(title: manifest.app.name, action: nil, keyEquivalent: "")
         let applicationMenu = NSMenu()
@@ -132,6 +150,12 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
     }
 
-    @objc private func showMainWindow() { try? runtime.windows.focus("main") }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard runtime.lifecycle == .running, runtime.reopenAction == .restoreMainWindow else { return false }
+        try? runtime.windows.restoreMainWindow()
+        return false
+    }
+
+    @objc private func showMainWindow() { try? runtime.windows.restoreMainWindow() }
     @objc private func checkForUpdates() { try? runtime.updater.checkForUpdates() }
 }

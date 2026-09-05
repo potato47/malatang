@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:fia}",
+      "name": "Debug FIAWorkbenchExample",
+      "target": "FIAWorkbenchExample",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug FIAWorkbenchExample"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:fia}",
+      "name": "Release FIAWorkbenchExample",
+      "target": "FIAWorkbenchExample",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release FIAWorkbenchExample"
+    }
+  ]
+}

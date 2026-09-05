@@ -13,6 +13,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "FIA", targets: ["FIA"]),
+        .executable(name: "FIAWorkbenchExample", targets: ["FIAWorkbenchExample"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", exact: "2.97.1"),
@@ -25,11 +26,12 @@ let package = Package(
             sources: ["BackendProtocol.swift", "FIAError.swift", "FIAVersion.swift"],
             linkerSettings: [.linkedFramework("Security")]
         ),
+        .target(name: "FIAProcessSupport", path: "Sources/FIAProcessSupport", publicHeadersPath: "include"),
         .target(
             name: "FIAMacOS",
-            dependencies: ["FIACore"],
+            dependencies: ["FIACore", "FIAProcessSupport"],
             path: "Sources/FIAMacOS",
-            sources: ["BackendSupervisor.swift", "GlobalShortcutController.swift"],
+            sources: ["BackendSupervisor.swift", "ManagedProcess.swift", "GlobalShortcutController.swift"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Carbon"),
@@ -76,6 +78,7 @@ let package = Package(
             dependencies: fiaDependencies,
             path: "Sources/FIA"
         ),
+        .executableTarget(name: "FIAWorkbenchExample", dependencies: ["FIA"], path: "examples/native-workbench", exclude: ["README.md"]),
         .testTarget(
             name: "FIACoreTests",
             dependencies: ["FIACore"],
@@ -86,7 +89,7 @@ let package = Package(
             name: "FIAMacOSTests",
             dependencies: ["FIAMacOS", "FIACore"],
             path: "Tests/FIAMacOSTests",
-            sources: ["BackendSupervisorTests.swift", "GlobalShortcutControllerTests.swift"]
+            sources: ["BackendSupervisorTests.swift", "ManagedProcessTests.swift", "GlobalShortcutControllerTests.swift"]
         ),
         .testTarget(
             name: "FIATests",

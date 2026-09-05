@@ -74,7 +74,7 @@ public final class NativeMethodRegistry {
                 code: .unsafeState,
                 component: "native",
                 method: method,
-                message: "Native Runtime is preparing to update",
+                message: "Native Runtime is shutting down",
                 recoverable: true
             ))
         }
