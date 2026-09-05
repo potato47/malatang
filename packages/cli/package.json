@@ -37,7 +37,9 @@
     "test": "bun run build && bun test tests",
     "prepack": "bun run build"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@clack/prompts": "^1.7.0"
+  },
   "devDependencies": {
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",

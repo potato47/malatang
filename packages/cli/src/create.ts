@@ -85,6 +85,13 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+export async function validateProjectTarget(name: string, cwd: string): Promise<void> {
+  validateName(name);
+  const projectRoot = resolve(cwd, name);
+  if (await exists(projectRoot))
+    throw new CreateProjectError(`target already exists: ${projectRoot}`);
+}
+
 async function defaultRunner(command: readonly string[], cwd: string): Promise<number> {
   const child = Bun.spawn([...command], {
     cwd,
@@ -165,10 +172,8 @@ async function renderFile(
 }
 
 export async function createProject(options: CreateProjectOptions): Promise<string> {
-  validateName(options.name);
+  await validateProjectTarget(options.name, options.cwd);
   const projectRoot = resolve(options.cwd, options.name);
-  if (await exists(projectRoot))
-    throw new CreateProjectError(`target already exists: ${projectRoot}`);
   const temporaryRoot = resolve(options.cwd, `.fia-create-${options.name}-${crypto.randomUUID()}`);
   const dependencies = options.dependencies ?? {};
   const runner = dependencies.runner ?? defaultRunner;

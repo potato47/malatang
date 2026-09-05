@@ -6,11 +6,19 @@ import {
 } from "./application.ts";
 import { checkProject, renderCheck } from "./check.ts";
 import { createProject, type CreateProjectDependencies } from "./create.ts";
+import {
+  CreateCancelled,
+  parseCreateArguments,
+  resolveCreateOptions,
+  shouldPromptCreate,
+  type CreatePrompts,
+  type CreateTerminal,
+} from "./create-options.ts";
 import { describeProject } from "./describe.ts";
 import { renderDoctorText, runDoctor } from "./doctor.ts";
 import { generateNativeAPI } from "./generate.ts";
 import { CLI_VERSION } from "./metadata.ts";
-import type { ProjectTemplate, UpdateChannel } from "./project-config.ts";
+import type { UpdateChannel } from "./project-config.ts";
 import { SystemDoctorProbe, type DoctorProbe } from "./system-probe.ts";
 
 export interface CLIIO {
@@ -22,6 +30,8 @@ export interface CLIDependencies {
   io?: CLIIO;
   doctorProbe?: DoctorProbe;
   create?: CreateProjectDependencies;
+  createPrompts?: CreatePrompts;
+  createTerminal?: CreateTerminal;
   application?: ApplicationCommandDependencies;
   applicationExecutor?: typeof executeApplicationCommand;
   workingDirectory?: string;
@@ -35,7 +45,7 @@ const defaultIO: CLIIO = {
 const rootHelp = `FIA 2.0 — Swift-first macOS application framework
 
 Usage:
-  fia create <name> [--template native|web|hybrid] [--backend bun] [--local] [--no-install] [--git]
+  fia create [name] [--template native|web|hybrid] [--backend bun|--no-backend] [--local] [--install|--no-install] [--git|--no-git] [-y|--yes]
   fia dev [--browser chrome|edge] [--app]
   fia run
   fia generate [--check]
@@ -56,9 +66,13 @@ const commandHelp: Readonly<Record<string, string>> = {
   create: `Create a FIA 2.0 application
 
 Usage:
-  fia create <name> [--template native|web|hybrid] [--backend bun] [--local] [--no-install] [--git]
+  fia create [name] [--template native|web|hybrid] [--backend bun|--no-backend] [--local] [--install|--no-install] [--git|--no-git] [-y|--yes]
 
-The default template is a React + Vite Web main window with no Bun Backend.
+In an interactive terminal, prompts fill in options not supplied on the command line.
+Defaults: Web (React + Vite), no Bun Backend, no Git, install dependencies.
+-y, --yes skips prompts and uses defaults for unspecified options.
+Non-TTY and CI environments never prompt. A name is required without prompts.
+Ctrl+C cancels the wizard without creating files (exit code 130).
 --local links both the JavaScript package and Swift Runtime to the source checkout
 containing this CLI. Build the CLI with bun run cli:build before using a linked fia.
 `,
@@ -176,56 +190,39 @@ export async function runCLI(
   const cwd = dependencies.workingDirectory ?? process.cwd();
 
   if (command === "create") {
-    const name = flags[0];
-    if (name === undefined || name.startsWith("-"))
-      return usageError(io, "create requires a project name");
-    const options = flags.slice(1);
-    for (const option of ["--template", "--backend", "--local", "--no-install", "--git"] as const) {
-      if (repeated(options, option))
-        return usageError(io, `create ${option} may only be specified once`);
-    }
-    let template: ProjectTemplate = "web";
-    let backend = false;
+    let parsed;
     try {
-      const templateValue = optionValue(options, "--template");
-      if (templateValue !== undefined) {
-        if (!(["native", "web", "hybrid"] as const).includes(templateValue as ProjectTemplate)) {
-          return usageError(io, `invalid template: ${templateValue}`);
-        }
-        template = templateValue as ProjectTemplate;
-      }
-      const backendValue = optionValue(options, "--backend");
-      if (backendValue !== undefined) {
-        if (backendValue !== "bun")
-          return usageError(io, `unsupported Backend runtime: ${backendValue}`);
-        backend = true;
-      }
+      parsed = parseCreateArguments(flags);
     } catch (error) {
       return usageError(io, error instanceof Error ? error.message : "invalid create option");
     }
-    const consumed = new Set<number>();
-    for (let index = 0; index < options.length; index += 1) {
-      const value = options[index];
-      if (value === "--template" || value === "--backend") {
-        consumed.add(index);
-        consumed.add(index + 1);
-      } else if (value === "--local" || value === "--no-install" || value === "--git")
-        consumed.add(index);
-    }
-    const unknownIndex = options.findIndex((_value, index) => !consumed.has(index));
-    if (unknownIndex >= 0) return usageError(io, `unknown create option: ${options[unknownIndex]}`);
-    return await execute(io, debug, "project creation failed", async () => {
-      await createProject({
-        name,
-        cwd,
-        install: !options.includes("--no-install"),
-        initializeGit: options.includes("--git"),
-        template,
-        backend,
-        local: options.includes("--local"),
-        io,
-        dependencies: dependencies.create,
+    const interactive = shouldPromptCreate(
+      parsed,
+      dependencies.createTerminal ?? {
+        stdinTTY: Boolean(process.stdin.isTTY),
+        stdoutTTY: Boolean(process.stdout.isTTY),
+        ci: Boolean(process.env.CI && process.env.CI !== "false" && process.env.CI !== "0"),
+      },
+    );
+    if (!interactive && parsed.name === undefined)
+      return usageError(io, "create requires a project name");
+    let options;
+    try {
+      options = await resolveCreateOptions(parsed, cwd, interactive, dependencies.createPrompts);
+    } catch (error) {
+      if (error instanceof CreateCancelled) {
+        io.stdout("Project creation cancelled.\n");
+        return 130;
+      }
+      writeCommandError(io, error, "invalid project target", {
+        debug,
+        json: false,
+        method: "create",
       });
+      return 1;
+    }
+    return await execute(io, debug, "project creation failed", async () => {
+      await createProject({ ...options, cwd, io, dependencies: dependencies.create });
     });
   }
 

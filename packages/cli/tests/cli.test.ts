@@ -48,6 +48,7 @@ describe("FIA 2.0 CLI", () => {
       await runCLI(["create", "default-app", "--no-install"], {
         io: output.io,
         workingDirectory: cwd,
+        createTerminal: { stdinTTY: false, stdoutTTY: false, ci: false },
       }),
     ).toBe(0);
     expect(await Bun.file(resolve(cwd, "default-app/frontend/App.tsx")).exists()).toBe(true);
