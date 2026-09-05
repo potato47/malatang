@@ -37,6 +37,7 @@ describe("FIA 2.0 CLI", () => {
       expect(output.stdout.join("")).toContain(command);
     }
     expect(output.stdout.join("")).not.toContain("fia package");
+    expect(output.stdout.join("")).toContain("--local");
   });
 
   test("creates Web/no-Bun by default", async () => {
@@ -81,6 +82,8 @@ describe("FIA 2.0 CLI", () => {
     for (const args of [
       ["package"],
       ["create", "bad", "--backend", "node"],
+      ["create", "bad", "--local", "--local"],
+      ["create", "bad", "--local", "/some/checkout"],
       ["dev", "--browser", "safari"],
       ["dev", "chrome"],
       ["dev", "--browser", "chrome", "--browser", "edge"],

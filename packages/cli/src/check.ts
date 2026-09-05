@@ -1,8 +1,9 @@
 import { generateNativeAPI } from "./generate.ts";
 import { loadProjectConfig } from "./project-config.ts";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { CLI_VERSION } from "./metadata.ts";
+import { validateLocalFramework } from "./local-framework.ts";
 
 export interface CheckIO {
   stdout(value: string): void;
@@ -34,20 +35,31 @@ export async function checkProject(cwd: string): Promise<CheckResult> {
   }
   try {
     const manifest = await readFile(resolve(cwd, "native/Package.swift"), "utf8");
+    let localRoot: string | undefined;
+    for (const match of manifest.matchAll(
+      /\.package\(\s*(?:name:\s*("(?:[^"\\]|\\.)*"),\s*)?path:\s*("(?:[^"\\]|\\.)*")\s*\)/gu,
+    )) {
+      const path = JSON.parse(match[2]!) as string;
+      const name = match[1] === undefined ? basename(path).toLowerCase() : JSON.parse(match[1]);
+      if (name === "fia") {
+        localRoot = (await validateLocalFramework(resolve(cwd, "native", path))).root;
+        break;
+      }
+    }
     if (
       !manifest.includes('name: "FIAAppExecutable"') ||
-      !manifest.includes(`exact: "${CLI_VERSION}"`) ||
+      (localRoot === undefined && !manifest.includes(`exact: "${CLI_VERSION}"`)) ||
       !manifest.includes(".macOS(.v14)") ||
       !manifest.includes("swiftLanguageModes: [.v6]")
     ) {
       throw new Error(
-        `native/Package.swift must build FIAAppExecutable for macOS 14 with Swift 6 and pin FIA ${CLI_VERSION}`,
+        `native/Package.swift must build FIAAppExecutable for macOS 14 with Swift 6 and pin FIA ${CLI_VERSION} or reference a valid local FIA checkout`,
       );
     }
     checks.push({
       id: "native-package",
       status: "pass",
-      message: `FIAAppExecutable uses macOS 14, Swift 6, and FIA ${CLI_VERSION}`,
+      message: `FIAAppExecutable uses macOS 14, Swift 6, and ${localRoot === undefined ? `FIA ${CLI_VERSION}` : `local FIA at ${localRoot}`}`,
     });
   } catch (error) {
     checks.push({

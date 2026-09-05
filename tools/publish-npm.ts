@@ -105,8 +105,8 @@ export async function validateReleaseMetadata(): Promise<void> {
     resolve(PACKAGE_DIRECTORY, "templates/v2/common/native/Package.swift.template"),
     "utf8",
   );
-  if (!template.includes('exact: "__FIA_VERSION__"')) {
-    throw new Error("generated applications must pin the exact FIA Swift Package version");
+  if (!template.includes("__FIA_SWIFT_PACKAGE_DEPENDENCY__")) {
+    throw new Error("application templates must render the FIA Swift Package dependency");
   }
 }
 

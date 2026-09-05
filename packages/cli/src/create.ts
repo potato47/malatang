@@ -1,7 +1,8 @@
 import { copyFile, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { generateNativeAPI } from "./generate.ts";
-import { CLI_VERSION } from "./metadata.ts";
+import { resolveLocalFramework, validateLocalFrameworkLink } from "./local-framework.ts";
+import { CLI_PACKAGE_NAME, CLI_VERSION } from "./metadata.ts";
 import type { ProjectTemplate } from "./project-config.ts";
 
 export interface CreateIO {
@@ -16,6 +17,7 @@ export interface CreateProjectDependencies {
   assetDirectory?: string;
   cliPackageSpec?: string;
   swiftPackageURL?: string;
+  cliPackageDirectory?: string;
 }
 
 export interface CreateProjectOptions {
@@ -25,6 +27,7 @@ export interface CreateProjectOptions {
   initializeGit: boolean;
   template?: ProjectTemplate;
   backend?: boolean;
+  local?: boolean;
   io: CreateIO;
   dependencies?: CreateProjectDependencies;
 }
@@ -173,7 +176,12 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
     dependencies.templateDirectory ?? resolve(import.meta.dir, "../templates/v2");
   const assetDirectory =
     dependencies.assetDirectory ?? resolve(import.meta.dir, "../templates/v2/common/assets");
-  const cliPackageSpec = dependencies.cliPackageSpec ?? CLI_VERSION;
+  const localFramework = options.local
+    ? await resolveLocalFramework(dependencies.cliPackageDirectory)
+    : undefined;
+  const cliPackageSpec = localFramework
+    ? `link:${CLI_PACKAGE_NAME}`
+    : (dependencies.cliPackageSpec ?? CLI_VERSION);
   const swiftPackageURL = dependencies.swiftPackageURL ?? "https://github.com/semicoder/fia.git";
   const template = options.template ?? "web";
   const backend = options.backend ?? false;
@@ -184,10 +192,13 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
     __FIA_APP_IDENTIFIER_JSON__: JSON.stringify(identifier),
     __FIA_DISPLAY_NAME__: appName,
     __FIA_PACKAGE_NAME__: options.name,
-    __FIA_SWIFT_PACKAGE_URL__: swiftPackageURL,
+    __FIA_SWIFT_PACKAGE_DEPENDENCY__: localFramework
+      ? `.package(name: "fia", path: ${JSON.stringify(localFramework.root)})`
+      : `.package(url: ${JSON.stringify(swiftPackageURL)}, exact: "${CLI_VERSION}")`,
     __FIA_VERSION__: CLI_VERSION,
   };
   options.io.stdout(`Creating ${appName} in ${projectRoot}\n`);
+  if (localFramework) options.io.stdout(`Using local FIA source: ${localFramework.root}\n`);
   try {
     await mkdir(temporaryRoot);
     const files = [
@@ -218,6 +229,13 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
         replacements,
       );
     }
+    if (localFramework) {
+      const readmePath = resolve(temporaryRoot, "README.md");
+      await writeFile(
+        readmePath,
+        `${await readFile(readmePath, "utf8")}\n## Local FIA development\n\nThis project links to the FIA source checkout at ${JSON.stringify(localFramework.root)}.\nThe JavaScript package uses \`link:${CLI_PACKAGE_NAME}\`; run \`bun link\` in\n${JSON.stringify(localFramework.cliPackageDirectory)} before installing dependencies.\nSwiftPM uses the same checkout directly through an absolute path dependency.\n\nAfter changing FIA CLI, client, backend, or Vite sources, run \`bun run cli:build\`\nin that checkout, then restart \`bun run dev\` here. After changing FIA Swift sources,\nrestart \`bun run dev\` to rebuild. Application frontend changes use Vite HMR.\n\nThe global Bun link and Swift dependency path are specific to this machine.\n`,
+      );
+    }
     await mkdir(resolve(temporaryRoot, "assets"), { recursive: true });
     await Promise.all([
       copyFile(resolve(assetDirectory, "icon.icns"), resolve(temporaryRoot, "assets/icon.icns")),
@@ -237,7 +255,19 @@ export async function createProject(options: CreateProjectOptions): Promise<stri
       options.io.stdout("Installing dependencies with Bun\n");
       const exitCode = await runner([process.execPath, "install"], temporaryRoot);
       if (exitCode !== 0)
-        throw new CreateProjectError(`bun install failed with exit code ${exitCode}`);
+        throw new CreateProjectError(
+          `bun install failed with exit code ${exitCode}${localFramework ? `. Ensure bun link has been run in ${localFramework.cliPackageDirectory}` : ""}`,
+        );
+      if (localFramework) {
+        try {
+          await validateLocalFrameworkLink(temporaryRoot, localFramework);
+        } catch (cause) {
+          throw new CreateProjectError(
+            cause instanceof Error ? cause.message : "local FIA link validation failed",
+            { cause },
+          );
+        }
+      }
     }
     if (options.initializeGit) {
       options.io.stdout("Initializing Git repository\n");

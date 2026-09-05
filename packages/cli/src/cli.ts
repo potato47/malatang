@@ -35,7 +35,7 @@ const defaultIO: CLIIO = {
 const rootHelp = `FIA 2.0 — Swift-first macOS application framework
 
 Usage:
-  fia create <name> [--template native|web|hybrid] [--backend bun] [--no-install] [--git]
+  fia create <name> [--template native|web|hybrid] [--backend bun] [--local] [--no-install] [--git]
   fia dev [--browser chrome|edge] [--app]
   fia run
   fia generate [--check]
@@ -56,9 +56,11 @@ const commandHelp: Readonly<Record<string, string>> = {
   create: `Create a FIA 2.0 application
 
 Usage:
-  fia create <name> [--template native|web|hybrid] [--backend bun] [--no-install] [--git]
+  fia create <name> [--template native|web|hybrid] [--backend bun] [--local] [--no-install] [--git]
 
 The default template is a React + Vite Web main window with no Bun Backend.
+--local links both the JavaScript package and Swift Runtime to the source checkout
+containing this CLI. Build the CLI with bun run cli:build before using a linked fia.
 `,
   dev: `Build and launch a stable development application
 
@@ -178,7 +180,7 @@ export async function runCLI(
     if (name === undefined || name.startsWith("-"))
       return usageError(io, "create requires a project name");
     const options = flags.slice(1);
-    for (const option of ["--template", "--backend", "--no-install", "--git"] as const) {
+    for (const option of ["--template", "--backend", "--local", "--no-install", "--git"] as const) {
       if (repeated(options, option))
         return usageError(io, `create ${option} may only be specified once`);
     }
@@ -207,7 +209,8 @@ export async function runCLI(
       if (value === "--template" || value === "--backend") {
         consumed.add(index);
         consumed.add(index + 1);
-      } else if (value === "--no-install" || value === "--git") consumed.add(index);
+      } else if (value === "--local" || value === "--no-install" || value === "--git")
+        consumed.add(index);
     }
     const unknownIndex = options.findIndex((_value, index) => !consumed.has(index));
     if (unknownIndex >= 0) return usageError(io, `unknown create option: ${options[unknownIndex]}`);
@@ -219,6 +222,7 @@ export async function runCLI(
         initializeGit: options.includes("--git"),
         template,
         backend,
+        local: options.includes("--local"),
         io,
         dependencies: dependencies.create,
       });
