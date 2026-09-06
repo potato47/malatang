@@ -39,6 +39,9 @@ describe("published FIA 2.0 shape", () => {
       "dist/backend.d.ts",
       "dist/vite.js",
       "dist/vite.d.ts",
+      "templates/tools/render-icon.swift",
+      "templates/v2/common/assets/icon.png",
+      "templates/v2/common/assets/icon.icns",
     ]) {
       expect(await Bun.file(resolve(packageRoot, file)).exists()).toBe(true);
     }

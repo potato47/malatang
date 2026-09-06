@@ -17,6 +17,7 @@ import {
 import { describeProject } from "./describe.ts";
 import { renderDoctorText, runDoctor } from "./doctor.ts";
 import { generateNativeAPI } from "./generate.ts";
+import { generateIcon, parseIconArguments, type IconDependencies } from "./icon.ts";
 import { CLI_VERSION } from "./metadata.ts";
 import type { UpdateChannel } from "./project-config.ts";
 import { SystemDoctorProbe, type DoctorProbe } from "./system-probe.ts";
@@ -35,6 +36,7 @@ export interface CLIDependencies {
   application?: ApplicationCommandDependencies;
   applicationExecutor?: typeof executeApplicationCommand;
   workingDirectory?: string;
+  icon?: IconDependencies;
 }
 
 const defaultIO: CLIIO = {
@@ -49,6 +51,7 @@ Usage:
   fia dev [--browser chrome|edge] [--app]
   fia run
   fia generate [--check]
+  fia icon <character> [--background '#RRGGBB'] [--foreground '#RRGGBB'] [--output directory] [--force]
   fia check [--json]
   fia test
   fia describe [--json]
@@ -86,6 +89,17 @@ Browser Companion; add --app to show the native App at the same time.
 `,
   run: "Usage:\n  fia run\n",
   generate: "Usage:\n  fia generate [--check]\n",
+  icon: `Generate a project icon from one letter, number or Chinese character (macOS only)
+
+Usage:
+  fia icon <character> [--background '#RRGGBB'] [--foreground '#RRGGBB'] [--output directory] [--force]
+
+Defaults: black background, white bold character. Swift Command Line Tools required.
+Without --output, replaces assets/icon.png and assets/icon.icns in the current FIA
+project and updates app.icon in fia.toml. Existing project icons are overwritten.
+--output exports icon.png and icon.icns without changing project configuration.
+--force permits overwriting existing exports; only valid with --output.
+`,
   check: "Usage:\n  fia check [--json]\n",
   test: "Usage:\n  fia test\n",
   describe: "Usage:\n  fia describe [--json]\n",
@@ -188,6 +202,23 @@ export async function runCLI(
     return 0;
   }
   const cwd = dependencies.workingDirectory ?? process.cwd();
+
+  if (command === "icon") {
+    let options;
+    try {
+      options = parseIconArguments(flags);
+    } catch (error) {
+      return usageError(io, error instanceof Error ? error.message : "invalid icon option");
+    }
+    return await execute(io, debug, "icon generation failed", async () => {
+      const result = await generateIcon({ ...options, cwd, dependencies: dependencies.icon });
+      io.stdout(`${result.outputs.join("\n")}\n`);
+      if (result.project)
+        io.stdout(
+          "Updated app.icon in fia.toml. Restart fia dev or rebuild the application to use the new icon.\n",
+        );
+    });
+  }
 
   if (command === "create") {
     let parsed;

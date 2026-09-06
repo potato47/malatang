@@ -86,6 +86,13 @@ export async function validateReleaseMetadata(): Promise<void> {
   if (JSON.stringify(cliPackage.files) !== JSON.stringify(expectedFiles)) {
     throw new Error(`package files must be exactly ${expectedFiles.join(", ")}`);
   }
+  const iconRenderer = await readFile(
+    resolve(PACKAGE_DIRECTORY, "templates/tools/render-icon.swift"),
+    "utf8",
+  );
+  if (!iconRenderer.includes("import CoreText") || !iconRenderer.includes("import AppKit")) {
+    throw new Error("npm templates must include the native text icon renderer");
+  }
   const expectedExports = ["./client", "./backend", "./vite"];
   if (JSON.stringify(Object.keys(cliPackage.exports)) !== JSON.stringify(expectedExports)) {
     throw new Error("package exports must contain client, backend, and vite only");

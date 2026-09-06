@@ -78,6 +78,7 @@ bun run dev
 - `dev`：使用稳定的 `.fia/dev/<App>.app` 启动开发应用；`--browser chrome|edge` 启动 Browser Companion。
 - `run`：构建并运行生产布局。
 - `generate` / `generate --check`：确定性生成 Swift protocol/Codable 与 TypeScript client。
+- `icon F` / `icon 中`：离线生成黑底白字项目图标；支持 `--background`、`--foreground` 自定义颜色及 `--output` 单独导出，详见 [CLI 文档](packages/cli/README.md#文字项目图标)。
 - `check`、`test`、`describe --json`、`doctor --json`：提供稳定的本地及机器可读检查。
 - `build`：按配置裁剪并签名 `.app`。
 - `release --channel stable|beta`：生成公证 full-update ZIP、SHA-256、appcast 和验证报告，不上传。

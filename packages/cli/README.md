@@ -37,3 +37,31 @@ fia create script-app --yes --no-install
 
 `-y` / `--yes` 跳过所有问题，未指定选项采用默认值。CI 或 stdin/stdout 非 TTY 时也不会
 进入交互；这些情况下必须提供项目名。项目名须为小写 kebab-case，目标目录不能已存在。
+
+## 文字项目图标
+
+默认图标为黑底白色粗体 `F`。在项目根目录运行 `fia icon` 可用一个字母、数字或汉字
+替换项目图标，离线生成 1024×1024 PNG 和包含标准尺寸及 Retina 表示的 ICNS。
+文字按可见轮廓等比缩放、居中，汉字使用系统字体回退。
+
+```bash
+fia icon F
+fia icon 中
+fia icon 7 --background '#2563EB' --foreground '#FFFFFF'
+fia icon F --output ./my-icons
+fia icon F --output ./my-icons --force
+```
+
+不指定 `--output` 时，命令直接覆盖当前项目的 `assets/icon.png` 和 `assets/icon.icns`，
+并将 `fia.toml` 中的 `app.icon` 更新为 `assets/icon.icns`，保留其他配置及注释。
+原配置引用的其他图标文件不会被删除。生成后重启 `fia dev` 或重新构建应用以生效；
+命令不修改已经构建或正在运行的应用。
+
+`--output <目录>` 用于单独导出，不要求当前目录为 FIA 项目，也不会修改配置。
+导出目录中已有同名文件时，必须通过 `--force` 显式覆盖；项目模式不使用此参数。
+`--background` 和 `--foreground` 仅接受 `#RRGGBB`，分别默认为 `#000000`、`#FFFFFF`，
+颜色不能相同。请给含 `#` 的颜色加引号。空白、多字、控制字符和 emoji 不受支持。
+
+图标生成仅支持 macOS，需要 Swift 工具链及系统 `iconutil`；缺少工具链时运行
+`xcode-select --install`。工具通过 AppKit/CoreText 使用本机字体，不联网或下载字体。
+`fia create` 直接复制预生成的默认资源，不需要运行图标生成器。
