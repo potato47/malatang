@@ -51,6 +51,12 @@ public struct FIAGatewayResponse: Sendable {
         self.body = .data(body)
     }
 
+    init(status: HTTPResponseStatus, headers: HTTPHeaders, stream: FIAGatewayStream) {
+        self.status = status
+        self.headers = headers
+        body = .stream(stream)
+    }
+
     public init(status: HTTPResponseStatus, headers: HTTPHeaders, fileURL: URL, size: Int64) {
         self.status = status
         self.headers = headers
@@ -58,9 +64,21 @@ public struct FIAGatewayResponse: Sendable {
     }
 }
 
+public final class FIAGatewayStream: @unchecked Sendable {
+    let bytes: URLSession.AsyncBytes
+    let session: URLSession
+    init(bytes: URLSession.AsyncBytes, session: URLSession) {
+        self.bytes = bytes
+        self.session = session
+    }
+    func cancel() { bytes.task.cancel(); session.invalidateAndCancel() }
+    deinit { cancel() }
+}
+
 public enum FIAGatewayBody: Sendable {
     case data(Data)
     case file(URL, Int64)
+    case stream(FIAGatewayStream)
 }
 
 public typealias FIAGatewayDispatcher = @Sendable (_ method: String, _ params: Data, _ mode: String) async -> Result<Data, Error>
@@ -434,7 +452,7 @@ private final class GatewayState: @unchecked Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = head.method.rawValue
         request.httpBody = body.isEmpty ? nil : body
-        request.timeoutInterval = 30
+        request.timeoutInterval = 300
         request.setValue(endpoint.session, forHTTPHeaderField: "x-fia-backend-session")
         let excluded = Set([
             "connection", "content-length", "cookie", "host", "keep-alive", "proxy-authenticate",
@@ -444,10 +462,12 @@ private final class GatewayState: @unchecked Sendable {
         for header in head.headers where !excluded.contains(header.name.lowercased()) {
             request.addValue(header.value, forHTTPHeaderField: header.name)
         }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
+        let session = URLSession(configuration: configuration)
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (bytes, response) = try await session.bytes(for: request)
             guard let response = response as? HTTPURLResponse else { return text(.badGateway, "Bad Gateway") }
-            guard data.count <= 8 * 1024 * 1024 else { return text(.payloadTooLarge, "Backend response exceeds 8 MiB") }
             var headers = HTTPHeaders()
             let hopByHop = Set(["connection", "content-length", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"])
             for (name, value) in response.allHeaderFields {
@@ -455,8 +475,22 @@ private final class GatewayState: @unchecked Sendable {
                     headers.add(name: name, value: value)
                 }
             }
+            if response.value(forHTTPHeaderField: "content-type")?.lowercased().hasPrefix("text/event-stream") == true {
+                headers.remove(name: "content-length")
+                headers.replaceOrAdd(name: "cache-control", value: "no-cache, no-transform")
+                headers.replaceOrAdd(name: "connection", value: "close")
+                return FIAGatewayResponse(status: HTTPResponseStatus(statusCode: response.statusCode), headers: headers,
+                    stream: FIAGatewayStream(bytes: bytes, session: session))
+            }
+            defer { session.invalidateAndCancel() }
+            var data = Data()
+            for try await byte in bytes {
+                data.append(byte)
+                guard data.count <= 8 * 1024 * 1024 else { return text(.payloadTooLarge, "Backend response exceeds 8 MiB") }
+            }
             return FIAGatewayResponse(status: HTTPResponseStatus(statusCode: response.statusCode), headers: headers, body: data)
         } catch {
+            session.invalidateAndCancel()
             return text(.badGateway, "Backend unavailable")
         }
     }
@@ -494,12 +528,16 @@ private final class HTTPHandler: ChannelInboundHandler, RemovableChannelHandler,
     private var head: HTTPRequestHead?
     private var body = Data()
     private var bodyExceeded = false
+    private var responseTask: Task<Void, Never>?
+    private var streamTask: Task<Void, Never>?
+    private var activeStream: FIAGatewayStream?
 
     init(state: GatewayState) { self.state = state }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
         case let .head(head):
+            guard activeStream == nil else { context.close(promise: nil); return }
             self.head = head
             body.removeAll(keepingCapacity: true)
             bodyExceeded = false
@@ -519,10 +557,16 @@ private final class HTTPHandler: ChannelInboundHandler, RemovableChannelHandler,
             }
             let requestBody = body
             let context = UncheckedBox(context)
-            Task { [state] in
+            responseTask = Task { [state] in
                 let response = await state.response(head: head, body: requestBody)
                 state.finishHTTPRequest()
-                context.value.eventLoop.execute { self.write(response, context: context.value) }
+                context.value.eventLoop.execute {
+                    guard context.value.channel.isActive else {
+                        if case let .stream(stream) = response.body { stream.cancel() }
+                        return
+                    }
+                    self.write(response, context: context.value)
+                }
             }
         }
     }
@@ -533,6 +577,7 @@ private final class HTTPHandler: ChannelInboundHandler, RemovableChannelHandler,
             switch response.body {
             case let .data(data): headers.add(name: "content-length", value: String(data.count))
             case let .file(_, size): headers.add(name: "content-length", value: String(size))
+            case .stream: headers.add(name: "transfer-encoding", value: "chunked")
             }
         }
         let head = HTTPResponseHead(version: .http1_1, status: response.status, headers: headers)
@@ -545,9 +590,48 @@ private final class HTTPHandler: ChannelInboundHandler, RemovableChannelHandler,
         case let .file(url, size):
             streamFile(url: url, size: size, context: context)
             return
+        case let .stream(stream):
+            activeStream = stream
+            // An SSE response owns this connection until close. NIO's pipelining
+            // helper suppresses socket reads while a response is outstanding,
+            // which otherwise hides the client's FIN for the lifetime of the stream.
+            if let pipeline = try? context.pipeline.syncOperations.context(handlerType: HTTPServerPipelineHandler.self) {
+                context.pipeline.syncOperations.removeHandler(context: pipeline, promise: nil)
+            }
+            context.read()
+            context.flush()
+            let channel = context.channel
+            streamTask = Task {
+                defer { stream.cancel() }
+                do {
+                    var buffer = channel.allocator.buffer(capacity: 16384)
+                    for try await byte in stream.bytes {
+                        try Task.checkCancellation()
+                        buffer.writeInteger(byte)
+                        if byte == 10 || buffer.readableBytes >= 16384 {
+                            try await channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(buffer)))
+                            buffer.clear()
+                        }
+                    }
+                    if buffer.readableBytes > 0 {
+                        try await channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(buffer)))
+                    }
+                    try await channel.writeAndFlush(HTTPServerResponsePart.end(nil))
+                    try await channel.close()
+                } catch { try? await channel.close() }
+            }
+            return
         case .data: break
         }
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        responseTask?.cancel()
+        activeStream?.cancel()
+        activeStream = nil
+        streamTask?.cancel()
+        context.fireChannelInactive()
     }
 
     private func streamFile(url: URL, size: Int64, context: ChannelHandlerContext) {

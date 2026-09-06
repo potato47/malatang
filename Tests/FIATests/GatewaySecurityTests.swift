@@ -20,6 +20,55 @@ private final class RedirectBlocker: NSObject, URLSessionTaskDelegate, @unchecke
 }
 
 final class GatewaySecurityTests: XCTestCase {
+    func testBackendSSEIsIncrementalAndSurvivesThirtySeconds() async throws {
+        try await checkSSE(delay: .milliseconds(31_100), long: true)
+    }
+    func testBackendSSECancelsOnDisconnect() async throws {
+        try await checkSSE(delay: .milliseconds(100), long: false)
+    }
+    private func checkSSE(delay: TimeAmount, long: Bool) async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let disconnected = expectation(description: "backend stream cancelled")
+        let server = try await ServerBootstrap(group: group).childChannelInitializer { channel in
+            channel.pipeline.configureHTTPServerPipeline(withPipeliningAssistance: false).flatMap {
+                channel.pipeline.addHandler(SSETestHandler(disconnected: disconnected, delay: delay))
+            }
+        }.bind(host: "127.0.0.1", port: 0).get()
+        let port = try XCTUnwrap(server.localAddress?.port)
+        let gateway = FIAGateway(staticDirectory: nil, developmentOrigin: nil,
+            backendEndpoint: { FIABackendEndpoint(origin: URL(string: "http://127.0.0.1:\(port)")!, session: "sse-secret") },
+            dispatcher: { _, _, _ in .success(Data("{}".utf8)) }, resource: { _, _ in nil })
+        let endpoint = try startGateway(gateway)
+        let client = URLSession(configuration: .ephemeral)
+        addTeardownBlock {
+            client.invalidateAndCancel()
+            await gateway.stop()
+            try? await server.close().get()
+            try? await group.shutdownGracefully()
+        }
+        var request = URLRequest(url: URL(string: endpoint.origin + "/api/events")!)
+        request.setValue(endpoint.session, forHTTPHeaderField: "x-fia-session")
+        let start = Date()
+        let (bytes, response) = try await client.bytes(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        var count = 0
+        for try await line in bytes.lines where line.hasPrefix("data:") {
+            count += 1
+            if count == 1 {
+                XCTAssertEqual(line, "data: first")
+                XCTAssertLessThan(Date().timeIntervalSince(start), 3, "first event must not wait for completion")
+            } else {
+                XCTAssertEqual(line, "data: second")
+                if long { XCTAssertGreaterThan(Date().timeIntervalSince(start), 30) }
+                break
+            }
+        }
+        XCTAssertEqual(count, 2)
+        bytes.task.cancel()
+        client.invalidateAndCancel()
+        await fulfillment(of: [disconnected], timeout: 5)
+    }
+
     func testStaticApplicationIsPublicButFrameworkRoutesStayProtected() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "fia-static-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -361,5 +410,38 @@ private final class EchoWebSocketHandler: ChannelInboundHandler, Sendable {
             extensionData: incoming.unmaskedExtensionData
         )
         context.writeAndFlush(wrapOutboundOut(response), promise: nil)
+    }
+}
+
+private final class SSETestHandler: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = HTTPServerRequestPart
+    typealias OutboundOut = HTTPServerResponsePart
+    let disconnected: XCTestExpectation
+    private var timer: Scheduled<Void>?
+    let delay: TimeAmount
+    init(disconnected: XCTestExpectation, delay: TimeAmount) { self.disconnected = disconnected; self.delay = delay }
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        switch unwrapInboundIn(data) {
+        case let .head(head):
+            XCTAssertEqual(head.headers.first(name: "x-fia-backend-session"), "sse-secret")
+        case .end:
+            let headers = HTTPHeaders([("content-type", "text/event-stream"), ("transfer-encoding", "chunked")])
+            context.write(wrapOutboundOut(.head(HTTPResponseHead(version: .http1_1, status: .ok, headers: headers))), promise: nil)
+            var buffer = context.channel.allocator.buffer(capacity: 20)
+            buffer.writeString("data: first\n\n")
+            context.writeAndFlush(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
+            let channel = context.channel
+            timer = context.eventLoop.scheduleTask(in: delay) {
+                var next = channel.allocator.buffer(capacity: 20)
+                next.writeString("data: second\n\n")
+                channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(next)), promise: nil)
+            }
+        default: break
+        }
+    }
+    func channelInactive(context: ChannelHandlerContext) {
+        timer?.cancel()
+        disconnected.fulfill()
+        context.fireChannelInactive()
     }
 }

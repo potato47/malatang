@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   chmod,
@@ -20,6 +21,41 @@ afterEach(async () =>
 );
 
 describe("Swift-first application build", () => {
+  test("hashes the signed backend before sealing the app bundle", async () => {
+    const cwd = await mkdtemp(resolve(tmpdir(), "fia-signed-backend-"));
+    roots.push(cwd);
+    const root = await createProject({ name: "signed-app", cwd, install: false,
+      initializeGit: false, template: "web", backend: true, io: { stdout() {} } });
+    const runner: ApplicationProcessRunner = async (command) => {
+      if (command.includes("vite")) {
+        await mkdir(resolve(root, "frontend/dist"), { recursive: true });
+        await writeFile(resolve(root, "frontend/dist/index.html"), "ok");
+      }
+      if (command.includes("--compile")) {
+        await mkdir(resolve(root, ".fia/build"), { recursive: true });
+        await writeFile(resolve(root, ".fia/build/FIABunBackend"), "unsigned backend");
+      }
+      if (command.includes("swift")) {
+        const path = resolve(root, ".fia/swift-build/arm64-apple-macosx/release/FIAAppExecutable");
+        await mkdir(resolve(path, ".."), { recursive: true });
+        await writeFile(path, "native");
+      }
+      if (command[0] === "/usr/bin/codesign" && command.includes("--sign")) {
+        const path = command.at(-1)!;
+        if (path.endsWith("/FIABackend")) await writeFile(path, "signed backend");
+        else if (path.endsWith(".app")) {
+          const manifest = JSON.parse(await readFile(resolve(path, "Contents/Resources/fia.runtime.json"), "utf8"));
+          const bytes = await readFile(resolve(path, "Contents/Helpers/FIABackend"));
+          expect(manifest.backend.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+          expect(bytes.toString()).toBe("signed backend");
+        }
+      }
+      return { exitCode: 0 };
+    };
+    await executeApplicationCommand({ command: "build", cwd: root, debug: false,
+      io: { stdout() {}, stderr() {} }, dependencies: { runner } });
+  });
+
   test("rejects Browser Companion for a project without Web Runtime", async () => {
     const cwd = await mkdtemp(resolve(tmpdir(), "fia-browser-native-v2-"));
     roots.push(cwd);

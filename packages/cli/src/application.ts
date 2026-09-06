@@ -355,6 +355,14 @@ async function assembleApplication(
     await mkdir(frameworks, { recursive: true });
     sparkle = await copySparkleFramework(root, frameworks);
   }
+  const identity =
+    configuration === "release"
+      ? (config.signing?.releaseIdentity ?? "-")
+      : (config.signing?.developmentIdentity ?? "-");
+  const hardened = configuration === "release" && identity !== "-";
+  if (config.backend.enabled)
+    await sign(runner, resolve(helpers, "FIABackend"), identity, root, hardened);
+  // Signing mutates the executable; runtime integrity must describe the signed bytes.
   const backendSHA256 = config.backend.enabled
     ? createHash("sha256")
         .update(await readFile(resolve(helpers, "FIABackend")))
@@ -387,13 +395,6 @@ async function assembleApplication(
   await writeFile(resolve(resources, "fia.runtime.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(resolve(contents, "Info.plist"), infoPlist(config));
 
-  const identity =
-    configuration === "release"
-      ? (config.signing?.releaseIdentity ?? "-")
-      : (config.signing?.developmentIdentity ?? "-");
-  const hardened = configuration === "release" && identity !== "-";
-  if (config.backend.enabled)
-    await sign(runner, resolve(helpers, "FIABackend"), identity, root, hardened);
   if (sparkle !== undefined) await signSparkle(runner, sparkle, identity, root, hardened);
   await sign(runner, app, identity, root, hardened);
   await runChecked(

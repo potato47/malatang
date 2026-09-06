@@ -64,8 +64,8 @@ export default function fia(options: FIAVitePluginOptions = {}): FIAVitePlugin {
         server: {
           strictPort: true,
           proxy: {
-            "/_fia": nativeTarget,
-            [backendMount]: { ...target, ws: true },
+            "^/_fia(?:/|$|\\?)": nativeTarget,
+            [`^${backendMount.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:/|$|\\?)`]: { ...target, ws: true },
           },
         },
       };
