@@ -1,6 +1,0 @@
-.DS_Store
-.build/
-.fia/
-dist/
-frontend/dist/
-node_modules/

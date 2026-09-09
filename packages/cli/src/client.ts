@@ -1,3 +1,4 @@
+import { createNativeAPI } from "./api.ts";
 export type NativeErrorCode =
   | "invalid_request"
   | "invalid_argument"
@@ -55,7 +56,6 @@ export interface NativeTransport {
 }
 
 export interface NativeCapabilities {
-  readonly mode: "application" | "browserCompanion";
   readonly protocolVersion: number;
   readonly capabilities: Readonly<Record<string, boolean>>;
 }
@@ -193,7 +193,38 @@ export class NativeResource {
 }
 
 export class NativeClient extends EventTarget implements NativeTransport {
+  private readonly api = createNativeAPI(this);
+  readonly application = this.api.application;
+  readonly clipboard = this.api.clipboard;
+  readonly dialogs = this.api.dialogs;
+  readonly keychain = this.api.keychain;
+  readonly notifications = this.api.notifications;
+  readonly screens = this.api.screens;
+  readonly screen = this.api.screen;
+  readonly system = this.api.system;
+  readonly globalShortcuts = this.api.globalShortcuts;
+  readonly windows = this.api.windows;
+  readonly resources = this.api.resources;
+  readonly updates = this.api.updates;
   #socket?: WebSocket;
+  #reconnect?: ReturnType<typeof setTimeout>;
+  #closed = false;
+  #listeners = 0;
+
+  /** Call after the first UI mount (included in the generated template). */
+  async ready(): Promise<void> {
+    const query = new URLSearchParams(window.location.search);
+    const response = await fetch("/_fia/ready", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        windowId: query.get("fiaWindow") ?? "main",
+        generation: query.get("fiaGeneration"),
+      }),
+    });
+    if (!response.ok) throw new Error("FIA frontend readiness was rejected");
+  }
+
   #connecting?: Promise<WebSocket>;
   #nextID = 1;
   readonly #pending = new Map<number, PendingCall>();
@@ -213,8 +244,18 @@ export class NativeClient extends EventTarget implements NativeTransport {
       });
     }
     if (options.signal?.aborted === true) throw options.signal.reason;
+    this.#closed = false;
     const socket = await this.#connect();
+    if (options.signal?.aborted) throw options.signal.reason;
+    if (this.#pending.size >= 128) throw new Error("Native request concurrency limit exceeded");
     const id = this.#nextID++;
+    const message = JSON.stringify({ v: 1, type: "request", id, method, params });
+    if (new TextEncoder().encode(message).byteLength > 1024 * 1024)
+      throw new Error("Native request exceeds protocol limit");
+    const cancel = () => {
+      if (socket.readyState === WebSocket.OPEN)
+        socket.send(JSON.stringify({ v: 1, type: "cancel", id }));
+    };
     return await new Promise<Result>((resolve, reject) => {
       const pending: PendingCall = {
         method,
@@ -224,8 +265,8 @@ export class NativeClient extends EventTarget implements NativeTransport {
       const timeout = options.timeoutMs ?? 30_000;
       if (timeout > 0) {
         pending.timer = setTimeout(() => {
-          this.#pending.delete(id);
-          socket.send(JSON.stringify({ v: 1, type: "cancel", id }));
+          this.#settle(id, () => {});
+          cancel();
           reject(
             new NativeError({
               code: "timeout",
@@ -242,13 +283,17 @@ export class NativeClient extends EventTarget implements NativeTransport {
           this.#settle(id, () =>
             reject(options.signal?.reason ?? new DOMException("Aborted", "AbortError")),
           );
-          socket.send(JSON.stringify({ v: 1, type: "cancel", id }));
+          cancel();
         };
         options.signal.addEventListener("abort", abort, { once: true });
         pending.removeAbort = () => options.signal?.removeEventListener("abort", abort);
       }
       this.#pending.set(id, pending);
-      socket.send(JSON.stringify({ v: 1, type: "request", id, method, params }));
+      try {
+        socket.send(message);
+      } catch (error) {
+        this.#settle(id, () => reject(error));
+      }
     });
   }
 
@@ -258,8 +303,18 @@ export class NativeClient extends EventTarget implements NativeTransport {
 
   on(event: string, listener: (payload: unknown) => void): () => void {
     const handler = (message: Event): void => listener((message as CustomEvent<unknown>).detail);
+    this.#closed = false;
+    this.#listeners++;
     this.addEventListener(event, handler);
-    return () => this.removeEventListener(event, handler);
+    void this.#connect().catch(() => {});
+    let active = true;
+    return () => {
+      if (active) {
+        active = false;
+        this.#listeners--;
+        this.removeEventListener(event, handler);
+      }
+    };
   }
 
   resource(descriptor: NativeResourceDescriptor): NativeResource {
@@ -270,9 +325,13 @@ export class NativeClient extends EventTarget implements NativeTransport {
   }
 
   close(): void {
+    this.#closed = true;
+    clearTimeout(this.#reconnect);
     this.#socket?.close(1000, "client closed");
     this.#socket = undefined;
     this.#connecting = undefined;
+    for (const id of this.#pending.keys())
+      this.#settle(id, (pending) => pending.reject(new Error("Native client closed")));
   }
 
   async #connect(): Promise<WebSocket> {
@@ -280,10 +339,20 @@ export class NativeClient extends EventTarget implements NativeTransport {
     if (this.#connecting !== undefined) return await this.#connecting;
     this.#connecting = new Promise<WebSocket>((resolve, reject) => {
       const socket = new WebSocket(nativeWebSocketURL());
+      this.#socket = socket;
+      const timeout = setTimeout(() => {
+        socket.close();
+        reject(new Error("Native connection timed out"));
+      }, 5000);
       socket.addEventListener(
         "open",
         () => {
-          this.#socket = socket;
+          clearTimeout(timeout);
+          if (this.#socket !== socket || this.#closed) {
+            socket.close();
+            reject(new Error("Native client closed"));
+            return;
+          }
           this.#connecting = undefined;
           resolve(socket);
         },
@@ -292,7 +361,8 @@ export class NativeClient extends EventTarget implements NativeTransport {
       socket.addEventListener(
         "error",
         () => {
-          this.#connecting = undefined;
+          clearTimeout(timeout);
+          if (this.#socket === socket) this.#connecting = undefined;
           reject(
             new NativeError({
               code: "native_failure",
@@ -304,9 +374,19 @@ export class NativeClient extends EventTarget implements NativeTransport {
         },
         { once: true },
       );
-      socket.addEventListener("message", (event) => this.#receive(event.data));
+      socket.addEventListener("message", (event) => {
+        if (this.#socket === socket) this.#receive(event.data);
+      });
       socket.addEventListener("close", () => {
-        if (this.#socket === socket) this.#socket = undefined;
+        clearTimeout(timeout);
+        reject(new Error("Native connection closed"));
+        if (this.#socket !== socket) return;
+        this.#socket = undefined;
+        this.#connecting = undefined;
+        if (!this.#closed && this.#listeners > 0)
+          this.#reconnect = setTimeout(() => {
+            void this.#connect().catch(() => {});
+          }, 500);
         for (const id of this.#pending.keys()) {
           this.#settle(id, (pending) =>
             pending.reject(
@@ -357,3 +437,5 @@ export class NativeClient extends EventTarget implements NativeTransport {
 }
 
 export const native = new NativeClient();
+
+export type { TitlebarItem, WindowOptions, UpdateState } from "./api.ts";

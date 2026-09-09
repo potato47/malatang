@@ -1,517 +1,558 @@
 import AppKit
 import Foundation
-import SwiftUI
 import WebKit
 
 public enum AppWindowKind: String, Codable, Sendable {
-    case web
-    case swiftUI
-    case appKit
+  case web
 }
 
 public enum LastWindowClosedAction: Sendable { case keepRunning, quit }
 public enum ReopenAction: Sendable { case restoreMainWindow, none }
 public enum UserCloseAction: Sendable { case closeWindow, hideWindow, hideApplication }
 public enum AppWindowLifecycle: String, Codable, Sendable { case registered, open, closed }
-public enum AppWindowFullscreen: String, Codable, Sendable { case windowed, entering, fullscreen, exiting }
+public enum AppWindowFullscreen: String, Codable, Sendable {
+  case windowed, entering, fullscreen, exiting
+}
 
 public struct AppWindowState: Codable, Sendable, Equatable {
-    public let id: String
-    public let kind: AppWindowKind
-    public let lifecycle: AppWindowLifecycle
-    public let orderedIn: Bool
-    public let applicationHidden: Bool
-    public let miniaturized: Bool
-    public let focused: Bool
-    public let fullscreen: AppWindowFullscreen
+  public let id: String
+  public let kind: AppWindowKind
+  public let lifecycle: AppWindowLifecycle
+  public let orderedIn: Bool
+  public let applicationHidden: Bool
+  public let miniaturized: Bool
+  public let focused: Bool
+  public let fullscreen: AppWindowFullscreen
 
-    public init(
-        id: String, kind: AppWindowKind, lifecycle: AppWindowLifecycle, orderedIn: Bool = false,
-        applicationHidden: Bool = false, miniaturized: Bool = false, focused: Bool = false,
-        fullscreen: AppWindowFullscreen = .windowed
-    ) {
-        self.id = id
-        self.kind = kind
-        self.lifecycle = lifecycle
-        self.orderedIn = orderedIn
-        self.applicationHidden = applicationHidden
-        self.miniaturized = miniaturized
-        self.focused = focused
-        self.fullscreen = fullscreen
-    }
+  public init(
+    id: String, kind: AppWindowKind, lifecycle: AppWindowLifecycle, orderedIn: Bool = false,
+    applicationHidden: Bool = false, miniaturized: Bool = false, focused: Bool = false,
+    fullscreen: AppWindowFullscreen = .windowed
+  ) {
+    self.id = id
+    self.kind = kind
+    self.lifecycle = lifecycle
+    self.orderedIn = orderedIn
+    self.applicationHidden = applicationHidden
+    self.miniaturized = miniaturized
+    self.focused = focused
+    self.fullscreen = fullscreen
+  }
 }
 
 public struct AppWindowEvent: Codable, Sendable, Equatable {
-    public enum Cause: String, Codable, Sendable {
-        case created, show, hide, focus, close, userClose, application, system, fullscreen
-    }
-    public let previous: AppWindowState
-    public let current: AppWindowState
-    public let cause: Cause
+  public enum Cause: String, Codable, Sendable {
+    case created, show, hide, focus, close, userClose, application, system, fullscreen
+  }
+  public let previous: AppWindowState
+  public let current: AppWindowState
+  public let cause: Cause
 }
 
 @MainActor
 public protocol AppWindow: AnyObject {
-    var id: String { get }
-    var kind: AppWindowKind { get }
-    var state: AppWindowState { get }
-    func show() throws
-    func hide() throws
-    func focus() throws
-    func close() throws
+  var id: String { get }
+  var kind: AppWindowKind { get }
+  var state: AppWindowState { get }
+  func show() throws
+  func hide() throws
+  func focus() throws
+  func close() throws
 }
 
 @MainActor
 open class AppKitWindow: NSObject, AppWindow, NSWindowDelegate {
-    public let id: String
-    public let kind: AppWindowKind
-    public let window: NSWindow
-    public let userCloseAction: UserCloseAction
-    private let emit: (AppWindowEvent) -> Void
-    private var lifecycle: AppWindowLifecycle = .open
-    private var fullscreen: AppWindowFullscreen = .windowed
-    private var previous: AppWindowState
-    private var performingProgrammaticChange = false
-    var presentationAllowed: () -> Bool = { true }
+  public let id: String
+  public let kind: AppWindowKind
+  public let window: NSWindow
+  public let userCloseAction: UserCloseAction
+  private let emit: (AppWindowEvent) -> Void
+  private var lifecycle: AppWindowLifecycle = .open
+  private var fullscreen: AppWindowFullscreen = .windowed
+  private var previous: AppWindowState
+  private var performingProgrammaticChange = false
+  var presentationAllowed: () -> Bool = { true }
 
-    public var state: AppWindowState {
-        AppWindowState(
-            id: id, kind: kind, lifecycle: lifecycle,
-            orderedIn: lifecycle == .open && window.isVisible,
-            applicationHidden: NSApp?.isHidden ?? false,
-            miniaturized: lifecycle == .open && window.isMiniaturized,
-            focused: lifecycle == .open && window.isKeyWindow && (NSApp?.isActive ?? false) && !(NSApp?.isHidden ?? false),
-            fullscreen: lifecycle == .open ? fullscreen : .windowed)
-    }
+  public var state: AppWindowState {
+    AppWindowState(
+      id: id, kind: kind, lifecycle: lifecycle,
+      orderedIn: lifecycle == .open && window.isVisible,
+      applicationHidden: NSApp?.isHidden ?? false,
+      miniaturized: lifecycle == .open && window.isMiniaturized,
+      focused: lifecycle == .open && window.isKeyWindow && (NSApp?.isActive ?? false)
+        && !(NSApp?.isHidden ?? false),
+      fullscreen: lifecycle == .open ? fullscreen : .windowed)
+  }
 
-    public init(
-        id: String, kind: AppWindowKind = .appKit, window: NSWindow, userCloseAction: UserCloseAction = .closeWindow,
-        emit: @escaping (AppWindowEvent) -> Void = { _ in }
-    ) {
-        self.id = id
-        self.kind = kind
-        self.window = window
-        self.userCloseAction = userCloseAction
-        self.emit = emit
-        previous = AppWindowState(id: id, kind: kind, lifecycle: .open)
-        super.init()
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        window.setFrameAutosaveName("fia.window.\(id)")
-        fullscreen = window.styleMask.contains(.fullScreen) ? .fullscreen : .windowed
-        previous = state
-        for name in [
-            NSApplication.didHideNotification, NSApplication.didUnhideNotification,
-            NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
-        ] {
-            NotificationCenter.default.addObserver(
-                self, selector: #selector(applicationChanged), name: name, object: nil)
-        }
+  public init(
+    id: String, kind: AppWindowKind = .web, window: NSWindow,
+    userCloseAction: UserCloseAction = .closeWindow,
+    emit: @escaping (AppWindowEvent) -> Void = { _ in }
+  ) {
+    self.id = id
+    self.kind = kind
+    self.window = window
+    self.userCloseAction = userCloseAction
+    self.emit = emit
+    previous = AppWindowState(id: id, kind: kind, lifecycle: .open)
+    super.init()
+    window.isReleasedWhenClosed = false
+    window.delegate = self
+    window.setFrameAutosaveName("fia.window.\(id)")
+    fullscreen = window.styleMask.contains(.fullScreen) ? .fullscreen : .windowed
+    previous = state
+    for name in [
+      NSApplication.didHideNotification, NSApplication.didUnhideNotification,
+      NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+    ] {
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(applicationChanged), name: name, object: nil)
     }
+  }
 
-    deinit { NotificationCenter.default.removeObserver(self) }
+  deinit { NotificationCenter.default.removeObserver(self) }
 
-    private func change(_ cause: AppWindowEvent.Cause, action: () -> Void) {
-        performingProgrammaticChange = true
-        action()
-        performingProgrammaticChange = false
-        reconcile(cause)
-    }
+  private func change(_ cause: AppWindowEvent.Cause, action: () -> Void) {
+    performingProgrammaticChange = true
+    action()
+    performingProgrammaticChange = false
+    reconcile(cause)
+  }
 
-    private func reconcile(_ cause: AppWindowEvent.Cause) {
-        guard !performingProgrammaticChange else { return }
-        let current = state
-        guard current != previous else { return }
-        let event = AppWindowEvent(previous: previous, current: current, cause: cause)
-        previous = current
-        emit(event)
-    }
+  private func reconcile(_ cause: AppWindowEvent.Cause) {
+    guard !performingProgrammaticChange else { return }
+    let current = state
+    guard current != previous else { return }
+    let event = AppWindowEvent(previous: previous, current: current, cause: cause)
+    previous = current
+    emit(event)
+  }
 
-    private func requireOpen(_ method: String) throws {
-        guard lifecycle == .open else {
-            throw FIAError(code: .unsafeState, component: "windows", method: method, message: "Window is closed: \(id)")
-        }
+  private func requireOpen(_ method: String) throws {
+    guard lifecycle == .open else {
+      throw FIAError(
+        code: .unsafeState, component: "windows", method: method, message: "Window is closed: \(id)"
+      )
     }
+  }
 
-    public func show() throws {
-        guard presentationAllowed() else {
-            throw FIAError(code: .unsafeState, component: "windows", message: "Runtime is shutting down")
-        }
-        try requireOpen("show")
-        change(.show) {
-            NSApp.unhide(nil)
-            if window.isMiniaturized { window.deminiaturize(nil) }
-            window.makeKeyAndOrderFront(nil)
-        }
+  public func show() throws {
+    guard presentationAllowed() else {
+      throw FIAError(code: .unsafeState, component: "windows", message: "Runtime is shutting down")
     }
-    public func hide() throws {
-        try requireOpen("hide")
-        change(.hide) { window.orderOut(nil) }
+    try requireOpen("show")
+    change(.show) {
+      NSApp.unhide(nil)
+      if window.isMiniaturized { window.deminiaturize(nil) }
+      window.makeKeyAndOrderFront(nil)
     }
-    public func focus() throws {
-        guard presentationAllowed() else {
-            throw FIAError(code: .unsafeState, component: "windows", message: "Runtime is shutting down")
-        }
-        try requireOpen("focus")
-        change(.focus) {
-            NSApp.unhide(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            if window.isMiniaturized { window.deminiaturize(nil) }
-            window.makeKeyAndOrderFront(nil)
-        }
+  }
+  public func hide() throws {
+    try requireOpen("hide")
+    change(.hide) { window.orderOut(nil) }
+  }
+  public func focus() throws {
+    guard presentationAllowed() else {
+      throw FIAError(code: .unsafeState, component: "windows", message: "Runtime is shutting down")
     }
-    public func close() throws {
-        try requireOpen("close")
-        change(.close) { window.close() }
+    try requireOpen("focus")
+    change(.focus) {
+      NSApp.unhide(nil)
+      NSApp.activate(ignoringOtherApps: true)
+      if window.isMiniaturized { window.deminiaturize(nil) }
+      window.makeKeyAndOrderFront(nil)
     }
-    public func windowShouldClose(_ sender: NSWindow) -> Bool {
-        switch userCloseAction {
-        case .closeWindow: return true
-        case .hideWindow:
-            change(.userClose) { window.orderOut(nil) }
-            return false
-        case .hideApplication:
-            change(.userClose) { NSApp.hide(nil) }
-            return false
-        }
+  }
+  public func close() throws {
+    try requireOpen("close")
+    change(.close) { window.close() }
+  }
+  public func windowShouldClose(_ sender: NSWindow) -> Bool {
+    switch userCloseAction {
+    case .closeWindow: return true
+    case .hideWindow:
+      change(.userClose) { window.orderOut(nil) }
+      return false
+    case .hideApplication:
+      change(.userClose) { NSApp.hide(nil) }
+      return false
     }
-    public func windowWillClose(_ notification: Notification) {
-        lifecycle = .closed
-        reconcile(.close)
-    }
-    public func windowDidBecomeKey(_ notification: Notification) { reconcile(.system) }
-    public func windowDidResignKey(_ notification: Notification) { reconcile(.system) }
-    public func windowDidMiniaturize(_ notification: Notification) { reconcile(.system) }
-    public func windowDidDeminiaturize(_ notification: Notification) { reconcile(.system) }
-    public func windowDidUpdate(_ notification: Notification) { reconcile(.system) }
-    public func windowWillEnterFullScreen(_ notification: Notification) {
-        fullscreen = .entering
-        reconcile(.fullscreen)
-    }
-    public func windowDidEnterFullScreen(_ notification: Notification) {
-        fullscreen = .fullscreen
-        reconcile(.fullscreen)
-    }
-    public func windowWillExitFullScreen(_ notification: Notification) {
-        fullscreen = .exiting
-        reconcile(.fullscreen)
-    }
-    public func windowDidExitFullScreen(_ notification: Notification) {
-        fullscreen = .windowed
-        reconcile(.fullscreen)
-    }
-    public func windowDidFailToEnterFullScreen(_ window: NSWindow) { syncFullscreen() }
-    public func windowDidFailToExitFullScreen(_ window: NSWindow) { syncFullscreen() }
-    private func syncFullscreen() {
-        fullscreen = window.styleMask.contains(.fullScreen) ? .fullscreen : .windowed
-        reconcile(.fullscreen)
-    }
-    @objc private func applicationChanged(_ notification: Notification) { reconcile(.application) }
+  }
+  public func windowWillClose(_ notification: Notification) {
+    lifecycle = .closed
+    reconcile(.close)
+  }
+  public func windowDidBecomeKey(_ notification: Notification) { reconcile(.system) }
+  public func windowDidResignKey(_ notification: Notification) { reconcile(.system) }
+  public func windowDidMiniaturize(_ notification: Notification) { reconcile(.system) }
+  public func windowDidDeminiaturize(_ notification: Notification) { reconcile(.system) }
+  public func windowDidUpdate(_ notification: Notification) { reconcile(.system) }
+  public func windowWillEnterFullScreen(_ notification: Notification) {
+    fullscreen = .entering
+    reconcile(.fullscreen)
+  }
+  public func windowDidEnterFullScreen(_ notification: Notification) {
+    fullscreen = .fullscreen
+    reconcile(.fullscreen)
+  }
+  public func windowWillExitFullScreen(_ notification: Notification) {
+    fullscreen = .exiting
+    reconcile(.fullscreen)
+  }
+  public func windowDidExitFullScreen(_ notification: Notification) {
+    fullscreen = .windowed
+    reconcile(.fullscreen)
+  }
+  public func windowDidFailToEnterFullScreen(_ window: NSWindow) { syncFullscreen() }
+  public func windowDidFailToExitFullScreen(_ window: NSWindow) { syncFullscreen() }
+  private func syncFullscreen() {
+    fullscreen = window.styleMask.contains(.fullScreen) ? .fullscreen : .windowed
+    reconcile(.fullscreen)
+  }
+  @objc private func applicationChanged(_ notification: Notification) { reconcile(.application) }
+}
+
+public struct TitlebarItem: Codable, Sendable, Equatable {
+  public let type: String
+  public let id: String
+  public let label: String?
+  public let symbol: String?
+  public let tooltip: String?
+  public let enabled: Bool?
+}
+public struct WindowOptions: Codable, Sendable {
+  public let id: String
+  public var route: String?
+  public var title: String?
+  public var width: Double?
+  public var height: Double?
+  public var titlebar: [TitlebarItem]?
+  public init(
+    id: String, route: String? = nil, title: String? = nil, width: Double? = nil,
+    height: Double? = nil, titlebar: [TitlebarItem]? = nil
+  ) {
+    self.id = id
+    self.route = route
+    self.title = title
+    self.width = width
+    self.height = height
+    self.titlebar = titlebar
+  }
 }
 
 @MainActor
-public final class SwiftUIWindow: AppKitWindow {
-    public init(
-        id: String, title: String, size: CGSize, content: AnyView, userCloseAction: UserCloseAction = .closeWindow,
-        emit: @escaping (AppWindowEvent) -> Void = { _ in }
-    ) {
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = title
-        window.contentViewController = NSHostingController(rootView: content)
-        window.center()
-        super.init(id: id, kind: .swiftUI, window: window, userCloseAction: userCloseAction, emit: emit)
+public final class WebWindow: AppKitWindow, WKNavigationDelegate {
+  public let webView: WKWebView
+  public var route: String
+  private var items: [TitlebarItem] = []
+  private var buttons: [NSButton] = []
+  private var action: (String, String) -> Void
+  var onContentFailure: (() -> Void)?
+  var origin: URL?
+  var connected = false {
+    didSet {
+      for (button, item) in zip(buttons, items.filter { $0.type == "button" }) {
+        button.isEnabled = connected && item.enabled != false
+      }
     }
-}
-
-@MainActor
-public final class WebWindow: AppKitWindow {
-    public let content: WebContent
-    public var webView: WKWebView { content.webView }
-    public init(
-        id: String, title: String, size: CGSize, content: WebContent, userCloseAction: UserCloseAction = .closeWindow,
-        emit: @escaping (AppWindowEvent) -> Void = { _ in }
-    ) {
-        self.content = content
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = title
-        window.contentView = content.webView
-        window.center()
-        super.init(id: id, kind: .web, window: window, userCloseAction: userCloseAction, emit: emit)
+  }
+  public init(
+    options: WindowOptions, appName: String, emit: @escaping (AppWindowEvent) -> Void,
+    action: @escaping (String, String) -> Void
+  ) {
+    route = options.route ?? "/"
+    self.action = action
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .default()
+    webView = WKWebView(frame: .zero, configuration: configuration)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: options.width ?? 1000, height: options.height ?? 720),
+      styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false
+    )
+    window.title = options.title ?? appName
+    window.contentView = webView
+    window.center()
+    super.init(id: options.id, window: window, emit: emit)
+    webView.navigationDelegate = self
+    if #available(macOS 13.3, *) {
+      webView.isInspectable = ProcessInfo.processInfo.environment["FIA_DEVELOPMENT"] == "1"
     }
-    public func reload() { webView.reload() }
+    setTitlebar(options.titlebar ?? [])
+    loading()
+  }
+  func loading() {
+    connected = false
+    webView.stopLoading()
+    webView.loadHTMLString(
+      "<html><meta name='color-scheme' content='light dark'><body style='font:14px system-ui;display:grid;place-items:center;height:90vh'>Loading…</body></html>",
+      baseURL: nil)
+  }
+  func load(_ url: URL) {
+    origin = url
+    webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+    connected = true
+  }
+  func setTitlebar(_ items: [TitlebarItem]) {
+    self.items = items
+    buttons.removeAll()
+    while !window.titlebarAccessoryViewControllers.isEmpty {
+      window.removeTitlebarAccessoryViewController(
+        at: window.titlebarAccessoryViewControllers.count - 1)
+    }
+    guard !items.isEmpty else { return }
+    let stack = NSStackView()
+    stack.orientation = .horizontal
+    stack.spacing = 8
+    for item in items {
+      switch item.type {
+      case "button":
+        let button = NSButton(title: item.label ?? "", target: self, action: #selector(pressed(_:)))
+        button.identifier = NSUserInterfaceItemIdentifier(item.id)
+        button.bezelStyle = .texturedRounded
+        if let symbol = item.symbol {
+          button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: item.label)
+        }
+        button.toolTip = item.tooltip
+        button.isEnabled = connected && item.enabled != false
+        buttons.append(button)
+        stack.addArrangedSubview(button)
+      case "text":
+        let label = NSTextField(labelWithString: item.label ?? "")
+        label.toolTip = item.tooltip
+        stack.addArrangedSubview(label)
+      default:
+        let space = NSView()
+        space.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        stack.addArrangedSubview(space)
+      }
+    }
+    let accessory = NSTitlebarAccessoryViewController()
+    let container = NSView(
+      frame: NSRect(x: 0, y: 0, width: stack.fittingSize.width + 16, height: 30))
+    container.addSubview(stack)
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+      stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+      stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+    ])
+    accessory.view = container
+    accessory.layoutAttribute = .right
+    window.addTitlebarAccessoryViewController(accessory)
+  }
+  @objc private func pressed(_ sender: NSButton) {
+    if connected, let item = sender.identifier?.rawValue { action(id, item) }
+  }
+  public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    connected = false
+    onContentFailure?()
+  }
+  public func webView(
+    _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+    withError error: Error
+  ) {
+    if (error as NSError).code != NSURLErrorCancelled { onContentFailure?() }
+  }
+  public func webView(
+    _ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error
+  ) {
+    if (error as NSError).code != NSURLErrorCancelled { onContentFailure?() }
+  }
+  public func webView(
+    _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+    decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+  ) {
+    guard let url = navigationAction.request.url else {
+      decisionHandler(.cancel)
+      return
+    }
+    if url.absoluteString == "about:blank" {
+      decisionHandler(.allow)
+      return
+    }
+    if let origin, url.scheme == origin.scheme, url.host == origin.host, url.port == origin.port {
+      decisionHandler(.allow)
+      return
+    }
+    if ["http", "https", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
+    decisionHandler(.cancel)
+  }
 }
 
 @MainActor
 public final class WindowManager {
-    private struct Registration {
-        let kind: AppWindowKind
-        let factory: @MainActor () throws -> any AppWindow
+  private var instances: [String: WebWindow] = [:]
+  private var definitions: [String: WindowOptions] = [:]
+  private var url: ((String, String) -> URL)?
+  private var connected = false
+  private var stopping = false
+  public var appName = "FIA"
+  public var onEvent: ((AppWindowEvent) -> Void)?
+  public var onAction: ((String, String) -> Void)?
+  var onContentFailure: ((String) -> Void)?
+  public var states: [AppWindowState] { instances.values.map(\.state).sorted { $0.id < $1.id } }
+  public var registeredIDs: [String] { definitions.keys.sorted() }
+  public var openIDs: Set<String> {
+    Set(instances.values.filter { $0.state.lifecycle != .closed }.map(\.id))
+  }
+  public func beginShutdown() { stopping = true }
+  public func restoreMainWindow() throws { try operate("open", id: "main") }
+  public init() {}
+  func suspend() {
+    connected = false
+    for window in instances.values where window.state.lifecycle != .closed { window.loading() }
+  }
+  func connect(_ resolver: @escaping (String, String) -> URL) {
+    url = resolver
+    connected = true
+    for window in instances.values where window.state.lifecycle != .closed {
+      window.load(resolver(window.id, window.route))
     }
-
-    private var registrations: [String: Registration] = [:]
-    private var instances: [String: any AppWindow] = [:]
-    private var continuations: [UUID: AsyncStream<AppWindowEvent>.Continuation] = [:]
-    private var webURL: ((String) -> URL?)?
-    private var trustedOrigins: [URL] = []
-    private var shuttingDown = false
-    private var registrationOrder: [String] = []
-    public var mainWindowID: String?
-    func beginShutdown() { shuttingDown = true }
-    private func requireRunning() throws {
-        guard !shuttingDown else {
-            throw FIAError(code: .unsafeState, component: "windows", message: "Runtime is shutting down")
+  }
+  @discardableResult
+  public func create(_ options: WindowOptions) throws -> AppWindowState {
+    try validate(options)
+    guard !stopping else { throw failure("Runtime is stopping") }
+    if instances[options.id] != nil {
+      // Re-declaring a window after Bun restarts must preserve the user's
+      // geometry and open/hidden/closed state. Explicit update/open changes it.
+      var declaration = options
+      declaration.width = nil
+      declaration.height = nil
+      return try update(declaration)
+    }
+    definitions[options.id] = options
+    let window = WebWindow(
+      options: options, appName: appName, emit: { [weak self] event in self?.onEvent?(event) },
+      action: { [weak self] id, item in self?.onAction?(id, item) })
+    instances[options.id] = window
+    window.onContentFailure = { [weak self] in self?.onContentFailure?(options.id) }
+    if connected, let url { window.load(url(window.id, window.route)) }
+    try window.show()
+    return window.state
+  }
+  @discardableResult
+  public func update(_ options: WindowOptions) throws -> AppWindowState {
+    try validate(options)
+    guard let window = instances[options.id] else {
+      throw failure("Window not found: " + options.id)
+    }
+    var stored = definitions[options.id]!
+    if let title = options.title {
+      window.window.title = title
+      stored.title = title
+    }
+    if let route = options.route, route != window.route {
+      window.route = route
+      stored.route = route
+      if connected, window.state.lifecycle != .closed, let url {
+        window.load(url(window.id, route))
+      }
+    }
+    if let items = options.titlebar {
+      window.setTitlebar(items)
+      stored.titlebar = items
+    }
+    if options.width != nil || options.height != nil {
+      window.window.setContentSize(
+        NSSize(
+          width: options.width ?? window.webView.frame.width,
+          height: options.height ?? window.webView.frame.height))
+      stored.width = options.width ?? stored.width
+      stored.height = options.height ?? stored.height
+    }
+    definitions[options.id] = stored
+    return window.state
+  }
+  @discardableResult
+  func operate(_ operation: String, id: String) throws -> AppWindowState {
+    if operation == "open", instances[id]?.state.lifecycle == .closed, let options = definitions[id]
+    {
+      instances.removeValue(forKey: id)
+      return try create(options)
+    }
+    guard let window = instances[id] else { throw failure("Window not found: " + id) }
+    switch operation {
+    case "open", "focus": try window.focus()
+    case "hide": try window.hide()
+    case "close": try window.close()
+    case "minimize": window.window.miniaturize(nil)
+    case "maximize": if !window.window.isZoomed { window.window.zoom(nil) }
+    case "restore":
+      window.window.deminiaturize(nil)
+      if window.window.isZoomed { window.window.zoom(nil) }
+    case "toggleFullscreen": window.window.toggleFullScreen(nil)
+    default: break
+    }
+    return window.state
+  }
+  func registerNativeMethods(_ registry: NativeMethodRegistry) {
+    registry.register("windows.create", input: WindowOptions.self, output: AppWindowState.self) {
+      [weak self] input in
+      try await MainActor.run {
+        guard let self else { throw CancellationError() }
+        return try self.create(input)
+      }
+    }
+    registry.register("windows.update", input: WindowOptions.self, output: AppWindowState.self) {
+      [weak self] input in
+      try await MainActor.run {
+        guard let self else { throw CancellationError() }
+        return try self.update(input)
+      }
+    }
+    registry.register("windows.setTitlebar", input: TitlebarInput.self, output: AppWindowState.self)
+    { [weak self] input in
+      try await MainActor.run {
+        guard let self else { throw CancellationError() }
+        return try self.update(WindowOptions(id: input.id, titlebar: input.items))
+      }
+    }
+    for method in [
+      "open", "hide", "focus", "close", "state", "minimize", "maximize", "restore",
+      "toggleFullscreen",
+    ] {
+      registry.register(
+        "windows." + method, input: BuiltinWindowID.self, output: AppWindowState.self
+      ) { [weak self] input in
+        try await MainActor.run {
+          guard let self else { throw CancellationError() }
+          return try self.operate(method, id: input.id)
         }
+      }
     }
-    public func restoreMainWindow() throws {
-        try requireRunning()
-        guard let id = mainWindowID ?? (registrations["main"] != nil ? "main" : registrationOrder.first) else { return }
-        try focus(id)
+  }
+  private func failure(_ message: String) -> FIAError {
+    FIAError(code: .invalidArgument, component: "windows", message: message)
+  }
+  private func validate(_ options: WindowOptions) throws {
+    guard options.id.range(of: "^[A-Za-z0-9_-]{1,100}$", options: .regularExpression) != nil else {
+      throw failure("Invalid window id")
     }
-
-    public init() {}
-
-    public var hasWebWindows: Bool { registrations.values.contains { $0.kind == .web } }
-    public var registeredIDs: [String] { registrations.keys.sorted() }
-    public var states: [AppWindowState] { instances.values.map(\.state).sorted { $0.id < $1.id } }
-
-    func configureWebURL(trustedOrigins: [URL], _ resolver: @escaping (String) -> URL?) {
-        self.trustedOrigins = trustedOrigins
-        webURL = resolver
+    if let route = options.route {
+      guard route.hasPrefix("/"), !route.hasPrefix("//"), !route.contains("\\"),
+        let decoded = route.removingPercentEncoding,
+        !decoded.components(separatedBy: "/").contains(".."),
+        !decoded.unicodeScalars.contains(where: { $0.value < 32 })
+      else { throw failure("Window route must be an application path") }
     }
-
-    public func makeFIAContent(route: String) throws -> FIAWebContent {
-        try requireRunning()
-        guard let url = webURL?(route) else {
-            throw FIAError(
-                code: .capabilityUnavailable, component: "windows", message: "The Web gateway is not available")
-        }
-        return FIAWebContent(url: url, trustedOrigins: trustedOrigins)
+    for size in [options.width, options.height].compactMap({ $0 }) {
+      guard size.isFinite, size >= 200, size <= 16384 else { throw failure("Invalid window size") }
     }
-
-    public func registerExternalWeb(
-        _ id: String, url: URL, title: String, size: CGSize = CGSize(width: 1000, height: 720),
-        dataStore: WebsiteDataPolicy = .ephemeral, userCloseAction: UserCloseAction = .closeWindow
-    ) {
-        register(id, kind: .web) { [weak self] in
-            WebWindow(
-                id: id, title: title, size: size, content: ExternalWebContent(url: url, dataStore: dataStore),
-                userCloseAction: userCloseAction, emit: self?.emit ?? { _ in })
-        }
+    if let items = options.titlebar {
+      guard items.count <= 32, Set(items.map(\.id)).count == items.count else {
+        throw failure("Titlebar items must have unique IDs (maximum 32)")
+      }
+      for item in items {
+        guard ["button", "text", "spacer"].contains(item.type), !item.id.isEmpty,
+          item.id.count <= 100,
+          item.type == "spacer" || (item.label != nil && item.label!.count <= 256)
+        else { throw failure("Invalid titlebar item") }
+      }
     }
-
-    public func registerFIAWeb(
-        _ id: String,
-        route: String,
-        title: String,
-        size: CGSize = CGSize(width: 1000, height: 720),
-        userCloseAction: UserCloseAction = .closeWindow
-    ) {
-        register(id, kind: .web) { [weak self] in
-            guard let self, let url = self.webURL?(route) else {
-                throw FIAError(
-                    code: .capabilityUnavailable,
-                    component: "windows",
-                    method: "open",
-                    message: "The Web gateway is not available"
-                )
-            }
-            return WebWindow(
-                id: id, title: title, size: size, content: FIAWebContent(url: url, trustedOrigins: self.trustedOrigins),
-                userCloseAction: userCloseAction, emit: self.emit)
-        }
-    }
-
-    public func registerSwiftUI<Content: View>(
-        _ id: String,
-        title: String,
-        size: CGSize = CGSize(width: 720, height: 520),
-        userCloseAction: UserCloseAction = .closeWindow,
-        @ViewBuilder content: @escaping @MainActor () -> Content
-    ) {
-        register(id, kind: .swiftUI) { [weak self] in
-            SwiftUIWindow(
-                id: id, title: title, size: size, content: AnyView(content()), userCloseAction: userCloseAction,
-                emit: self?.emit ?? { _ in })
-        }
-    }
-
-    public func registerAppKit(
-        _ id: String, userCloseAction: UserCloseAction = .closeWindow, factory: @escaping @MainActor () -> NSWindow
-    ) {
-        register(id, kind: .appKit) { [weak self] in
-            AppKitWindow(id: id, window: factory(), userCloseAction: userCloseAction, emit: self?.emit ?? { _ in })
-        }
-    }
-
-    public func createWeb(
-        _ id: String,
-        route: String,
-        title: String,
-        size: CGSize = CGSize(width: 1000, height: 720),
-        userCloseAction: UserCloseAction = .closeWindow
-    ) throws -> WebWindow {
-        try requireRunning()
-        guard registrations[id] == nil, instances[id] == nil else {
-            throw FIAError(
-                code: .conflict, component: "windows", method: "createWeb", message: "Window already exists: \(id)")
-        }
-        guard let url = webURL?(route) else {
-            throw FIAError(
-                code: .capabilityUnavailable, component: "windows", method: "createWeb",
-                message: "The Web gateway is not available")
-        }
-        let window = WebWindow(
-            id: id, title: title, size: size, content: FIAWebContent(url: url, trustedOrigins: trustedOrigins),
-            userCloseAction: userCloseAction, emit: emit)
-        window.presentationAllowed = { [weak self] in self?.shuttingDown == false }
-        instances[id] = window
-        emit(
-            AppWindowEvent(
-                previous: AppWindowState(id: id, kind: window.kind, lifecycle: .registered), current: window.state,
-                cause: .created))
-        return window
-    }
-
-    @discardableResult
-    public func show(_ id: String) throws -> any AppWindow {
-        let window = try instance(id)
-        try window.show()
-        return window
-    }
-
-    public func hide(_ id: String) throws { try activeInstance(id, method: "hide").hide() }
-    public func focus(_ id: String) throws { try instance(id).focus() }
-    public func close(_ id: String) throws { try activeInstance(id, method: "close").close() }
-
-    public func state(_ id: String) throws -> AppWindowState {
-        if let current = instances[id] { return current.state }
-        guard let registration = registrations[id] else { throw missing(id) }
-        return AppWindowState(
-            id: id, kind: registration.kind, lifecycle: .registered, applicationHidden: NSApp?.isHidden ?? false)
-    }
-
-    public func events() -> AsyncStream<AppWindowEvent> {
-        let id = UUID()
-        return AsyncStream { continuation in
-            continuations[id] = continuation
-            continuation.onTermination = { [weak self] _ in
-                Task { @MainActor in self?.continuations.removeValue(forKey: id) }
-            }
-        }
-    }
-
-    func registerNativeMethods(_ registry: NativeMethodRegistry) {
-        registry.register(
-            "windows.createWeb", input: WebWindowInput.self, output: AppWindowState.self, permission: "windows"
-        ) { [weak self] input in
-            guard let self else { throw CancellationError() }
-            return try await MainActor.run {
-                let window = try self.createWeb(input.id, route: input.route, title: input.title)
-                try window.show()
-                return window.state
-            }
-        }
-        registry.register("windows.open", input: WindowID.self, output: AppWindowState.self, permission: "windows") {
-            [weak self] input in
-            guard let self else { throw CancellationError() }
-            return try await MainActor.run { try self.show(input.id).state }
-        }
-        registry.register("windows.hide", input: WindowID.self, output: AppWindowState.self, permission: "windows") {
-            [weak self] input in
-            guard let self else { throw CancellationError() }
-            return try await MainActor.run {
-                try self.hide(input.id)
-                return try self.state(input.id)
-            }
-        }
-        registry.register("windows.focus", input: WindowID.self, output: AppWindowState.self, permission: "windows") {
-            [weak self] input in
-            guard let self else { throw CancellationError() }
-            return try await MainActor.run {
-                try self.focus(input.id)
-                return try self.state(input.id)
-            }
-        }
-        registry.register("windows.close", input: WindowID.self, output: AppWindowState.self, permission: "windows") {
-            [weak self] input in
-            guard let self else { throw CancellationError() }
-            return try await MainActor.run {
-                try self.close(input.id)
-                return try self.state(input.id)
-            }
-        }
-        registry.register("windows.state", input: WindowID.self, output: AppWindowState.self, permission: "windows") {
-            [weak self] input in
-            guard let self else { throw CancellationError() }
-            return try await MainActor.run { try self.state(input.id) }
-        }
-    }
-
-    func showInitialWindow() throws {
-        guard let id = mainWindowID ?? (registrations["main"] != nil ? "main" : registrationOrder.first) else { return }
-        try show(id)
-    }
-
-    func register(_ id: String, kind: AppWindowKind, factory: @escaping @MainActor () throws -> any AppWindow) {
-        precondition(
-            !shuttingDown && !id.isEmpty && registrations[id] == nil && instances[id] == nil,
-            "Register unique windows before shutdown")
-        registrationOrder.append(id)
-        registrations[id] = Registration(kind: kind, factory: factory)
-    }
-
-    private func instance(_ id: String) throws -> any AppWindow {
-        try requireRunning()
-        if let current = instances[id], current.state.lifecycle != .closed { return current }
-        guard let registration = registrations[id] else { throw missing(id) }
-        let previous = try state(id)
-        let window = try registration.factory()
-        (window as? AppKitWindow)?.presentationAllowed = { [weak self] in self?.shuttingDown == false }
-        instances[id] = window
-        emit(AppWindowEvent(previous: previous, current: window.state, cause: .created))
-        return window
-    }
-
-    private func activeInstance(_ id: String, method: String) throws -> any AppWindow {
-        guard let current = instances[id] else {
-            if registrations[id] == nil { throw missing(id) }
-            throw FIAError(
-                code: .unsafeState,
-                component: "windows",
-                method: method,
-                message: "Window is not open: \(id)"
-            )
-        }
-        guard current.state.lifecycle != .closed else {
-            throw FIAError(
-                code: .unsafeState,
-                component: "windows",
-                method: method,
-                message: "Window is already closed: \(id)"
-            )
-        }
-        return current
-    }
-
-    private func missing(_ id: String) -> FIAError {
-        FIAError(code: .notFound, component: "windows", method: "lookup", message: "Window is not registered: \(id)")
-    }
-
-    private func emit(_ event: AppWindowEvent) {
-        for continuation in continuations.values { continuation.yield(event) }
-    }
+  }
 }
-
-private struct WindowID: Codable, Sendable { let id: String }
-private struct WebWindowInput: Codable, Sendable {
-    let id: String
-    let route: String
-    let title: String
+private struct TitlebarInput: Codable, Sendable {
+  let id: String
+  let items: [TitlebarItem]
 }

@@ -1,561 +1,570 @@
 import AppKit
+import CryptoKit
 import FIACore
-import FIAMacOS
-import FIAUpdater
-import FIAWeb
-import Foundation
-
-@_exported import FIAUpdater
 @_exported import FIAMacOS
-
-public enum BunServiceState: Sendable, Equatable {
-    case disabled
-    case starting
-    case ready(URL)
-    case restarting(Int)
-    case failed(String)
-    case stopping
-    case stopped
-}
-
-private final class BackendOrigin: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: URL?
-    private var session: String?
-    private var mount = "/api"
-    init(mount: String = "/api") { self.mount = mount }
-    func get() -> URL? { lock.withLock { value } }
-    func endpoint() -> FIABackendEndpoint? {
-        lock.withLock {
-            guard let value, let session else { return nil }
-            return FIABackendEndpoint(origin: value, session: session, mount: mount)
-        }
-    }
-    func set(_ value: URL?, session: String? = nil) { lock.withLock { self.value = value; self.session = session } }
-}
-
-@MainActor
-public final class BunSupervisor {
-    public private(set) var state: BunServiceState = .disabled
-    private var supervisor: BackendSupervisor?
-    private let origin: BackendOrigin
-
-    fileprivate init(origin: BackendOrigin) { self.origin = origin }
-
-    fileprivate func start(
-        executable: URL,
-        appName: String,
-        identifier: String,
-        development: Bool,
-        sha256: String,
-        nativeOrigin: String,
-        nativeSession: String,
-        native: NativeMethodRegistry
-    ) {
-        let configuration = FIABunConfiguration(
-            development: development,
-            appName: appName,
-            appIdentifier: identifier,
-            executable: development ? executable.path : "Helpers/FIABackend",
-            sha256: sha256,
-            nativeOrigin: nativeOrigin,
-            nativeSession: nativeSession
-        )
-        do {
-            let supervisor = try BackendSupervisor(configuration: configuration) { method, params in
-                let input = try JSONSerialization.data(withJSONObject: params, options: .fragmentsAllowed)
-                switch await native.dispatch(method: method, params: input) {
-                case let .success(data):
-                    return try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
-                case let .failure(error): throw error
-                }
-            } onState: { [weak self] state in
-                guard let self else { return }
-                switch state {
-                case .starting: self.state = .starting
-                case let .ready(port):
-                    let url = URL(string: "http://127.0.0.1:\(port)")!
-                    self.origin.set(url, session: self.supervisor?.sessionToken)
-                    self.state = .ready(url)
-                case let .restarting(attempt):
-                    self.origin.set(nil)
-                    self.state = .restarting(attempt)
-                case let .failed(reason):
-                    self.origin.set(nil)
-                    self.state = .failed(reason)
-                case .stopping: self.state = .stopping
-                case .stopped:
-                    self.origin.set(nil)
-                    self.state = .stopped
-                }
-            }
-            self.supervisor = supervisor
-            state = .starting
-            supervisor.start()
-        } catch {
-            supervisor = nil
-            origin.set(nil)
-            state = .failed(error.localizedDescription)
-        }
-    }
-
-    private var startsDisabled = false
-    fileprivate func disableStarts() { startsDisabled = true }
-    public func retry() { if !startsDisabled { supervisor?.retry() } }
-    public func send(event: String, payload: Any? = nil) { supervisor?.sendEvent(event, payload: payload) }
-    fileprivate func stop() async throws { try await supervisor?.stop() }
-
-}
-
-public struct FIAPermissions: Codable, Sendable {
-    public let values: [String: Bool]
-    public func allows(_ capability: String) -> Bool { values[capability] == true }
-}
+import Foundation
 
 @MainActor
 public final class FIARuntime {
-    public let windows = WindowManager()
-    public let native = NativeMethodRegistry()
-    public let resources: ResourceStore
-    public let updater = UpdateManager()
-    public let clipboard = ClipboardService()
-    public let dialogs = DialogService()
-    public let notifications = NotificationService()
-    public let screens = ScreenService()
-    public let screenCapture = ScreenCaptureService()
-    public let system = SystemService()
-    public let shortcuts = ShortcutService()
-    public let keychain: KeychainService
-    public let bun: BunSupervisor
-    public let permissions: FIAPermissions
+  public let windows = WindowManager()
+  public let native = NativeMethodRegistry()
+  public let resources: ResourceStore
+  public let updater: CodeUpdateManager
+  public let clipboard = ClipboardService()
+  public let dialogs = DialogService()
+  public let notifications = NotificationService()
+  public let screens = ScreenService()
+  public let screenCapture = ScreenCaptureService()
+  public let system = SystemService()
+  public let shortcuts = ShortcutService()
+  public let keychain: KeychainService
+  public private(set) var lifecycle: RuntimeLifecycle = .running
+  private let manifest: RuntimeManifest
+  private let bundle: Bundle
+  private let supportDirectory: URL
+  private let store: CodeReleaseStore
+  private var activeRelease: CodeRelease
+  private var activeDirectory: URL
+  private let session = UUID().uuidString + UUID().uuidString
+  private let development = ProcessInfo.processInfo.environment["FIA_DEVELOPMENT"] == "1"
+  private let developmentOrigin = ProcessInfo.processInfo.environment["FIA_WEB_DEV_URL"].flatMap(
+    URL.init(string:))
+  private var backend: BackendSupervisor?
+  private var backendOrigin: URL?
+  private var backendReady = false
+  private var backendFailure: String?
+  private var frontendReady: Set<String> = []
+  private var frontendFailure: String?
+  private var port = 0
+  private var inspectionTask: Task<Void, Never>?
+  private var transitioning = false
+  private var shutdownTask: Task<ShutdownReport, Never>?
+  private var control: URL? {
+    ProcessInfo.processInfo.environment["FIA_CONTROL_DIRECTORY"].map { URL(fileURLWithPath: $0) }
+  }
 
-    public private(set) var lifecycle: RuntimeLifecycle = .running
-    public private(set) var shutdownReport: ShutdownReport?
-    public var lastWindowClosedAction: LastWindowClosedAction = .keepRunning
-    public var reopenAction: ReopenAction = .restoreMainWindow
-    private var shutdownHandlers: [(name: String, timeout: Duration, handler: @MainActor () async throws -> Void)] = []
-    private var shutdownTask: Task<ShutdownReport, Never>?
-    private var handlerTask: Task<[ShutdownIssue], Never>?
-    private var shutdownReason: ShutdownReason?
-    private var managedProcesses: [ManagedProcess] = []
-    private var menuHandlers: [@MainActor (NSMenu) -> Void] = []
-    private var configuring = true
-    private var menuInstalled = false
-
-    public func onShutdown(name: String = "Application cleanup", timeout: Duration = .seconds(10), _ handler: @escaping @MainActor () async throws -> Void) {
-        precondition(lifecycle == .running, "Cannot register cleanup after shutdown has started")
-        precondition(timeout > .zero, "Cleanup timeout must be positive")
-        shutdownHandlers.append((name, timeout, handler))
+  init(
+    manifest: RuntimeManifest, bundle: Bundle = .main, supportDirectory: URL? = nil,
+    updateNetwork: URLSession = .shared
+  ) throws {
+    self.manifest = manifest
+    self.bundle = bundle
+    let support =
+      try supportDirectory ?? ProcessInfo.processInfo.environment["FIA_DATA_DIRECTORY"].map {
+        URL(fileURLWithPath: $0)
+      }
+      ?? FileManager.default.url(
+        for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+    self.supportDirectory = support
+    let appSupport = support.appending(path: manifest.app.identifier, directoryHint: .isDirectory)
+    guard let resourcesURL = bundle.resourceURL else {
+      throw UpdateError("Missing application resources")
     }
-
-    /// Runtime ownership guarantees that process stop failures block termination.
-    public func startProcess(_ process: ManagedProcess) throws {
-        guard lifecycle == .running else { throw ManagedProcessError("Runtime is shutting down") }
-        try process.start()
-        managedProcesses.append(process)
+    store = try CodeReleaseStore(
+      directory: appSupport.appending(path: "Updates"),
+      factoryDirectory: resourcesURL.appending(path: "code"), publicKey: manifest.updates?.publicKey
+    )
+    guard store.factory.identifier == manifest.app.identifier,
+      store.factory.runtimeId == manifest.runtimeId
+    else { throw UpdateError("Factory code does not match the installed runtime") }
+    let selected = try store.selected()
+    activeRelease = selected.release
+    activeDirectory = selected.directory
+    resources = try ResourceStore()
+    keychain = KeychainService(service: manifest.app.identifier)
+    updater = CodeUpdateManager(
+      config: development ? nil : manifest.updates, store: store, network: updateNetwork)
+    native.setPermissions(
+      Dictionary(
+        uniqueKeysWithValues: [
+          "application", "windows", "dialogs", "clipboard", "keychain", "screens", "screenCapture",
+          "notifications", "system", "globalShortcuts",
+        ].map { ($0, true) }))
+    windows.appName = manifest.app.name
+    windows.registerNativeMethods(native)
+    windows.onEvent = { [weak self] event in self?.emit("windows.changed", event) }
+    windows.onAction = { [weak self] id, item in
+      self?.emit("windows.titlebarAction", TitlebarAction(windowId: id, itemId: item))
     }
-
-    public func customizeMenu(_ handler: @escaping @MainActor (NSMenu) -> Void) {
-        precondition(configuring, "Register menu customization during application configuration")
-        menuHandlers.append(handler)
+    windows.onContentFailure = { [weak self] id in self?.frontendFailure = "WebView failed: " + id }
+    shortcuts.onPressed = { [weak self] id in
+      self?.emit("globalShortcuts.pressed", ShortcutPressed(id: id))
     }
-
-    func finishConfiguration() { configuring = false }
-
-    func customizeApplicationMenu(_ menu: NSMenu) {
-        guard !menuInstalled else { return }
-        menuInstalled = true
-        for handler in menuHandlers { handler(menu) }
-        menuHandlers.removeAll()
+    updater.onState = { [weak self] state in self?.emit("updates.stateChanged", state) }
+    updater.activate = { [weak self] release, directory, trial in
+      guard let self else { throw CancellationError() }
+      try await self.activate(release, directory: directory, trial: trial)
     }
-
-    @discardableResult
-    func runShutdownHandlers() async -> [ShutdownIssue] {
-        if let handlerTask { return await handlerTask.value }
-        let handlers = shutdownHandlers
-        shutdownHandlers.removeAll()
-        let task = Task { @MainActor in
-            var issues: [ShutdownIssue] = []
-            for entry in handlers.reversed() {
-                if let issue = await ShutdownRace().run(name: entry.name, timeout: entry.timeout, handler: entry.handler) {
-                    issues.append(issue)
-                }
-            }
-            return issues
-        }
-        handlerTask = task
-        return await task.value
+    registerServices()
+    registerRuntimeMethods()
+  }
+  func start(automaticUpdates: Bool = true) async throws {
+    _ = try windows.create(WindowOptions(id: "main"))
+    launchBackend()
+    try await waitForBackend()
+    if let readyFile = ProcessInfo.processInfo.environment["FIA_DEV_READY_FILE"] {
+      let deadline = Date().addingTimeInterval(15)
+      while !FileManager.default.fileExists(atPath: readyFile) {
+        if Date() >= deadline { throw UpdateError("Vite did not become ready") }
+        try await Task.sleep(for: .milliseconds(50))
+      }
     }
-
-    private let manifest: RuntimeManifest
-    private let backendOrigin: BackendOrigin
-    private var updaterAvailable = false
-    private var gateway: FIAGateway?
-    private var endpoint: FIAGatewayEndpoint?
-    private var windowEventsTask: Task<Void, Never>?
-    private var updaterEventsTask: Task<Void, Never>?
-
-    init(manifest: RuntimeManifest) throws {
-        self.manifest = manifest
-        backendOrigin = BackendOrigin(mount: manifest.backend.mount)
-        permissions = FIAPermissions(values: manifest.permissions)
-        native.setPermissions(manifest.permissions)
-        resources = try ResourceStore()
-        keychain = KeychainService(service: manifest.app.identifier)
-        bun = BunSupervisor(origin: backendOrigin)
-        windows.registerNativeMethods(native)
-        registerServices()
-        shortcuts.onPressed = { [weak self] id in
-            try? self?.emit("globalShortcuts.pressed", payload: ShortcutPressed(id: id))
+    connectWindows()
+    startInspection()
+    if automaticUpdates { updater.startAutomaticChecks() }
+  }
+  private func launchBackend(trial: Bool = false) {
+    backendReady = false
+    backendFailure = nil
+    frontendReady.removeAll()
+    frontendFailure = nil
+    let entry =
+      development
+      ? (manifest.developmentEntry ?? activeDirectory.appending(path: "backend/index.js").path)
+      : activeDirectory.appending(path: "backend/index.js").path
+    let configuration = FIABunConfiguration(
+      development: development, appName: manifest.app.name, appIdentifier: manifest.app.identifier,
+      executable: bundle.bundleURL.appending(path: "Contents/Helpers/bun").path,
+      arguments: ["--no-env-file", entry], sha256: manifest.bunSHA256,
+      sessionSecret: session, webRoot: activeDirectory.appending(path: "web").path,
+      resourceDirectory: resources.directory.path,
+      developmentOrigin: developmentOrigin?.absoluteString, version: activeRelease.version,
+      build: activeRelease.build, preferredPort: port, automaticallyRestart: !trial)
+    do {
+      let backend = try BackendSupervisor(
+        configuration: configuration, applicationSupportDirectory: supportDirectory
+      ) { [weak self] method, params in
+        guard let self else { throw CancellationError() }
+        let input = try JSONSerialization.data(withJSONObject: params, options: .fragmentsAllowed)
+        switch await self.native.dispatch(method: method, params: input) {
+        case .success(let data):
+          return try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+        case .failure(let error): throw error
         }
-        if manifest.updater != nil {
-            updater.enable()
-            if updater.isEnabled { registerUpdaterService() }
+      } onState: { [weak self] state in
+        guard let self else { return }
+        switch state {
+        case .ready(let port):
+          self.port = port
+          self.backendOrigin = URL(string: "http://127.0.0.1:\(port)")!
+          self.backendReady = true
+          if !self.transitioning { self.connectWindows() }
+        case .starting, .restarting:
+          self.backendReady = false
+          self.frontendReady.removeAll()
+          self.frontendFailure = nil
+          self.windows.suspend()
+          self.native.cancelActive()
+          self.shortcuts.clear()
+          Task { await self.resources.cleanupAll() }
+        case .failed(let reason):
+          self.backendReady = false
+          self.backendFailure = reason
+          self.windows.suspend()
+        case .stopping, .stopped: self.backendReady = false
         }
-        updaterAvailable = updater.isEnabled
-        updater.beforeInstall = { [weak self] in
-            guard let self else { return }
-            let report = await self.prepareForUpdate()
-            guard report.completed else { throw ManagedProcessError(report.issues.map(\.message).joined(separator: "\n")) }
+      }
+      backend.onListening = { [weak self] port in
+        guard let self else { return }
+        self.port = port
+        self.backendOrigin = URL(string: "http://127.0.0.1:\(port)")!
+        if let control = self.control {
+          let endpoint: [String: Any] = [
+            "origin": self.backendOrigin!.absoluteString,
+            "generation": self.backend?.generationID ?? "",
+          ]
+          if let data = try? JSONSerialization.data(withJSONObject: endpoint) {
+            try? data.write(to: control.appending(path: "backend.json"), options: .atomic)
+          }
         }
+      }
+      self.backend = backend
+      backend.start()
+    } catch { backendFailure = error.localizedDescription }
+  }
+  private func connectWindows() {
+    guard backendReady, let origin = developmentOrigin ?? backendOrigin,
+      let generation = backend?.generationID
+    else { return }
+    if let ready = ProcessInfo.processInfo.environment["FIA_DEV_READY_FILE"],
+      !FileManager.default.fileExists(atPath: ready)
+    {
+      return
     }
-
-    func start() async throws {
-        guard lifecycle == .running else { throw ManagedProcessError("Runtime is shutting down") }
-        finishConfiguration()
-        let environment = ProcessInfo.processInfo.environment
-        let developmentOrigin = environment["FIA_WEB_DEV_URL"].flatMap(URL.init(string:))
-        let needsGateway = manifest.web.enabled || manifest.backend.enabled || environment["FIA_ENDPOINT_FILE"] != nil
-        if needsGateway {
-            let staticDirectory = manifest.web.enabled
-                ? Bundle.main.resourceURL?.appending(path: manifest.web.directory ?? "web", directoryHint: .isDirectory)
-                : nil
-            let registry = native
-            let store = resources
-            let backendOrigin = backendOrigin
-            let updaterAvailable = self.updaterAvailable
-            let gateway = FIAGateway(
-                staticDirectory: staticDirectory,
-                developmentOrigin: developmentOrigin,
-                backendMount: manifest.backend.mount,
-                backendEndpoint: { backendOrigin.endpoint() },
-                dispatcher: { [manifest] method, params, mode in
-                    if method == "native.capabilities" {
-                        var available = manifest.permissions
-                        available["native"] = true
-                        available["resources"] = true
-                        available["windows"] = mode == "application" && manifest.permissions["windows"] == true
-                        available["updater"] = updaterAvailable
-                        let capabilities: [String: Any] = [
-                            "mode": mode,
-                            "protocolVersion": 1,
-                            "capabilities": available,
-                        ]
-                        return .success((try? JSONSerialization.data(withJSONObject: capabilities)) ?? Data("{}".utf8))
-                    }
-                    if mode == "browserCompanion", method.hasPrefix("windows.") {
-                        return .failure(FIAError(
-                            code: .capabilityUnavailable,
-                            component: "windows",
-                            method: method,
-                            message: "This window capability is unavailable in Browser Companion"
-                        ))
-                    }
-                    return await registry.dispatch(method: method, params: params)
-                },
-                resource: { id, session in
-                    guard let resource = await store.resource(id: id, session: session) else { return nil }
-                    return FIAGatewayResource(
-                        fileURL: resource.fileURL,
-                        contentType: resource.descriptor.contentType,
-                        size: resource.descriptor.byteLength
-                    )
-                }
-            )
-            let endpoint = try gateway.start()
-            self.gateway = gateway
-            self.endpoint = endpoint
-            windows.configureWebURL(trustedOrigins: [URL(string: endpoint.origin)!] + (developmentOrigin.map { [$0] } ?? [])) { [weak gateway] route in gateway?.makeBootstrapURL(target: route) }
-            if let path = environment["FIA_ENDPOINT_FILE"] {
-                let data = try JSONEncoder().encode(endpoint)
-                let file = URL(fileURLWithPath: path)
-                try data.write(to: file, options: .atomic)
-                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-            }
-            let windowEvents = windows.events()
-            windowEventsTask = Task { @MainActor [weak self, weak gateway] in
-                guard let self else { return }
-                for await event in windowEvents {
-                    guard !Task.isCancelled else { return }
-                    let payload = event
-                    let data = try? JSONEncoder().encode(payload)
-                    gateway?.publish(event: "windows.changed", payload: data)
-                    self.bun.send(event: "windows.changed", payload: data.flatMap {
-                        try? JSONSerialization.jsonObject(with: $0, options: .fragmentsAllowed)
-                    })
-                }
-            }
-            if updaterAvailable {
-                updaterEventsTask = Task { @MainActor [weak self, weak gateway] in
-                    guard let self else { return }
-                    for await state in self.updater.states() {
-                        guard !Task.isCancelled else { return }
-                        let payload = UpdateStatePayload(state)
-                        let data = try? JSONEncoder().encode(payload)
-                        gateway?.publish(event: "updater.stateChanged", payload: data)
-                        self.bun.send(event: "updater.stateChanged", payload: data.flatMap {
-                            try? JSONSerialization.jsonObject(with: $0, options: .fragmentsAllowed)
-                        })
-                    }
-                }
-            }
-        }
-
-        if manifest.backend.enabled, let name = manifest.backend.executable, let sha256 = manifest.backend.sha256,
-           let endpoint {
-            let executable = Bundle.main.bundleURL.appending(path: "Contents").appending(path: name)
-            bun.start(
-                executable: executable,
-                appName: manifest.app.name,
-                identifier: manifest.app.identifier,
-                development: environment["FIA_DEVELOPMENT"] == "1",
-                sha256: sha256,
-                nativeOrigin: endpoint.origin,
-                nativeSession: endpoint.session,
-                native: native
-            )
-        }
-        if environment["FIA_DEV_READY_FILE"] != nil {
-            try await waitForDevelopmentServer(path: environment["FIA_DEV_READY_FILE"]!)
-        }
-        if environment["FIA_HEADLESS"] != "1" { try windows.showInitialWindow() }
+    let secret = session
+    windows.connect { id, route in
+      let nonce = UUID().uuidString
+      let content = [id, route, nonce, generation].joined(separator: "\n")
+      let proof = HMAC<SHA256>.authenticationCode(
+        for: Data(content.utf8), using: SymmetricKey(data: Data(secret.utf8))
+      ).map { String(format: "%02x", $0) }.joined()
+      var components = URLComponents(
+        url: origin.appending(path: "_fia/bootstrap"), resolvingAgainstBaseURL: false)!
+      components.queryItems = [
+        URLQueryItem(name: "window", value: id), URLQueryItem(name: "route", value: route),
+        URLQueryItem(name: "nonce", value: nonce), URLQueryItem(name: "proof", value: proof),
+      ]
+      return components.url!
     }
-
-    @discardableResult
-    public func prepareForUpdate() async -> ShutdownReport { await shutdown(reason: .update) }
-
-    public func emit<Event: Encodable & Sendable>(_ event: String, payload: Event) throws {
-        let data = try JSONEncoder().encode(payload)
-        gateway?.publish(event: event, payload: data)
-        bun.send(event: event, payload: try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed))
+  }
+  private func waitForBackend(deadline: Date = Date().addingTimeInterval(15)) async throws {
+    while !backendReady {
+      try Task.checkCancellation()
+      guard lifecycle == .running else { throw CancellationError() }
+      if let backendFailure { throw UpdateError(backendFailure) }
+      if Date() >= deadline { throw UpdateError("Backend readiness timed out") }
+      try await Task.sleep(for: .milliseconds(50))
     }
-
-    @discardableResult
-    func stop() async -> ShutdownReport { await shutdown(reason: .quit) }
-
-    private func shutdown(reason: ShutdownReason) async -> ShutdownReport {
-        if let shutdownTask { return await shutdownTask.value }
-        let first = shutdownReason == nil
-        if first { shutdownReason = reason }
-        lifecycle = .shuttingDown
-        windows.beginShutdown()
-        bun.disableStarts()
-        native.beginShutdown()
-        if first, shutdownReason == .update { try? emit("app.willUpdate", payload: UpdateWillInstall()) }
-        native.cancelActive()
-        let task = Task { @MainActor in
-            var issues = await self.runShutdownHandlers()
-            var processesStopped = true
-            do { try await self.bun.stop() } catch {
-                processesStopped = false
-                issues.append(ShutdownIssue(name: "Bun backend", message: error.localizedDescription))
-            }
-            for process in self.managedProcesses {
-                do { try await process.stop() } catch {
-                    processesStopped = false
-                    issues.append(ShutdownIssue(name: "Process \(process.processIdentifier)", message: error.localizedDescription))
-                }
-            }
-            if processesStopped {
-                self.shortcuts.clear()
-                await self.resources.cleanupAll()
-                self.windowEventsTask?.cancel()
-                self.updaterEventsTask?.cancel()
-                await self.gateway?.stop()
-                self.lifecycle = .stopped
-            }
-            return ShutdownReport(reason: self.shutdownReason!, issues: issues, completed: processesStopped)
-        }
-        shutdownTask = task
-        let report = await task.value
-        shutdownReport = report
-        for issue in report.issues {
-            try? FileHandle.standardError.write(contentsOf: Data("FIA cleanup [\(issue.name)]: \(issue.message)\n".utf8))
-        }
-        if !report.completed { shutdownTask = nil }
-        return report
+  }
+  private func activate(_ release: CodeRelease, directory: URL, trial: Bool) async throws {
+    guard lifecycle == .running, !transitioning else {
+      throw UpdateError("Runtime cannot reload now")
     }
-
-    private func registerServices() {
-        native.register("application.info", input: FIAEmpty.self, output: ApplicationInfo.self, permission: "application") { [manifest] _ in
-            ApplicationInfo(name: manifest.app.name, identifier: manifest.app.identifier, version: manifest.app.version, build: manifest.app.build)
-        }
-        native.register("application.quit", input: FIAEmpty.self, output: FIAEmpty.self, permission: "application") { _ in
-            await MainActor.run { FIAApplication.requestQuit() }
-            return FIAEmpty()
-        }
-        native.register("clipboard.readText", input: FIAEmpty.self, output: Optional<String>.self, permission: "clipboard") { [clipboard] _ in
-            await MainActor.run { clipboard.readText() }
-        }
-        native.register("clipboard.writeText", input: ClipboardText.self, output: FIAEmpty.self, permission: "clipboard") { [clipboard] input in
-            let success = await MainActor.run { clipboard.writeText(input.text) }
-            if !success { throw FIAError(code: .nativeFailure, component: "clipboard", method: "writeText", message: "macOS rejected the clipboard write") }
-            return FIAEmpty()
-        }
-        native.register("dialogs.openFiles", input: OpenFilesInput.self, output: Optional<[String]>.self, permission: "dialogs") { [dialogs] input in
-            await dialogs.openFiles(allowsMultipleSelection: input.multiple)?.map(\.path)
-        }
-        native.register("dialogs.saveFile", input: SaveFileInput.self, output: Optional<String>.self, permission: "dialogs") { [dialogs] input in
-            await dialogs.saveFile(suggestedName: input.suggestedName)?.path
-        }
-        native.register("keychain.get", input: KeyInput.self, output: Optional<String>.self, permission: "keychain") { [keychain] input in
-            try keychain.value(for: input.key)
-        }
-        native.register("keychain.set", input: KeyValueInput.self, output: FIAEmpty.self, permission: "keychain") { [keychain] input in
-            try keychain.set(input.value, for: input.key)
-            return FIAEmpty()
-        }
-        native.register("keychain.delete", input: KeyInput.self, output: Bool.self, permission: "keychain") { [keychain] input in
-            try keychain.delete(input.key)
-        }
-        native.register("notifications.requestAuthorization", input: FIAEmpty.self, output: Bool.self, permission: "notifications") { [notifications] _ in
-            try await notifications.requestAuthorization()
-        }
-        native.register("notifications.deliver", input: NotificationInput.self, output: FIAEmpty.self, permission: "notifications") { [notifications] input in
-            try await notifications.deliver(title: input.title, body: input.body)
-            return FIAEmpty()
-        }
-        native.register("screens.list", input: FIAEmpty.self, output: [ScreenDescriptor].self, permission: "screens") { [screens] _ in
-            await screens.screens()
-        }
-        native.register("system.openURL", input: URLInput.self, output: Bool.self, permission: "system") { [system] input in
-            guard let url = URL(string: input.url), ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") else {
-                throw FIAError(code: .invalidArgument, component: "system", method: "openURL", message: "URL scheme is not allowed")
-            }
-            return await system.open(url)
-        }
-        native.register("system.reveal", input: PathInput.self, output: FIAEmpty.self, permission: "system") { [system] input in
-            await system.reveal(URL(fileURLWithPath: input.path))
-            return FIAEmpty()
-        }
-        native.register("globalShortcuts.set", input: ShortcutsInput.self, output: FIAEmpty.self, permission: "globalShortcuts") { [shortcuts] input in
-            try await shortcuts.set(input.shortcuts)
-            return FIAEmpty()
-        }
-        native.register("screen.requestAuthorization", input: FIAEmpty.self, output: Bool.self, permission: "screenCapture") { [screenCapture] _ in
-            await MainActor.run { screenCapture.requestAuthorization() }
-        }
-        native.register("screen.captureRegion", input: FIAEmpty.self, output: NativeResourceDescriptor.self, permission: "screenCapture") { [weak self] _ in
-            guard let self, let endpoint = await self.endpoint, let origin = URL(string: endpoint.origin) else {
-                throw FIAError(code: .capabilityUnavailable, component: "screen", method: "captureRegion", message: "The resource gateway is unavailable")
-            }
-            let resource = try await self.screenCapture.captureRegion(resources: self.resources, session: endpoint.session, origin: origin)
-            return resource.descriptor
-        }
-        native.register("resources.dispose", input: ResourceID.self, output: FIAEmpty.self) { [weak self] input in
-            guard let self, let endpoint = await self.endpoint else { return FIAEmpty() }
-            await self.resources.dispose(id: input.id, session: endpoint.session)
-            return FIAEmpty()
-        }
+    transitioning = true
+    defer { transitioning = false }
+    windows.suspend()
+    try await backend?.stop()
+    native.cancelActive()
+    shortcuts.clear()
+    await resources.cleanupAll()
+    guard lifecycle == .running else { throw CancellationError() }
+    activeRelease = release
+    activeDirectory = directory
+    launchBackend(trial: trial)
+    let deadline = Date().addingTimeInterval(15)
+    try await waitForBackend(deadline: deadline)
+    guard let origin = backendOrigin else { throw UpdateError("Backend endpoint missing") }
+    guard Date() < deadline else { throw UpdateError("Backend readiness timed out") }
+    var request = URLRequest(url: origin.appending(path: "_fia/health"))
+    request.setValue(session, forHTTPHeaderField: "x-fia-session")
+    request.timeoutInterval = min(3, deadline.timeIntervalSinceNow)
+    let (_, response) = try await URLSession.shared.data(for: request)
+    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+      throw UpdateError("Backend health check failed")
     }
-
-    private func registerUpdaterService() {
-        native.register("updater.check", input: FIAEmpty.self, output: FIAEmpty.self) { [weak self] _ in
-            guard let self else { throw CancellationError() }
-            try await MainActor.run { try self.updater.checkForUpdates() }
-            return FIAEmpty()
+    connectWindows()
+    if trial {
+      if windows.openIDs.isEmpty { try windows.restoreMainWindow() }
+      while !windows.openIDs.isSubset(of: frontendReady) {
+        try Task.checkCancellation()
+        if !backendReady || frontendFailure != nil || Date() >= deadline {
+          throw UpdateError(frontendFailure ?? "Frontend readiness timed out")
         }
-    }
-
-    private func waitForDevelopmentServer(path: String) async throws {
-        let deadline = Date().addingTimeInterval(15)
-        while Date() < deadline {
-            if FileManager.default.fileExists(atPath: path) { return }
-            try await Task.sleep(for: .milliseconds(50))
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      let probation = Date().addingTimeInterval(30)
+      while Date() < probation {
+        try Task.checkCancellation()
+        if !backendReady || backendFailure != nil || frontendFailure != nil {
+          throw UpdateError(frontendFailure ?? "Candidate backend failed during observation")
         }
-        throw FIAError(code: .timeout, component: "web", method: "start", message: "Vite did not become ready", recoverable: true)
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      backend?.allowsAutomaticRestart = true
     }
+  }
+  private func emit<Value: Encodable>(_ event: String, _ value: Value) {
+    if let data = try? JSONEncoder().encode(value),
+      let object = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+    {
+      backend?.sendEvent(event, payload: object)
+    }
+  }
+  private func startInspection() {
+    guard let control else { return }
+    inspectionTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled, let self, self.lifecycle == .running {
+        let snapshot: [String: Any] = [
+          "schemaVersion": 1, "pid": ProcessInfo.processInfo.processIdentifier,
+          "lifecycle": self.lifecycle.rawValue,
+          "backend": self.backendReady
+            ? "ready" : (self.backendFailure == nil ? "starting" : "failed"),
+          "build": self.activeRelease.build,
+          "windows": self.windows.registeredIDs, "frontendsReady": self.frontendReady.sorted(),
+          "methods": self.native.methods,
+          "processGroups": [self.backend?.processIdentifier].compactMap { $0 },
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: snapshot) {
+          try? data.write(to: control.appending(path: "ready.json"), options: .atomic)
+        }
+        if FileManager.default.fileExists(atPath: control.appending(path: "quit").path) {
+          FIAApplication.requestQuit()
+          return
+        }
+        if self.development, !self.transitioning,
+          FileManager.default.fileExists(atPath: control.appending(path: "reload").path)
+        {
+          try? FileManager.default.removeItem(at: control.appending(path: "reload"))
+          do {
+            try await self.activate(
+              self.activeRelease, directory: self.activeDirectory, trial: false)
+          } catch { fputs("FIA reload: " + error.localizedDescription + "\n", stderr) }
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+      }
+    }
+  }
+  func stop() async -> ShutdownReport {
+    if let shutdownTask { return await shutdownTask.value }
+    lifecycle = .shuttingDown
+    updater.stop()
+    windows.beginShutdown()
+    native.beginShutdown()
+    native.cancelActive()
+    inspectionTask?.cancel()
+    let task = Task { @MainActor in
+      do {
+        try await self.backend?.stop()
+        self.shortcuts.clear()
+        await self.resources.cleanupAll()
+        self.lifecycle = .stopped
+        return ShutdownReport(reason: .quit, issues: [], completed: true)
+      } catch {
+        return ShutdownReport(
+          reason: .quit, issues: [ShutdownIssue(name: "Bun", message: error.localizedDescription)],
+          completed: false)
+      }
+    }
+    shutdownTask = task
+    let report = await task.value
+    if !report.completed { shutdownTask = nil }
+    return report
+  }
+  private func registerRuntimeMethods() {
+    native.register("native.capabilities", input: FIAEmpty.self, output: Capabilities.self) {
+      [weak self] _ in
+      await MainActor.run {
+        Capabilities(
+          protocolVersion: 1,
+          capabilities: [
+            "native": true, "windows": true, "resources": true,
+            "updates": self?.updater.isEnabled ?? false,
+          ])
+      }
+    }
+    native.register("runtime.frontendReady", input: FrontendReady.self, output: FIAEmpty.self) {
+      [weak self] input in
+      try await MainActor.run {
+        guard let self, input.generation == self.backend?.generationID,
+          self.windows.openIDs.contains(input.windowId)
+        else { throw UpdateError("Stale frontend generation") }
+        self.frontendReady.insert(input.windowId)
+        return FIAEmpty()
+      }
+    }
+    native.register("resources.resolve", input: ResourceID.self, output: ResourceFile.self) {
+      [weak self] input in
+      guard let self,
+        let resource = await self.resources.resource(id: input.id, session: self.session)
+      else { throw UpdateError("Resource not found") }
+      return ResourceFile(path: resource.fileURL.path, contentType: resource.descriptor.contentType)
+    }
+    native.register("updates.state", input: FIAEmpty.self, output: CodeUpdateState.self) {
+      [updater] _ in await updater.state
+    }
+    native.register("updates.check", input: FIAEmpty.self, output: CodeUpdateState.self) {
+      [updater] _ in try await updater.check()
+    }
+    native.register("updates.download", input: FIAEmpty.self, output: CodeUpdateState.self) {
+      [updater] _ in try await updater.download()
+    }
+    native.register("updates.apply", input: FIAEmpty.self, output: CodeUpdateState.self) {
+      [updater] _ in try await updater.apply()
+    }
+  }
+  private func registerServices() {
+    native.register(
+      "application.info", input: FIAEmpty.self, output: ApplicationInfo.self,
+      permission: "application"
+    ) { [weak self] _ in
+      try await MainActor.run {
+        guard let self else { throw CancellationError() }
+        return ApplicationInfo(
+          name: self.manifest.app.name, identifier: self.manifest.app.identifier,
+          version: self.activeRelease.version, build: self.activeRelease.build)
+      }
+    }
+    native.register(
+      "application.quit", input: FIAEmpty.self, output: FIAEmpty.self, permission: "application"
+    ) { _ in
+      await MainActor.run { FIAApplication.requestQuit() }
+      return FIAEmpty()
+    }
+    native.register(
+      "clipboard.readText", input: FIAEmpty.self, output: Optional<String>.self,
+      permission: "clipboard"
+    ) { [clipboard] _ in
+      await MainActor.run { clipboard.readText() }
+    }
+    native.register(
+      "clipboard.writeText", input: ClipboardText.self, output: FIAEmpty.self,
+      permission: "clipboard"
+    ) { [clipboard] input in
+      let success = await MainActor.run { clipboard.writeText(input.text) }
+      if !success {
+        throw FIAError(
+          code: .nativeFailure, component: "clipboard", method: "writeText",
+          message: "macOS rejected the clipboard write")
+      }
+      return FIAEmpty()
+    }
+    native.register(
+      "dialogs.openFiles", input: OpenFilesInput.self, output: Optional<[String]>.self,
+      permission: "dialogs"
+    ) { [dialogs] input in
+      await dialogs.openFiles(allowsMultipleSelection: input.multiple)?.map(\.path)
+    }
+    native.register(
+      "dialogs.saveFile", input: SaveFileInput.self, output: Optional<String>.self,
+      permission: "dialogs"
+    ) { [dialogs] input in
+      await dialogs.saveFile(suggestedName: input.suggestedName)?.path
+    }
+    native.register(
+      "keychain.get", input: KeyInput.self, output: Optional<String>.self, permission: "keychain"
+    ) { [keychain] input in
+      try keychain.value(for: input.key)
+    }
+    native.register(
+      "keychain.set", input: KeyValueInput.self, output: FIAEmpty.self, permission: "keychain"
+    ) { [keychain] input in
+      try keychain.set(input.value, for: input.key)
+      return FIAEmpty()
+    }
+    native.register(
+      "keychain.delete", input: KeyInput.self, output: Bool.self, permission: "keychain"
+    ) { [keychain] input in
+      try keychain.delete(input.key)
+    }
+    native.register(
+      "notifications.requestAuthorization", input: FIAEmpty.self, output: Bool.self,
+      permission: "notifications"
+    ) { [notifications] _ in
+      try await notifications.requestAuthorization()
+    }
+    native.register(
+      "notifications.deliver", input: NotificationInput.self, output: FIAEmpty.self,
+      permission: "notifications"
+    ) { [notifications] input in
+      try await notifications.deliver(title: input.title, body: input.body)
+      return FIAEmpty()
+    }
+    native.register(
+      "screens.list", input: FIAEmpty.self, output: [ScreenDescriptor].self, permission: "screens"
+    ) { [screens] _ in
+      await screens.screens()
+    }
+    native.register("system.openURL", input: URLInput.self, output: Bool.self, permission: "system")
+    { [system] input in
+      guard let url = URL(string: input.url),
+        ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "")
+      else {
+        throw FIAError(
+          code: .invalidArgument, component: "system", method: "openURL",
+          message: "URL scheme is not allowed")
+      }
+      return await system.open(url)
+    }
+    native.register(
+      "system.reveal", input: PathInput.self, output: FIAEmpty.self, permission: "system"
+    ) { [system] input in
+      await system.reveal(URL(fileURLWithPath: input.path))
+      return FIAEmpty()
+    }
+    native.register(
+      "globalShortcuts.set", input: ShortcutsInput.self, output: FIAEmpty.self,
+      permission: "globalShortcuts"
+    ) { [shortcuts] input in
+      try await shortcuts.set(
+        input.shortcuts.map {
+          ShortcutService.Shortcut(id: $0.id, key: $0.key, modifiers: $0.modifiers)
+        })
+      return FIAEmpty()
+    }
+    native.register(
+      "screen.requestAuthorization", input: FIAEmpty.self, output: Bool.self,
+      permission: "screenCapture"
+    ) { [screenCapture] _ in
+      await MainActor.run { screenCapture.requestAuthorization() }
+    }
+    native.register(
+      "screen.captureRegion", input: FIAEmpty.self, output: NativeResourceDescriptor.self,
+      permission: "screenCapture"
+    ) { [weak self] _ in
+      guard let self, let origin = await self.backendOrigin else {
+        throw FIAError(
+          code: .capabilityUnavailable, component: "screen", method: "captureRegion",
+          message: "The resource gateway is unavailable")
+      }
+      let resource = try await self.screenCapture.captureRegion(
+        resources: self.resources, session: self.session, origin: origin)
+      return resource.descriptor
+    }
+    native.register("resources.dispose", input: ResourceID.self, output: FIAEmpty.self) {
+      [weak self] input in
+      guard let self else { return FIAEmpty() }
+      await self.resources.dispose(id: input.id, session: self.session)
+      return FIAEmpty()
+    }
+  }
+
 }
-
-private struct ClipboardText: Codable, Sendable { let text: String }
-private struct ResourceID: Codable, Sendable { let id: String }
-private struct ApplicationInfo: Codable, Sendable { let name: String; let identifier: String; let version: String; let build: Int }
-private struct OpenFilesInput: Codable, Sendable { let multiple: Bool }
-private struct SaveFileInput: Codable, Sendable { let suggestedName: String? }
-private struct KeyInput: Codable, Sendable { let key: String }
-private struct KeyValueInput: Codable, Sendable { let key: String; let value: String }
-private struct NotificationInput: Codable, Sendable { let title: String; let body: String }
-private struct URLInput: Codable, Sendable { let url: String }
-private struct PathInput: Codable, Sendable { let path: String }
-private struct ShortcutsInput: Codable, Sendable { let shortcuts: [ShortcutService.Shortcut] }
+private typealias ClipboardText = BuiltinClipboardText
+private typealias ResourceID = BuiltinResourceID
+private typealias ApplicationInfo = BuiltinApplicationInfo
+private typealias OpenFilesInput = BuiltinOpenFilesInput
+private typealias SaveFileInput = BuiltinSaveFileInput
+private typealias KeyInput = BuiltinKeyInput
+private typealias KeyValueInput = BuiltinKeyValueInput
+private typealias NotificationInput = BuiltinNotificationInput
+private typealias URLInput = BuiltinURLInput
+private typealias PathInput = BuiltinPathInput
+private typealias ShortcutsInput = BuiltinShortcutsInput
 private struct ShortcutPressed: Codable, Sendable { let id: String }
-private struct UpdateStatePayload: Codable, Sendable {
-    let state: String
-    let message: String?
 
-    init(_ value: UpdateState) {
-        switch value {
-        case .disabled: state = "disabled"; message = nil
-        case .idle: state = "idle"; message = nil
-        case .checking: state = "checking"; message = nil
-        case .installing: state = "installing"; message = nil
-        case let .failed(reason): state = "failed"; message = reason
-        }
-    }
+private struct TitlebarAction: Encodable {
+  let windowId: String
+  let itemId: String
 }
-private struct UpdateWillInstall: Encodable, Sendable { let installing = true }
-
-struct RuntimeManifest: Decodable, Sendable {
-    struct App: Decodable, Sendable {
-        let name: String
-        let identifier: String
-        let version: String
-        let build: Int
-        let minimumMacOS: String
-        let activationPolicy: String
+private struct FrontendReady: Codable, Sendable {
+  let windowId: String
+  let generation: String
+}
+private struct ResourceFile: Codable, Sendable {
+  let path: String
+  let contentType: String
+}
+private struct Capabilities: Encodable, Sendable {
+  let protocolVersion: Int
+  let capabilities: [String: Bool]
+}
+struct RuntimeManifest: Codable, Sendable {
+  struct App: Codable, Sendable {
+    let name: String
+    let identifier: String
+    let version: String
+    let build: Int
+  }
+  struct StatusItem: Codable, Sendable {
+    let symbol: String
+    let tooltip: String?
+  }
+  let schema: Int
+  let frameworkVersion: String
+  let app: App
+  let bunSHA256: String
+  let runtimeId: String
+  let developmentEntry: String?
+  let statusItem: StatusItem?
+  let updates: UpdateConfiguration?
+  static func load() throws -> RuntimeManifest {
+    guard let path = Bundle.main.resourceURL?.appending(path: "fia.runtime.json") else {
+      throw UpdateError("FIA must run from an application bundle")
     }
-    struct Web: Decodable, Sendable { let enabled: Bool; let directory: String? }
-    struct Backend: Decodable, Sendable {
-        let enabled: Bool
-        let protocolVersion: Int
-        let executable: String?
-        let sha256: String?
-        let mount: String
+    let value = try JSONDecoder().decode(Self.self, from: Data(contentsOf: path))
+    guard value.schema == 3, value.frameworkVersion == FIAVersion.current else {
+      throw UpdateError("Incompatible FIA runtime manifest")
     }
-    struct StatusItem: Decodable, Sendable { let symbol: String; let tooltip: String }
-    struct Updater: Decodable, Sendable { let publicKey: String; let channel: String; let ui: String; let feeds: [String: String] }
-    let schema: Int
-    let frameworkVersion: String
-    let nativeProtocolVersion: Int
-    let app: App
-    let web: Web
-    let backend: Backend
-    let statusItem: StatusItem?
-    let permissions: [String: Bool]
-    let updater: Updater?
-
-    static func load() throws -> RuntimeManifest {
-        guard let url = Bundle.main.resourceURL?.appending(path: "fia.runtime.json"),
-              FileManager.default.fileExists(atPath: url.path)
-        else {
-            return RuntimeManifest(
-                schema: 1,
-                frameworkVersion: FIAVersion.current,
-                nativeProtocolVersion: FIAVersion.nativeProtocol,
-                app: App(name: ProcessInfo.processInfo.processName, identifier: Bundle.main.bundleIdentifier ?? "dev.fia.app", version: "0.0.0", build: 1, minimumMacOS: "14.0", activationPolicy: "regular"),
-                web: Web(enabled: false, directory: nil),
-                backend: Backend(enabled: false, protocolVersion: FIAStdioProtocolVersion, executable: nil, sha256: nil, mount: "/api"),
-                statusItem: nil,
-                permissions: ["application": true, "windows": true],
-                updater: nil
-            )
-        }
-        let value = try JSONDecoder().decode(RuntimeManifest.self, from: Data(contentsOf: url))
-        guard value.schema == 1, value.frameworkVersion == FIAVersion.current,
-              value.nativeProtocolVersion == FIAVersion.nativeProtocol,
-              value.backend.protocolVersion == FIAStdioProtocolVersion else {
-            throw FIAError(code: .protocolFailure, component: "runtime", method: "load", message: "The bundled FIA runtime manifest is incompatible")
-        }
-        return value
-    }
+    return value
+  }
 }

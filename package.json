@@ -1,6 +1,6 @@
 {
   "name": "fia-framework",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "workspaces": [
     "packages/*"
@@ -14,10 +14,12 @@
     "format:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit",
     "test:cli": "bun run cli:build && bun test packages/cli/tests",
-    "test:swift": "swift test --disable-sandbox --only-use-versions-from-resolved-file",
+    "test:swift": "CLANG_MODULE_CACHE_PATH=\"$PWD/.build/module-cache\" SWIFTPM_MODULECACHE_OVERRIDE=\"$PWD/.build/module-cache\" swift test --disable-sandbox",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run test:cli && bun run test:swift",
     "version:npm": "bun run tools/version-npm.ts",
-    "release:npm": "bun run tools/publish-npm.ts"
+    "release:npm": "bun run tools/publish-npm.ts",
+    "runtime:build": "bun tools/build-runtime.ts",
+    "smoke": "bun tools/smoke.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",

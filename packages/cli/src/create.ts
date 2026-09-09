@@ -1,294 +1,123 @@
-import { copyFile, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { generateNativeAPI } from "./generate.ts";
-import { resolveLocalFramework, validateLocalFrameworkLink } from "./local-framework.ts";
-import { CLI_PACKAGE_NAME, CLI_VERSION } from "./metadata.ts";
-import type { ProjectTemplate } from "./project-config.ts";
+import { CLI_VERSION } from "./metadata.ts";
+import type { CreateOptions } from "./create-options.ts";
 
-export interface CreateIO {
-  stdout(value: string): void;
-}
-
-export type CreateProcessRunner = (command: readonly string[], cwd: string) => Promise<number>;
-
-export interface CreateProjectDependencies {
-  runner?: CreateProcessRunner;
-  templateDirectory?: string;
-  assetDirectory?: string;
-  cliPackageSpec?: string;
-  swiftPackageURL?: string;
-  cliPackageDirectory?: string;
-}
-
-export interface CreateProjectOptions {
-  name: string;
-  cwd: string;
-  install: boolean;
-  initializeGit: boolean;
-  template?: ProjectTemplate;
-  backend?: boolean;
-  local?: boolean;
-  io: CreateIO;
-  dependencies?: CreateProjectDependencies;
-}
-
-export class CreateProjectError extends Error {
-  constructor(message: string, options: { cause?: unknown } = {}) {
-    super(message, options);
-    this.name = "CreateProjectError";
-  }
-}
-
-const COMMON_FILES = [
-  ["common/AGENTS.md.template", "AGENTS.md"],
-  ["common/README.md.template", "README.md"],
-  ["common/gitignore", ".gitignore"],
-  ["common/native-api/api.fia.json", "native-api/api.fia.json"],
-  ["common/native/Package.swift.template", "native/Package.swift"],
-  [
-    "common/native/Tests/FIAAppTests/FIAAppTests.swift",
-    "native/Tests/FIAAppTests/FIAAppTests.swift",
-  ],
-] as const;
-
-const WEB_FILES = [
-  ["web/vite.config.ts", "vite.config.ts"],
-  ["web/tsconfig.json", "tsconfig.json"],
-  ["web/frontend/index.html", "frontend/index.html"],
-  ["web/frontend/main.tsx", "frontend/main.tsx"],
-  ["web/frontend/App.tsx.template", "frontend/App.tsx"],
-  ["web/frontend/style.css", "frontend/style.css"],
-] as const;
-
-const BACKEND_FILES = [["backend/index.ts.template", "backend/index.ts"]] as const;
-
-function titleFromName(name: string): string {
-  return name
-    .split("-")
-    .map((part) => `${part[0]!.toUpperCase()}${part.slice(1)}`)
-    .join(" ");
-}
-
-function validateName(name: string): void {
-  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(name) || name.includes("--")) {
-    throw new CreateProjectError("project name must be a single lowercase kebab-case name");
-  }
-}
-
-async function exists(path: string): Promise<boolean> {
+export async function createProject(options: CreateOptions, cwd = process.cwd()) {
+  const name = options.name;
+  if (!name || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(name))
+    throw new Error("Project name must be lowercase kebab-case");
+  const root = resolve(cwd, name);
+  await mkdir(root); // Never replace an existing project.
   try {
-    await lstat(path);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
-}
-
-export async function validateProjectTarget(name: string, cwd: string): Promise<void> {
-  validateName(name);
-  const projectRoot = resolve(cwd, name);
-  if (await exists(projectRoot))
-    throw new CreateProjectError(`target already exists: ${projectRoot}`);
-}
-
-async function defaultRunner(command: readonly string[], cwd: string): Promise<number> {
-  const child = Bun.spawn([...command], {
-    cwd,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  return await child.exited;
-}
-
-function packageMetadata(
-  name: string,
-  cliPackageSpec: string,
-  template: ProjectTemplate,
-  backend: boolean,
-): Record<string, unknown> {
-  const web = template !== "native";
-  return {
-    name,
-    version: "0.1.0",
-    private: true,
-    type: "module",
-    engines: { bun: ">=1.4.0" },
-    scripts: {
-      dev: "fia dev",
-      run: "fia run",
-      generate: "fia generate",
-      check: "fia check",
-      test: "fia test",
-      describe: "fia describe --json",
-      build: "fia build",
-      release: "fia release",
-      ...(web ? { "web:dev": "vite", "web:build": "vite build", typecheck: "tsc --noEmit" } : {}),
-    },
-    dependencies: web
-      ? {
-          "@tailwindcss/vite": "^4.1.18",
-          react: "^19.2.7",
-          "react-dom": "^19.2.7",
-          tailwindcss: "^4.1.18",
-        }
-      : {},
-    devDependencies: {
-      "@semicoder/fia": cliPackageSpec,
-      ...(web
-        ? {
-            "@types/react": "^19.2.17",
-            "@types/react-dom": "^19.2.3",
+    await mkdir(resolve(root, "backend"));
+    await mkdir(resolve(root, "frontend"));
+    await mkdir(resolve(root, "assets"));
+    const localPackage = await realpath(resolve(import.meta.dir, ".."));
+    const spec = options.local ? "file:" + localPackage : CLI_VERSION;
+    const title = name
+      .split("-")
+      .map((part) => part[0]!.toUpperCase() + part.slice(1))
+      .join(" ");
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify(
+        {
+          name,
+          version: "0.1.0",
+          private: true,
+          type: "module",
+          scripts: {
+            dev: "fia dev",
+            run: "fia run",
+            build: "fia build",
+            release: "fia release",
+            check: "fia check",
+            test: "fia test",
+          },
+          dependencies: { "@semicoder/fia": spec, react: "^19.2.7", "react-dom": "^19.2.7" },
+          devDependencies: {
+            "@types/bun": "1.4.0",
+            "@types/react": "19.2.17",
+            "@types/react-dom": "19.2.3",
             typescript: "7.0.2",
             vite: "^7.1.3",
-          }
-        : {}),
-      ...(backend ? { "@types/bun": "1.4.0" } : {}),
-    },
-  };
-}
-
-function toml(
-  appName: string,
-  identifier: string,
-  template: ProjectTemplate,
-  backend: boolean,
-): string {
-  const web = template !== "native";
-  return `schema = 2\n\n[app]\nname = ${JSON.stringify(appName)}\nidentifier = ${JSON.stringify(identifier)}\nversion = "0.1.0"\nbuild = 1\nicon = "assets/icon.icns"\nminimumMacOS = "14.0"\nactivationPolicy = "regular"\n\n[web]\nenabled = ${web}\nroot = "frontend"\ndist = "frontend/dist"\n\n[backend]\nenabled = ${backend}\nruntime = "bun"\n${backend ? 'entry = "backend/index.ts"\nwatch = ["backend"]\n' : ""}mount = "/api"\n\n[native.permissions]\napplication = true\nwindows = true\n`;
-}
-
-async function renderFile(
-  source: string,
-  target: string,
-  replacements: Readonly<Record<string, string>>,
-): Promise<void> {
-  let contents = await readFile(source, "utf8");
-  for (const [token, value] of Object.entries(replacements))
-    contents = contents.replaceAll(token, value);
-  await mkdir(resolve(target, ".."), { recursive: true });
-  await writeFile(target, contents, "utf8");
-}
-
-export async function createProject(options: CreateProjectOptions): Promise<string> {
-  await validateProjectTarget(options.name, options.cwd);
-  const projectRoot = resolve(options.cwd, options.name);
-  const temporaryRoot = resolve(options.cwd, `.fia-create-${options.name}-${crypto.randomUUID()}`);
-  const dependencies = options.dependencies ?? {};
-  const runner = dependencies.runner ?? defaultRunner;
-  const templateDirectory =
-    dependencies.templateDirectory ?? resolve(import.meta.dir, "../templates/v2");
-  const assetDirectory =
-    dependencies.assetDirectory ?? resolve(import.meta.dir, "../templates/v2/common/assets");
-  const localFramework = options.local
-    ? await resolveLocalFramework(dependencies.cliPackageDirectory)
-    : undefined;
-  const cliPackageSpec = localFramework
-    ? `link:${CLI_PACKAGE_NAME}`
-    : (dependencies.cliPackageSpec ?? CLI_VERSION);
-  const swiftPackageURL = dependencies.swiftPackageURL ?? "https://github.com/semicoder/fia.git";
-  const template = options.template ?? "web";
-  const backend = options.backend ?? false;
-  const appName = titleFromName(options.name);
-  const identifier = `com.example.${options.name}`;
-  const replacements = {
-    __FIA_APP_NAME_JSON__: JSON.stringify(appName),
-    __FIA_APP_IDENTIFIER_JSON__: JSON.stringify(identifier),
-    __FIA_DISPLAY_NAME__: appName,
-    __FIA_PACKAGE_NAME__: options.name,
-    __FIA_SWIFT_PACKAGE_DEPENDENCY__: localFramework
-      ? `.package(name: "fia", path: ${JSON.stringify(localFramework.root)})`
-      : `.package(url: ${JSON.stringify(swiftPackageURL)}, exact: "${CLI_VERSION}")`,
-    __FIA_VERSION__: CLI_VERSION,
-  };
-  options.io.stdout(`Creating ${appName} in ${projectRoot}\n`);
-  if (localFramework) options.io.stdout(`Using local FIA source: ${localFramework.root}\n`);
-  try {
-    await mkdir(temporaryRoot);
-    const files = [
-      ...COMMON_FILES,
-      ...(template === "native" ? [] : WEB_FILES),
-      ...(backend ? BACKEND_FILES : []),
-      [
-        template === "native"
-          ? "native/App.native.swift.template"
-          : template === "hybrid"
-            ? "native/App.hybrid.swift.template"
-            : "native/App.web.swift.template",
-        "native/Sources/FIAApp/App.swift",
-      ] as const,
-      ...(template === "native" || template === "hybrid"
-        ? [
-            [
-              "native/ContentView.swift.template",
-              "native/Sources/FIAApp/ContentView.swift",
-            ] as const,
-          ]
-        : []),
-    ];
-    for (const [source, target] of files) {
-      await renderFile(
-        resolve(templateDirectory, source),
-        resolve(temporaryRoot, target),
-        replacements,
+            "@vitejs/plugin-react": "^5.0.0",
+          },
+        },
+        null,
+        2,
+      ),
+      "fia.config.ts":
+        'import { defineConfig } from "@semicoder/fia/config";\n\nexport default defineConfig({\n  app: { name: ' +
+        JSON.stringify(title) +
+        ", identifier: " +
+        JSON.stringify("com.example." + name) +
+        ', version: "0.1.0", build: 1, icon: "assets/icon.icns" },\n});\n',
+      "backend/index.ts":
+        'import { defineBackend } from "@semicoder/fia/backend";\n\nexport default defineBackend({\n  http: { routes: { "/hello": { GET: () => Response.json({ message: "Hello from Bun" }) } } },\n  async start({ native }) {\n    await native.windows.setTitlebar({ id: "main", items: [\n      { type: "text", id: "status", label: "Ready" },\n      { type: "button", id: "copy", label: "Copy", symbol: "doc.on.doc" },\n    ] });\n    native.on("windows.titlebarAction", (value) => {\n      const event = value as { windowId: string; itemId: string };\n      if (event.itemId === "copy") void native.clipboard.writeText({ text: "Hello from FIA" });\n    });\n  },\n});\n',
+      "vite.config.ts":
+        'import { defineConfig } from "vite";\nimport react from "@vitejs/plugin-react";\nimport fia from "@semicoder/fia/vite";\n\nexport default defineConfig({ root: "frontend", plugins: [react(), fia()], build: { outDir: "dist", emptyOutDir: true } });\n',
+      "tsconfig.json": JSON.stringify(
+        {
+          compilerOptions: {
+            strict: true,
+            skipLibCheck: true,
+            target: "ES2023",
+            module: "Preserve",
+            moduleResolution: "Bundler",
+            jsx: "react-jsx",
+            noEmit: true,
+            allowImportingTsExtensions: true,
+            lib: ["ESNext", "DOM"],
+            types: ["bun", "vite/client"],
+          },
+          include: ["frontend", "backend", "fia.config.ts", "vite.config.ts"],
+        },
+        null,
+        2,
+      ),
+      "frontend/index.html":
+        '<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' +
+        title +
+        '</title></head><body><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>\n',
+      "frontend/main.tsx":
+        'import React, { useEffect } from "react";\nimport { createRoot } from "react-dom/client";\nimport { native } from "@semicoder/fia/client";\nimport App from "./App";\nimport "./style.css";\n\nfunction Root() {\n  useEffect(() => { void native.ready(); }, []);\n  return <App />;\n}\ncreateRoot(document.getElementById("root")!).render(<Root />);\n',
+      "frontend/App.tsx":
+        'import React, { useEffect, useState } from "react";\nimport { native } from "@semicoder/fia/client";\n\nexport default function App() {\n  const [message, setMessage] = useState("Connecting…");\n  useEffect(() => { fetch("/api/hello").then(r => r.json()).then(data => setMessage(data.message)).catch(() => setMessage("Backend unavailable")); }, []);\n  return <main><span>FIA</span><h1>Build something useful.</h1><p>{message}</p><button onClick={() => void native.dialogs.openFiles({ multiple: false })}>Open a file</button></main>;\n}\n',
+      "frontend/style.css":
+        ":root{font:16px system-ui;color-scheme:light dark}body{margin:0}main{max-width:720px;margin:15vh auto;padding:32px}span{font-weight:700;letter-spacing:.2em}h1{font-size:44px}button{font:inherit;padding:10px 18px;border:1px solid #8888;border-radius:8px;cursor:pointer}\n",
+      ".gitignore":
+        "node_modules/\n.fia/\ndist/\nfrontend/dist/\n.DS_Store\n.env*\n*private*.pem\n",
+      "README.md":
+        "# " +
+        title +
+        "\n\nbun install\nbun run dev\n\nEdit frontend/ for the UI and backend/ for business logic. Configure packaging in fia.config.ts. The Swift host and Bun runtime are precompiled; no Swift tools are needed.\n\nUse bun run build for a local .app; configure Developer ID signing before bun run release. See the FIA framework documentation for signed code updates.\n",
+      "AGENTS.md":
+        "# FIA application\n\nUse frontend/ for React and backend/ for Bun. Native capabilities are available through @semicoder/fia/client or backend context.native. Do not add Swift targets, transport bridges or alternative application modes. Run bun run check and bun run build before delivery. Use native.ready() after the first frontend mount; updates depend on this health signal. Keep persistent data under context.app.dataDirectory.\n",
+    };
+    for (const [path, content] of Object.entries(files))
+      await writeFile(resolve(root, path), content);
+    for (const file of ["icon.png", "icon.icns"])
+      await cp(
+        resolve(import.meta.dir, "../templates/assets", file),
+        resolve(root, "assets", file),
       );
-    }
-    if (localFramework) {
-      const readmePath = resolve(temporaryRoot, "README.md");
-      await writeFile(
-        readmePath,
-        `${await readFile(readmePath, "utf8")}\n## Local FIA development\n\nThis project links to the FIA source checkout at ${JSON.stringify(localFramework.root)}.\nThe JavaScript package uses \`link:${CLI_PACKAGE_NAME}\`; run \`bun link\` in\n${JSON.stringify(localFramework.cliPackageDirectory)} before installing dependencies.\nSwiftPM uses the same checkout directly through an absolute path dependency.\n\nAfter changing FIA CLI, client, backend, or Vite sources, run \`bun run cli:build\`\nin that checkout, then restart \`bun run dev\` here. After changing FIA Swift sources,\nrestart \`bun run dev\` to rebuild. Application frontend changes use Vite HMR.\n\nThe global Bun link and Swift dependency path are specific to this machine.\n`,
-      );
-    }
-    await mkdir(resolve(temporaryRoot, "assets"), { recursive: true });
-    await Promise.all([
-      copyFile(resolve(assetDirectory, "icon.icns"), resolve(temporaryRoot, "assets/icon.icns")),
-      copyFile(resolve(assetDirectory, "icon.png"), resolve(temporaryRoot, "assets/icon.png")),
-    ]);
-    await writeFile(
-      resolve(temporaryRoot, "fia.toml"),
-      toml(appName, identifier, template, backend),
-    );
-    await writeFile(
-      resolve(temporaryRoot, "package.json"),
-      `${JSON.stringify(packageMetadata(options.name, cliPackageSpec, template, backend), null, 2)}\n`,
-      "utf8",
-    );
-    await generateNativeAPI({ cwd: temporaryRoot });
-    if (options.install) {
-      options.io.stdout("Installing dependencies with Bun\n");
-      const exitCode = await runner([process.execPath, "install"], temporaryRoot);
-      if (exitCode !== 0)
-        throw new CreateProjectError(
-          `bun install failed with exit code ${exitCode}${localFramework ? `. Ensure bun link has been run in ${localFramework.cliPackageDirectory}` : ""}`,
-        );
-      if (localFramework) {
-        try {
-          await validateLocalFrameworkLink(temporaryRoot, localFramework);
-        } catch (cause) {
-          throw new CreateProjectError(
-            cause instanceof Error ? cause.message : "local FIA link validation failed",
-            { cause },
-          );
-        }
-      }
-    }
-    if (options.initializeGit) {
-      options.io.stdout("Initializing Git repository\n");
-      const exitCode = await runner(["git", "init"], temporaryRoot);
-      if (exitCode !== 0)
-        throw new CreateProjectError(`git init failed with exit code ${exitCode}`);
-    }
-    await rename(temporaryRoot, projectRoot);
   } catch (error) {
-    await rm(temporaryRoot, { recursive: true, force: true });
-    if (error instanceof CreateProjectError) throw error;
-    throw new CreateProjectError("project creation failed", { cause: error });
+    await rm(root, { recursive: true, force: true });
+    throw error;
   }
-  const installStep = options.install ? "" : "  bun install\n";
-  options.io.stdout(
-    `\nCreated ${appName} (${template}${backend ? " + bun" : ""}). Next steps:\n  cd ${options.name}\n${installStep}  bun run dev\n`,
-  );
-  return projectRoot;
+  for (const command of [
+    ...(options.install ? [[process.execPath, "install"]] : []),
+    ...(options.git ? [["git", "init"]] : []),
+  ]) {
+    const child = Bun.spawn(command, {
+      cwd: root,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if ((await child.exited) !== 0)
+      throw new Error("Project created at " + root + "; command failed: " + command.join(" "));
+  }
+  return { projectRoot: root };
 }

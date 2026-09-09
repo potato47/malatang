@@ -1,3 +1,6 @@
+import { createGateway } from "./gateway.ts";
+import { resolve } from "node:path";
+import { createNativeAPI } from "./api.ts";
 import { FIA_BACKEND_PROTOCOL_VERSION } from "./metadata.ts";
 import {
   NativeError,
@@ -11,8 +14,8 @@ import {
 export { NativeError, NativeResource };
 export type { NativeCallOptions, NativeErrorPayload, NativeResourceDescriptor };
 
-const FIA_BACKEND = Symbol.for("@semicoder/fia/backend-definition-v2");
-const FIA_RUNTIME = Symbol.for("@semicoder/fia/backend-runtime-v2");
+const FIA_BACKEND = Symbol.for("@semicoder/fia/backend-definition-v3");
+const FIA_RUNTIME = Symbol.for("@semicoder/fia/backend-runtime-v3");
 const PROTOCOL = FIA_BACKEND_PROTOCOL_VERSION;
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_PENDING = 128;
@@ -24,6 +27,8 @@ export interface AppContext {
   readonly name: string;
   readonly identifier: string;
   readonly dataDirectory: string;
+  /** Read-only code and configured business assets; never store user data here. */
+  readonly codeDirectory: string;
 }
 
 export interface BackendRouteContext {
@@ -84,15 +89,19 @@ export function isDefinedBackend(value: unknown): value is BackendDefinition {
   return isObject(value) && (value as Partial<BackendDefinition>)[FIA_BACKEND] === true;
 }
 
-interface InitializeFrame {
+export interface InitializeFrame {
   readonly v: typeof PROTOCOL;
   readonly type: "initialize";
   readonly sessionSecret: string;
   readonly preferredPort: number;
   readonly development: boolean;
   readonly applicationSupport: string;
-  readonly nativeOrigin: string;
-  readonly nativeSession: string;
+  readonly generation: string;
+  readonly webRoot: string;
+  readonly resourceDirectory: string;
+  readonly developmentOrigin?: string;
+  readonly version: string;
+  readonly build: number;
   readonly app: { readonly name: string; readonly identifier: string };
 }
 
@@ -149,7 +158,9 @@ async function* frames(): AsyncGenerator<Record<string, unknown>> {
         yield frame as Record<string, unknown>;
         newline = buffer.indexOf("\n");
       }
+      if (Buffer.byteLength(buffer) > MAX_FRAME_BYTES) throw new Error("stdio frame exceeds 1 MiB");
     }
+    if (buffer.length) throw new Error("Truncated stdio frame");
   } finally {
     reader.releaseLock();
   }
@@ -252,26 +263,49 @@ class StdioPeer {
             pending.reject(new NativeError(frame.error as unknown as NativeErrorPayload));
           else pending.resolve(frame.result);
         } else if (frame.type === "event" && typeof frame.event === "string") {
-          for (const listener of this.listeners.get(frame.event) ?? []) listener(frame.payload);
+          for (const listener of this.listeners.get(frame.event) ?? []) {
+            try {
+              listener(frame.payload);
+            } catch (error) {
+              console.error(error);
+            }
+          }
         } else throw new Error("invalid stdio frame type");
       }
     } catch (error) {
       this.closed = true;
-      for (const pending of this.pending.values()) pending.reject(error);
+      for (const pending of this.pending.values()) {
+        clearTimeout(pending.timer);
+        pending.removeAbort?.();
+        pending.reject(error);
+      }
       this.pending.clear();
       process.stderr.write(
         `FIA Bun transport failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
       runtime()?.server?.stop(true);
+      process.exitCode = 1;
     }
   }
 }
 
 export class BackendNativeClient extends EventTarget implements NativeTransport {
+  private readonly api = createNativeAPI(this);
+  readonly application = this.api.application;
+  readonly clipboard = this.api.clipboard;
+  readonly dialogs = this.api.dialogs;
+  readonly keychain = this.api.keychain;
+  readonly notifications = this.api.notifications;
+  readonly screens = this.api.screens;
+  readonly screen = this.api.screen;
+  readonly system = this.api.system;
+  readonly globalShortcuts = this.api.globalShortcuts;
+  readonly windows = this.api.windows;
+  readonly resources = this.api.resources;
+  readonly updates = this.api.updates;
   constructor(
     private readonly peer: StdioPeer,
-    private readonly resourceOrigin: string,
-    private readonly resourceSession: string,
+    private readonly initialize: InitializeFrame,
   ) {
     super();
   }
@@ -281,180 +315,115 @@ export class BackendNativeClient extends EventTarget implements NativeTransport 
     options?: NativeCallOptions,
   ): Promise<Result> {
     if (!/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/u.test(method))
-      throw new NativeError({
-        code: "invalid_argument",
-        component: "backend",
-        method,
-        message: "Native method name is invalid",
-        recoverable: false,
-      });
+      throw new TypeError("Invalid native method");
     return this.peer.call<Result>(method, params, options);
   }
   on(event: string, listener: (payload: unknown) => void): () => void {
     return this.peer.on(event, listener);
   }
   resource(descriptor: NativeResourceDescriptor): NativeResource {
-    const url = new URL(descriptor.url, this.resourceOrigin);
-    if (url.origin !== this.resourceOrigin || !url.pathname.startsWith("/_fia/resources/")) {
-      throw new NativeError({
-        code: "protocol_failure",
-        component: "backend",
-        message: "Native resource descriptor escaped the Runtime origin",
-        recoverable: false,
-      });
-    }
+    const port = runtime()?.server?.port;
+    if (!port) throw new Error("Backend has not started");
     return new NativeResource(descriptor, this, {
-      url: url.href,
+      url: "http://127.0.0.1:" + port + "/_fia/resources/" + encodeURIComponent(descriptor.id),
       credentials: "omit",
-      headers: { "x-fia-session": this.resourceSession },
+      headers: { "x-fia-session": this.initialize.sessionSecret },
     });
   }
 }
-
 function runtime(): Runtime | undefined {
   return (globalThis as typeof globalThis & { [FIA_RUNTIME]?: Runtime })[FIA_RUNTIME];
 }
-
-async function sharedRuntime(): Promise<Runtime> {
-  const existing = runtime();
-  if (existing !== undefined) return existing;
+async function shutdown(current: Runtime): Promise<void> {
+  if (current.stopping) return;
+  current.stopping = true;
+  try {
+    if (current.context) await current.definition?.stop?.(current.context);
+  } catch (error) {
+    console.error(error);
+    process.exitCode = 1;
+  } finally {
+    current.server?.stop(true);
+    process.exit(process.exitCode ?? 0);
+  }
+}
+export async function runBackend<Data, Paths extends string>(
+  input: BackendDefinition<Data, Paths>,
+): Promise<void> {
+  const definition = input as unknown as BackendDefinition;
+  if (!isDefinedBackend(definition))
+    throw new Error("Backend must default-export defineBackend({...})");
+  if (runtime()) throw new Error("Only one FIA backend can run in a process");
   const iterator = frames()[Symbol.asyncIterator]();
   const first = await iterator.next();
-  if (first.done) throw new Error("The first Swift frame must initialize Bun protocol v3");
   const value = first.value;
   if (
+    first.done ||
+    !value ||
     value.v !== PROTOCOL ||
     value.type !== "initialize" ||
     typeof value.sessionSecret !== "string" ||
     value.sessionSecret.length < 32 ||
+    typeof value.generation !== "string" ||
+    typeof value.webRoot !== "string" ||
+    typeof value.resourceDirectory !== "string" ||
+    typeof value.applicationSupport !== "string" ||
     typeof value.preferredPort !== "number" ||
     typeof value.development !== "boolean" ||
-    typeof value.applicationSupport !== "string" ||
-    typeof value.nativeOrigin !== "string" ||
-    !/^http:\/\/127\.0\.0\.1:\d+$/u.test(value.nativeOrigin) ||
-    typeof value.nativeSession !== "string" ||
-    value.nativeSession.length < 32 ||
-    !isObject(value.app) ||
-    typeof value.app.name !== "string" ||
-    typeof value.app.identifier !== "string"
-  )
-    throw new Error("Invalid Bun protocol v3 initialize frame");
+    !isObject(value.app)
+  ) {
+    throw new Error("Expected FIA stdio protocol 4 initialization");
+  }
   const initialize = value as unknown as InitializeFrame;
   const peer = new StdioPeer(iterator);
-  const current: Runtime = {
-    initialize,
-    peer,
-    native: new BackendNativeClient(peer, initialize.nativeOrigin, initialize.nativeSession),
-    stopping: false,
-  };
+  const native = new BackendNativeClient(peer, initialize);
+  const current: Runtime = { initialize, peer, native, definition, stopping: false };
   (globalThis as typeof globalThis & { [FIA_RUNTIME]?: Runtime })[FIA_RUNTIME] = current;
   peer.start();
   peer.on("runtime.shutdown", () => {
     void shutdown(current);
   });
-  return current;
-}
-
-function authorize(request: Request, session: string): boolean {
-  return request.headers.get("x-fia-backend-session") === session;
-}
-
-function routes<WebSocketData>(
-  definition: BackendHTTPDefinition<WebSocketData>,
-  context: BackendRouteContext,
-  session: string,
-): Record<string, unknown> {
-  const output: Record<string, unknown> = {};
-  for (const [path, route] of Object.entries(definition.routes ?? {})) {
-    if (!path.startsWith("/") || path.startsWith("/_fia"))
-      throw new TypeError(`invalid Backend route: ${path}`);
-    if (typeof route === "function") {
-      output[path] = (request: Bun.BunRequest, server: BackendServer<WebSocketData>) =>
-        authorize(request, session)
-          ? route(request as never, server, context)
-          : new Response("Unauthorized", { status: 401 });
-    } else {
-      const methods: Record<string, unknown> = {};
-      for (const [method, handler] of Object.entries(route)) {
-        if (handler !== undefined)
-          methods[method] = (request: Bun.BunRequest, server: BackendServer<WebSocketData>) =>
-            authorize(request, session)
-              ? handler(request as never, server, context)
-              : new Response("Unauthorized", { status: 401 });
-      }
-      output[path] = methods;
-    }
-  }
-  return output;
-}
-
-async function deactivate(current: Runtime): Promise<void> {
-  const definition = current.definition;
-  const context = current.context;
-  current.definition = undefined;
-  current.context = undefined;
-  if (definition !== undefined && context !== undefined) await definition.stop?.(context);
-  current.server?.stop(true);
-  current.server = undefined;
-}
-
-async function shutdown(current: Runtime): Promise<void> {
-  if (current.stopping) return;
-  current.stopping = true;
+  const app = {
+    ...initialize.app,
+    dataDirectory: initialize.applicationSupport,
+    codeDirectory: initialize.development
+      ? process.cwd()
+      : resolve(initialize.webRoot, "../backend"),
+  };
+  const gateway = createGateway(definition, { native, app }, initialize);
+  const serve = (port: number) =>
+    Bun.serve({
+      hostname: "127.0.0.1",
+      port,
+      fetch: gateway.fetch,
+      websocket: gateway.websocket,
+      idleTimeout: definition.http.idleTimeout ?? 0,
+      maxRequestBodySize: definition.http.maxRequestBodySize ?? 16 * 1024 * 1024,
+      error: async (error) =>
+        (await definition.http.error?.(error)) ??
+        new Response("Internal Server Error", { status: 500 }),
+    });
+  let server: ReturnType<typeof serve>;
   try {
-    await deactivate(current);
-  } finally {
-    process.exit(0);
+    server = serve(initialize.preferredPort);
+  } catch (error) {
+    if (!initialize.preferredPort || (error as NodeJS.ErrnoException).code !== "EADDRINUSE")
+      throw error;
+    server = serve(0);
   }
-}
-
-export async function runBackend(definition: BackendDefinition): Promise<void> {
-  if (!isDefinedBackend(definition))
-    throw new TypeError("Backend entry must default-export defineBackend()({...})");
-  const current = await sharedRuntime();
-  await deactivate(current);
-  const routeContext: BackendRouteContext = {
-    native: current.native,
-    app: {
-      name: current.initialize.app.name,
-      identifier: current.initialize.app.identifier,
-      dataDirectory: current.initialize.applicationSupport,
-    },
-  };
-  let port = current.initialize.preferredPort;
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port,
-    development: current.initialize.development,
-    routes: routes(definition.http, routeContext, current.initialize.sessionSecret),
-    fetch:
-      definition.http.fetch === undefined
-        ? () => new Response("Not Found", { status: 404 })
-        : (request: Bun.BunRequest, server: BackendServer) =>
-            authorize(request, current.initialize.sessionSecret)
-              ? definition.http.fetch!(request, server, routeContext)
-              : new Response("Unauthorized", { status: 401 }),
-    ...(definition.http.websocket === undefined ? {} : { websocket: definition.http.websocket }),
-    ...(definition.http.error === undefined ? {} : { error: definition.http.error }),
-    ...(definition.http.maxRequestBodySize === undefined
-      ? {}
-      : { maxRequestBodySize: definition.http.maxRequestBodySize }),
-    ...(definition.http.idleTimeout === undefined
-      ? {}
-      : { idleTimeout: definition.http.idleTimeout }),
-  } as never) as BackendServer;
-  port = server.port ?? 0;
-  const origin = `http://127.0.0.1:${port}`;
-  const context: BackendContext = {
-    ...routeContext,
-    server,
-    url(path = "/") {
-      return new URL(path, origin);
-    },
-  };
   current.server = server;
-  current.definition = definition;
+  const origin = "http://127.0.0.1:" + server.port;
+  const context: BackendContext = {
+    native,
+    app,
+    server,
+    url: (path = "/") => new URL(path, origin),
+  };
   current.context = context;
+  // Listening and business readiness are distinct; start hooks may configure native windows.
+  writeFrame({ v: PROTOCOL, type: "listening", port: server.port, origin });
   await definition.start?.(context);
-  writeFrame({ v: PROTOCOL, type: "ready", port, origin });
+  gateway.ready = true;
+  writeFrame({ v: PROTOCOL, type: "ready", port: server.port, origin });
 }
+export type { TitlebarItem, WindowOptions, UpdateState } from "./api.ts";

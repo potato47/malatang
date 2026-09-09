@@ -5,20 +5,20 @@
       "request": "launch",
       "args": [],
       "cwd": "${workspaceFolder:fia}",
-      "name": "Debug FIAWorkbenchExample",
-      "target": "FIAWorkbenchExample",
+      "name": "Debug FIAHost",
+      "target": "FIAHost",
       "configuration": "debug",
-      "preLaunchTask": "swift: Build Debug FIAWorkbenchExample"
+      "preLaunchTask": "swift: Build Debug FIAHost"
     },
     {
       "type": "swift",
       "request": "launch",
       "args": [],
       "cwd": "${workspaceFolder:fia}",
-      "name": "Release FIAWorkbenchExample",
-      "target": "FIAWorkbenchExample",
+      "name": "Release FIAHost",
+      "target": "FIAHost",
       "configuration": "release",
-      "preLaunchTask": "swift: Build Release FIAWorkbenchExample"
+      "preLaunchTask": "swift: Build Release FIAHost"
     }
   ]
 }

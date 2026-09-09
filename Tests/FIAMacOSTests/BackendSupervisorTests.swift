@@ -22,8 +22,7 @@ struct BackendSupervisorTests {
                 output.path,
             ],
             sha256: String(repeating: "0", count: 64),
-            nativeOrigin: "http://127.0.0.1:45670",
-            nativeSession: nativeSession
+            sessionSecret: nativeSession, webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1
         )
         let supervisor = try BackendSupervisor(
             configuration: configuration,
@@ -38,17 +37,17 @@ struct BackendSupervisorTests {
         }
         let data = try Data(contentsOf: output)
         let frame = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(frame["nativeOrigin"] as? String == "http://127.0.0.1:45670")
-        #expect(frame["nativeSession"] as? String == nativeSession)
+        #expect(frame["webRoot"] as? String == "/tmp/web")
+        #expect(frame["resourceDirectory"] as? String == "/tmp/resources")
         #expect((frame["sessionSecret"] as? String)?.count ?? 0 >= 64)
         try await supervisor.stop()
     }
 
     @Test func rejectsDuplicateRequestIDsAndConcurrencyOverflow() async throws {
-        let duplicate = #"IFS= read -r initialize; printf '%s\n' '{"v":3,"type":"ready","port":45680,"origin":"http://127.0.0.1:45680"}'; printf '%s\n' '{"v":3,"type":"request","id":1,"method":"dialogs.openFile","params":{}}' '{"v":3,"type":"request","id":1,"method":"dialogs.openFile","params":{}}'; sleep 2"#
+        let duplicate = #"IFS= read -r initialize; printf '%s\n' '{"v":4,"type":"ready","port":45680,"origin":"http://127.0.0.1:45680"}'; printf '%s\n' '{"v":4,"type":"request","id":1,"method":"dialogs.openFile","params":{}}' '{"v":4,"type":"request","id":1,"method":"dialogs.openFile","params":{}}'; sleep 2"#
         try await expectProtocolRestart(script: duplicate, identifier: "com.example.duplicate")
 
-        let overflow = #"IFS= read -r initialize; printf '%s\n' '{"v":3,"type":"ready","port":45681,"origin":"http://127.0.0.1:45681"}'; i=1; while [ "$i" -le 129 ]; do printf '{"v":3,"type":"request","id":%s,"method":"dialogs.openFile","params":{}}\n' "$i"; i=$((i + 1)); done; sleep 2"#
+        let overflow = #"IFS= read -r initialize; printf '%s\n' '{"v":4,"type":"ready","port":45681,"origin":"http://127.0.0.1:45681"}'; i=1; while [ "$i" -le 129 ]; do printf '{"v":4,"type":"request","id":%s,"method":"dialogs.openFile","params":{}}\n' "$i"; i=$((i + 1)); done; sleep 2"#
         try await expectProtocolRestart(script: overflow, identifier: "com.example.overflow")
     }
 
@@ -63,12 +62,11 @@ struct BackendSupervisorTests {
             executable: "/bin/sh",
             arguments: [
                 "-c",
-                #"IFS= read -r initialize; printf '%s\n' '{"v":3,"type":"ready","port":45679,"origin":"http://127.0.0.1:45679"}'; printf '%s\n' '{"v":3,"type":"request","id":7,"method":"dialogs.openFile","params":{}}'; sleep 0.05; printf '%s\n' '{"v":3,"type":"cancel","id":7}'; IFS= read -r response; printf '%s' "$response" > "$0"; sleep 2"#,
+                #"IFS= read -r initialize; printf '%s\n' '{"v":4,"type":"ready","port":45679,"origin":"http://127.0.0.1:45679"}'; printf '%s\n' '{"v":4,"type":"request","id":7,"method":"dialogs.openFile","params":{}}'; sleep 0.05; printf '%s\n' '{"v":4,"type":"cancel","id":7}'; IFS= read -r response; printf '%s' "$response" > "$0"; sleep 2"#,
                 responseURL.path,
             ],
             sha256: String(repeating: "0", count: 64),
-            nativeOrigin: "http://127.0.0.1:45670",
-            nativeSession: String(repeating: "n", count: 64)
+            sessionSecret: String(repeating: "n", count: 64), webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1
         )
         let supervisor = try BackendSupervisor(
             configuration: configuration,
@@ -100,12 +98,11 @@ struct BackendSupervisorTests {
             executable: "/bin/sh",
             arguments: [
                 "-c",
-                #"IFS= read -r initialize; printf '%s\n' '{"v":3,"type":"ready","port":45682,"origin":"http://127.0.0.1:45682"}'; printf '%s\n' '{"v":3,"type":"request","id":9,"method":"e2e.fragment","params":"input"}'; IFS= read -r response; printf '%s' "$response" > "$0"; sleep 2"#,
+                #"IFS= read -r initialize; printf '%s\n' '{"v":4,"type":"ready","port":45682,"origin":"http://127.0.0.1:45682"}'; printf '%s\n' '{"v":4,"type":"request","id":9,"method":"e2e.fragment","params":"input"}'; IFS= read -r response; printf '%s' "$response" > "$0"; sleep 2"#,
                 responseURL.path,
             ],
             sha256: String(repeating: "0", count: 64),
-            nativeOrigin: "http://127.0.0.1:45670",
-            nativeSession: String(repeating: "n", count: 64)
+            sessionSecret: String(repeating: "n", count: 64), webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1
         )
         let supervisor = try BackendSupervisor(
             configuration: configuration,
@@ -136,11 +133,10 @@ struct BackendSupervisorTests {
             executable: "/bin/sh",
             arguments: [
                 "-c",
-                #"IFS= read -r initialize; printf '%s\n' '{"v":3,"type":"ready","port":45678,"origin":"http://127.0.0.1:45678"}'; IFS= read -r shutdown"#,
+                #"IFS= read -r initialize; printf '%s\n' '{"v":4,"type":"ready","port":45678,"origin":"http://127.0.0.1:45678"}'; IFS= read -r shutdown"#,
             ],
             sha256: String(repeating: "0", count: 64),
-            nativeOrigin: "http://127.0.0.1:45670",
-            nativeSession: String(repeating: "n", count: 64)
+            sessionSecret: String(repeating: "n", count: 64), webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1
         )
         var states: [BackendSupervisor.State] = []
         let supervisor = try BackendSupervisor(
@@ -175,8 +171,7 @@ struct BackendSupervisorTests {
             appIdentifier: "com.example.supervisor",
             executable: "/usr/bin/false",
             sha256: String(repeating: "0", count: 64),
-            nativeOrigin: "http://127.0.0.1:45670",
-            nativeSession: String(repeating: "n", count: 64)
+            sessionSecret: String(repeating: "n", count: 64), webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1
         )
         var states: [BackendSupervisor.State] = []
         let supervisor = try BackendSupervisor(
@@ -202,8 +197,8 @@ struct BackendSupervisorTests {
         let configuration = FIABunConfiguration(
             development: true, appName: "Retry", appIdentifier: "com.example.retry",
             executable: "/bin/sh",
-            arguments: ["-c", #"printf '%s\n' "$$" >> "$0"; IFS= read -r initialize; printf '%s\n' '{"v":3,"type":"ready","port":45678,"origin":"http://127.0.0.1:45678"}'; IFS= read -r shutdown"#, record.path],
-            sha256: String(repeating: "0", count: 64), nativeOrigin: "http://127.0.0.1:45670", nativeSession: String(repeating: "n", count: 64)
+            arguments: ["-c", #"printf '%s\n' "$$" >> "$0"; IFS= read -r initialize; printf '%s\n' '{"v":4,"type":"ready","port":45678,"origin":"http://127.0.0.1:45678"}'; IFS= read -r shutdown"#, record.path],
+            sha256: String(repeating: "0", count: 64), sessionSecret: String(repeating: "n", count: 64), webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1
         )
         var ready = 0
         let supervisor = try BackendSupervisor(configuration: configuration, applicationSupportDirectory: FileManager.default.temporaryDirectory, onRequest: { _, _ in nil }, onState: { if case .ready = $0 { ready += 1 } })
@@ -229,8 +224,7 @@ struct BackendSupervisorTests {
             executable: "/bin/sh",
             arguments: ["-c", script],
             sha256: String(repeating: "0", count: 64),
-            nativeOrigin: "http://127.0.0.1:45670",
-            nativeSession: String(repeating: "n", count: 64)
+            sessionSecret: String(repeating: "n", count: 64), webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1
         )
         var states: [BackendSupervisor.State] = []
         let supervisor = try BackendSupervisor(

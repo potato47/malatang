@@ -1,113 +1,76 @@
-# FIA 2.0
+# FIA 3
 
-FIA 是 Swift-first、可组合的 macOS 14+ GUI 框架。每个应用拥有可编辑的 Swift executable；
-Web、Bun Backend、状态栏和 Sparkle 更新均按需启用。
+用 TypeScript 构建 macOS 14+、Apple Silicon 桌面应用。默认 React + Vite 前端和 Bun 后端，预编译 Swift 宿主提供原生窗口和系统能力。
 
 ```text
-Application Swift Target
-        │
-        ▼
-     FIA Runtime
-        ├── WindowManager (SwiftUI / AppKit / WKWebView)
-        ├── Native RPC + NativeResource
-        ├── optional BunSupervisor
-        └── optional Sparkle UpdateManager
+WKWebView / React → HTTP、WebSocket → Bun → stdio → Swift Host
 ```
 
-## 快速开始
-
 ```bash
-bun install
-bun run fia -- create hello
-cd hello
+bunx @semicoder/fia create my-app
+cd my-app
 bun run dev
 ```
 
-默认模板是 React + Vite + TypeScript Web 主窗口，不包含 Bun Backend，应用使用普通 Dock、
-标准菜单和主窗口。其他组合：
+应用开发不需要 Swift 编译器或 Xcode 工程。`fia dev` 自动启动窗口、Bun 和 Vite；前端使用 HMR，后端变更执行受控进程重启。
 
-```bash
-fia create native-app --template native
-fia create hybrid-app --template hybrid
-fia create service-app --backend bun
+项目只有三个入口：
+
+- `fia.config.ts`：应用信息、系统权限说明、签名和更新设置。
+- `backend/index.ts`：HTTP/WebSocket、业务逻辑和原生窗口控制。
+- `frontend/`：React 页面，通过 `/api` 或原生 TS SDK 访问能力。
+
+```ts
+// backend/index.ts
+import { defineBackend } from "@semicoder/fia/backend";
+
+export default defineBackend({
+  http: {
+    routes: {
+      "/hello": { GET: () => Response.json({ message: "Hello" }) },
+    },
+  },
+  async start({ native }) {
+    await native.windows.setTitlebar({
+      id: "main",
+      items: [
+        { type: "text", id: "status", label: "Ready" },
+        { type: "button", id: "save", label: "Save", symbol: "square.and.arrow.down" },
+      ],
+    });
+    native.on("windows.titlebarAction", (event) => console.log(event));
+  },
+});
 ```
 
-项目契约由严格的 `fia.toml` schema 2、`native-api/api.fia.json` 和应用自己的
-`native/Package.swift` 组成。应用 target 必须生成名为 `FIAAppExecutable` 的产品，并精确依赖
-与 npm CLI 相同版本的 FIA Swift Package。
+```ts
+// frontend
+import { native } from "@semicoder/fia/client";
 
-## 使用本地 FIA 源码调试
+const response = await fetch("/api/hello");
+await native.clipboard.writeText({ text: "Hello" });
+```
 
-全局 link 的 FIA 可以通过 `--local` 创建同时依赖本地 JavaScript 包和 Swift 源码的项目，
-无需发布 npm 版本或创建 Git tag。
+窗口统一使用系统标题栏和下方 WebView，支持多窗口和 TS 声明的原生标题栏按钮、文字、间隔。窗口由宿主持有，后端重启时保留。
+
+`fia build` 生成本机 `.app`。`fia release` 使用 Developer ID 签名和公证生成安装包；`fia release --update` 生成 Ed25519 签名的前后端代码更新，上传普通 HTTPS 静态托管即可。代码更新须用户确认；失败回退上一版代码，用户数据不随代码回退。
+
+详见 [框架契约](docs/framework/README.md)、[CLI 与发布](packages/cli/README.md)、[从 FIA 2 迁移](docs/framework/migration-v3.md)。
+
+## 框架开发
+
+只有维护 FIA 原生宿主的人需要 Swift 工具链：
 
 ```bash
-# 在 FIA 源码仓库中构建 CLI 和 SDK
 bun install
+bun run runtime:build  # 使用固定版本 Bun 1.4.1，生成 Host、Bun 和校验清单
 bun run cli:build
-
-# 首次使用时注册全局 link，已经 link 的可以跳过
-cd packages/cli
-bun link
-cd ../../..
-
-# 在 FIA 仓库旁创建调试项目，也可以切换到其他目录创建
-fia create fia-playground --local
-cd fia-playground
-bun run dev
+bun run check
+bun run smoke
 ```
 
-`--local` 从当前 CLI 的真实路径定位源码仓库，将 `@semicoder/fia` 设置为
-`link:@semicoder/fia`，复用在 `packages/cli` 中注册的 [Bun link](https://bun.com/docs/pm/cli/link)，
-并将 Swift 依赖设置为指向仓库根目录的 `.package(name: "fia", path: ...)` 绝对路径。
-安装后会验证 JavaScript 包确实链接到同一源码仓库。项目会自动安装依赖；也支持搭配 `--no-install`、
-`--template native|web|hybrid` 和 `--backend bun`。发布安装的 CLI 不包含完整源码仓库，
-不能使用 `--local`。
+预编译产物生成在 `packages/cli/assets/darwin-arm64/`，由 npm 包携带，不纳入源码仓库。应用构建找不到匹配产物时直接报错，不自动编译 Swift。
 
-- 修改 FIA CLI、client、backend 或 Vite 集成后，在 FIA 仓库运行 `bun run cli:build`，
-  然后重启调试项目的 `bun run dev`。全局 link 的入口仍使用 `dist` 构建产物。
-- 修改 FIA Swift 源码后，重启项目的 `bun run dev`，SwiftPM 会增量编译本地源码。
-- 修改应用前端使用 Vite 热更新；修改创建模板后需新建项目验证。
+`fia create playground --local` 使用当前包目录的本地依赖；修改框架 TS 后重新构建 CLI，修改 Swift 后重新运行 `runtime:build`。应用侧仍使用预编译产物。
 
-本地项目依赖当前机器的 Bun link 和 Swift 源码路径；移动源码仓库后需要重新 link 并更新路径。
-`--local` 仅替换 FIA 自身依赖，其他 npm 和 SwiftPM 依赖仍按正常流程安装。
-
-## 命令
-
-- `create`：生成 Native、Web 或 Hybrid 项目，可选 Bun。
-- `dev`：使用稳定的 `.fia/dev/<App>.app` 启动开发应用；`--browser chrome|edge` 启动 Browser Companion。
-- `run`：构建并运行生产布局。
-- `generate` / `generate --check`：确定性生成 Swift protocol/Codable 与 TypeScript client。
-- `icon F` / `icon 中`：离线生成黑底白字项目图标；支持 `--background`、`--foreground` 自定义颜色及 `--output` 单独导出，详见 [CLI 文档](packages/cli/README.md#文字项目图标)。
-- `check`、`test`、`describe --json`、`doctor --json`：提供稳定的本地及机器可读检查。
-- `build`：按配置裁剪并签名 `.app`。
-- `release --channel stable|beta`：生成公证 full-update ZIP、SHA-256、appcast 和验证报告，不上传。
-
-FIA 2.0 不兼容 1.x，也不包含旧配置、预编译 Host、自定义 Host shim 或 `package` 命令。
-
-详细契约见 [FIA 2.0 框架文档](docs/framework/README.md)。
-
-## 创建项目向导
-
-运行 `fia create` 可依次填写项目名，选择 Web、Native 或 Hybrid 模板，以及是否启用
-Bun Backend、初始化 Git 和安装依赖。使用方向键选择、回车确认；Ctrl+C 取消，退出码为
-130，向导取消时不会创建文件。默认选择 Web、不启用 Backend、不初始化 Git、安装依赖。
-
-`fia create my-app` 跳过项目名问题；显式参数跳过对应问题。`--local` 仅通过参数指定。
-支持 `--template native|web|hybrid`、`--backend bun` / `--no-backend`、
-`--git` / `--no-git`、`--install` / `--no-install`；相反开关不能同时使用。
-
-```bash
-fia create
-fia create my-app --template hybrid --git
-fia create script-app --yes --no-install
-```
-
-`-y` / `--yes` 跳过所有问题，未指定选项采用默认值。CI 或 stdin/stdout 非 TTY 时也不会
-进入交互；这些情况下必须提供项目名。项目名须为小写 kebab-case，目标目录不能已存在。
-
-## 原生应用扩展
-
-窗口关闭/恢复策略、可等待进程组、退出回调和可嵌入 Web 内容见
-[迁移与 API 说明](docs/framework/native-refactor-migration.md)。
-运行 `swift run FIAWorkbenchExample` 查看[原生工作台参考实现](examples/native-workbench/README.md)。
+发布使用 `bun run release:npm --dry-run` 检查分发内容；正式发布要求干净工作区。此仓库不再提供 Swift 应用工程、Native/Hybrid 模板或 Sparkle 更新。

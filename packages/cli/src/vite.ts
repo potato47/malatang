@@ -1,72 +1,40 @@
-export interface FIAVitePluginOptions {
-  readonly nativeOrigin?: string;
-  readonly backendMount?: string;
-}
+import { readFile } from "node:fs/promises";
+import type { Plugin, ProxyOptions } from "vite";
 
-interface FIAWebSocketProxy {
-  on(
-    event: "proxyReqWs",
-    listener: (
-      proxyRequest: { setHeader(name: string, value: string): void },
-      request: { headers: { readonly "user-agent"?: string } },
-    ) => void,
-  ): void;
-}
-
-interface FIAProxyOptions {
-  readonly target: string;
-  readonly changeOrigin: boolean;
-  readonly ws?: boolean;
-  readonly headers?: Record<string, string>;
-  readonly configure?: (proxy: FIAWebSocketProxy) => void;
-}
-
-export interface FIAVitePlugin {
-  readonly name: string;
-  readonly enforce: "pre";
-  config(): {
-    server: {
-      strictPort: boolean;
-      proxy: Record<string, FIAProxyOptions>;
-    };
-  };
-}
-
-export default function fia(options: FIAVitePluginOptions = {}): FIAVitePlugin {
-  const origin = options.nativeOrigin ?? process.env.FIA_NATIVE_ORIGIN ?? "http://127.0.0.1:0";
-  const backendMount = options.backendMount ?? process.env.FIA_BACKEND_MOUNT ?? "/api";
-  const token = process.env.FIA_NATIVE_SESSION;
-  const headers = token === undefined ? undefined : { "x-fia-session": token };
-  const target = {
-    target: origin,
-    changeOrigin: true,
-    ...(headers === undefined ? {} : { headers }),
-  };
-  const nativeTarget = {
-    ...target,
-    ws: true,
-    configure(proxy: FIAWebSocketProxy) {
-      proxy.on("proxyReqWs", (request, incoming) => {
-        request.setHeader(
-          "x-fia-client-mode",
-          incoming.headers["user-agent"]?.includes("FIA-WKWebView") === true
-            ? "application"
-            : "browserCompanion",
-        );
-      });
-    },
-  };
+/** Development-only proxy. Production HTTP is served directly by Bun. */
+export default function fia(): Plugin {
   return {
     name: "fia",
-    enforce: "pre",
     config() {
+      const target = process.env.FIA_BACKEND_ORIGIN;
+      const endpoint = process.env.FIA_BACKEND_ENDPOINT_FILE;
+      const proxy = (): ProxyOptions => ({
+        target,
+        ws: true,
+        changeOrigin: true,
+        configure(_server, options) {
+          if (!endpoint) return;
+          // The host atomically republishes discovery after each Bun generation.
+          options.bypass = async () => {
+            const value = JSON.parse(await readFile(endpoint, "utf8")) as { origin: string };
+            if (!/^http:\/\/127\.0\.0\.1:\d+$/u.test(value.origin))
+              throw new Error("Invalid FIA backend endpoint");
+            options.target = value.origin;
+          };
+        },
+      });
       return {
         server: {
+          host: "127.0.0.1",
           strictPort: true,
-          proxy: {
-            "^/_fia(?:/|$|\\?)": nativeTarget,
-            [`^${backendMount.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:/|$|\\?)`]: { ...target, ws: true },
-          },
+          ...(target
+            ? {
+                proxy: {
+                  "^/api(?:/|$|\\?)": proxy(),
+                  "^/_fia(?:/|$|\\?)": proxy(),
+                },
+              }
+            : {}),
         },
       };
     },

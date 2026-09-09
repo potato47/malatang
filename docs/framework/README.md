@@ -1,66 +1,47 @@
-# FIA 2.0 框架契约
+# FIA 3 框架契约
 
-> 当前边界：项目 schema 2、Native RPC protocol 1、可选 Bun stdio protocol 3。
+FIA 只支持一种架构：预编译 Swift Host + 必选 Bun + WebView。Swift 源码仅用于框架维护，不作为应用依赖。
 
-## 架构
+## 进程与通信
 
-应用自己的 `FIAAppExecutable` 是唯一入口。`FIAApplication.run` 创建 `FIARuntime`，应用在闭包中
-注册 SwiftUI、AppKit、Web 窗口及自定义 Native 方法。Swift 本地调用服务不走 RPC；WKWebView、
-Browser Companion 和 Bun 经不同 transport 进入同一 typed dispatcher。
+Host 是 `.app` 的入口，负责 NSApplication、窗口、原生服务、Bun 进程组和代码更新。Bun 是唯一 HTTP/WebSocket 服务；开发时 Vite 代理 `/api`、`/_fia` 到 Bun，生产时 Bun 直接提供静态资源。
 
-窗口由 `WindowManager` 统一管理 `show/hide/focus/close`、状态和事件。Web/Bun 可以打开已注册
-窗口；仅 Web 能动态创建 WebWindow。Browser Companion 协商能力，窗口能力默认返回
-`capability_unavailable`。
+Host 与 Bun 使用 stdio protocol 4，JSON Lines，stdout 只能输出协议；框架入口将 console 日志重定向到 stderr。初始化携带会话、进程代次、应用数据目录和代码目录。`listening` 表示 HTTP 已监听；业务 `start` 完成后才报告 `ready`。请求支持 ID、事件、取消、超时和 128 个并发上限，帧大小上限 1 MiB。进程代次隔离，退出回收整个受管进程组。
 
-## 项目模型
+前端与 Bun 的 Native SDK 使用 WebSocket protocol 1。系统 API 的实现仍在 Swift，Bun 只转发。Native WebSocket 与业务 WebSocket 共用一个 Bun 服务。`/_fia` 是保留路径，业务路由相对 `/api` 声明。HTTP/SSE 直接返回标准 Response，不缓冲完整响应。
 
-`fia.toml` 只允许 `[app]`、`[web]`、`[backend]`、`[statusItem]`、`[native.permissions]`、
-`[updater]`/`[updater.feeds]` 和 `[signing]`。窗口不进入 TOML，Swift 注册是唯一真源。
+会话通过一次性 HMAC 引导票据建立 HttpOnly、SameSite=Strict Cookie；HTTP/WS 检查会话和 Origin，服务只监听 127.0.0.1。框架私有方法不能从前端 RPC 调用。截图等原生资源只在 stdio 中返回描述符，Bun 验证资源路径后流式读取受控临时文件。
 
-`native-api/api.fia.json` 使用 JSON Schema Draft 2020-12。`fia generate` 生成纳入版本控制的 Swift
-和 TypeScript 源码；生成的 `createAppNativeAPI(transport)` 可同时接入浏览器 `native` 与 Bun
-`context.native`。`generate --check` 与 `fia check` 拒绝漂移。
+## TypeScript 配置与窗口
 
-## Gateway 与安全
+`defineConfig` 从 `@semicoder/fia/config` 导入。`app` 包含 name、identifier、version、递增 build 和可选 icon。后端默认入口 `backend/index.ts`；前端默认 root=`frontend`、dist=`frontend/dist`。系统权限说明直接使用 Info.plist 的 `NS…UsageDescription` 键。可选 `statusItem` 配置菜单栏图标；这不会改变应用模式。
 
-仅在 Web、Browser Companion 或 Bun 需要时绑定随机 `127.0.0.1` 端口，提供：
+窗口默认 main、1000×720、标准标题栏、红绿灯和下方 WKWebView。窗口 ID 稳定，`create` 对已有 ID 同步声明并复用，保留尺寸与打开/隐藏/关闭状态；关闭后 `open` 可恢复。新增窗口只接受应用内 route。`update` 可显式修改 route、title、width、height、titlebar。最小化、最大化、恢复、全屏、focus/hide/close 统一由 `native.windows` 提供。
 
-- `/_fia/bootstrap`：30 秒、一次性 bootstrap；
-- `/_fia/native`：WebSocket Native RPC；
-- `/_fia/resources/:id`：session 隔离的临时二进制资源；
-- `/_fia/health`：本机健康检查；
-- `/api/*`：代理给可选 Bun Backend。
+标题栏 items 为 button、text、spacer；每项都有唯一 id，button/text 有 label，按钮可指定 SF Symbol、tooltip、enabled。`setTitlebar({id, items})` 更新整个声明。点击产生 `windows.titlebarAction`，携带 windowId 和 itemId。回调留在 TS，禁止序列化函数或插入 Swift/HTML 标题栏。
 
-Gateway 使用 256-bit session、HttpOnly SameSite cookie、精确 Host/Origin、受限请求体和一次性链接。
-NativeResource 使用临时文件、10 分钟 TTL、session 清理和 128 项/512 MiB 配额；浏览器通过 Vite
-服务端代理读取，Bun 则使用 protocol v3 下发的本机资源会话，凭据都不会进入页面脚本。
+后端重启期间窗口显示宿主内置加载页并禁用标题栏按钮；恢复后加载新页面。后端 start 应幂等地绑定监听器和声明控件。普通关窗不退出应用，Dock 点击恢复 main。
 
-## 生命周期
+## 构建与代码更新
 
-普通应用默认使用 Dock、标准菜单与主窗口。状态栏只有配置 `[statusItem]` 才创建。Bun 启动失败或
-崩溃只更新服务状态并退避重启，不关闭原生窗口。更新前停止长操作、通知并停止 Bun、取消/清理
-NativeResource，然后由 Sparkle 替换整个 `.app` 并 relaunch。
+固定运行时包含 Host 和 Bun 1.4.1；代码版本包含 `backend/index.js`、`web/index.html` 和依赖资源。业务数据使用 `context.app.dataDirectory`，不能写入代码目录。
 
-`fia dev --browser chrome|edge` 以隐藏 accessory Runtime 驱动 Browser Companion；只有同时传入
-`--app` 才显示 Dock 和原生窗口。Pure Native 项目不会启动 Gateway，也不接受 Browser Companion。
+需要按路径读取的业务资源可在 `backend.assets` 声明项目相对路径；`context.app.codeDirectory` 在开发时指向项目根目录，生产时指向包含这些资源的代码目录，保持相同相对路径。例如配置 `assets: ["assets/model.wasm"]` 后，使用 `Bun.file(context.app.codeDirectory + "/assets/model.wasm")`。普通模块依赖由 Bun bundler 打包。
 
-## 构建与发布
+完整安装包经 codesign、Developer ID、公证、staple 和 Gatekeeper 验证。代码更新不改动已签名 `.app`。应用运行不依赖系统安装的 Bun。
 
-FIA 面向 macOS 14+、Apple Silicon arm64、Swift 6。源码包精确锁定 SwiftNIO 2.97.1 和
-Sparkle 2.9.6。`build` 仅包含启用的 Web assets、Bun helper 和 Sparkle framework；`release`
-使用 Developer ID、notarytool、staple 与 Gatekeeper，生成 full update，不实现 delta 或上传。
+更新清单是 `{payload, signature}`：payload 为原始 JSON 字节的 Base64，signature 为 Ed25519 签名的 Base64。payload 包含 schema=1、identifier、version、build、runtimeId、HTTPS baseURL、可选 downloadURL 和 files（path、size、sha256）。公钥固定在安装包，私钥只用于发布。清单及文件限制由宿主校验，禁止路径穿越、符号链接、大小越界和原生可执行文件。
 
-FIA 2.0 不保留 1.x 配置/API/协议、预编译 Host、Mac App Store、跨平台或远程 Native RPC。
+`runtimeId` 由框架根据预编译运行时与原生配置计算，不由业务手填。更新必须与已安装运行时匹配；运行时或权限变化显示安装包下载信息。首版代码包支持 Bun 可 bundle 的 JS/TS、静态资源及 WASM，不支持业务自带 `.node`、dylib 或外部原生可执行文件；这些能力需要新的完整运行时分发。
 
-## 应用扩展点
+配置更新源后，启动和每 24 小时检查。完整下载后提示“Update Now / Later”；Later 只保留候选版本，不会自动切换。手动使用 `native.updates.check/download/apply/state`；Check for Updates 菜单提供同样流程。
 
-应用可在 `FIAApplication.run` 的配置闭包内调用：
+更新目录位于 `Application Support/<identifier>/Updates`。应用持有排他锁，版本文件和状态日志分开持久化。确认后先记录 pending，再停止旧后端、启动候选并统一刷新所有窗口。15 秒内需完成 Bun start、HTTP 健康检查、前端就绪；随后观察 30 秒，成功才提交 active。模板在 React 首次挂载后调用 `native.ready()`，自定义入口也必须报告就绪。
 
-- `runtime.onShutdown(name:timeout:_:)`：逆序运行可抛错的 MainActor 异步清理，默认每项 10 秒。
-  更新和退出共享完整清理任务；超时或错误记录在 `shutdownReport`，进程停止失败阻止退出/更新。
-- `runtime.startProcess(_:)`：启动并登记无协议进程组，Runtime 在退出时确认停止。
-- `runtime.customizeMenu { menu in ... }`：配置阶段注册，标准菜单安装后修改一次；headless 不执行。
-- 默认关闭最后窗口后继续运行，Dock 恢复主窗口；使用 `lastWindowClosedAction`、`reopenAction`
-  和窗口 `userCloseAction` 配置行为，无需替换框架 delegate。
+下载/验证失败不切换代码；启动或观察失败恢复上一版。应用在 pending 阶段异常退出，下次启动标记该版本失败并恢复稳定版本。拒绝远程降级，不反复自动重试失败版本；内置出厂版本始终保留。数据不回滚，数据库迁移必须向后兼容。健康检查不能证明所有业务操作正确。
 
-完整状态、Web 容器与破坏性变化见 [原生能力迁移](native-refactor-migration.md)。
+## 验证
+
+`bun run check` 覆盖 TS 检查、真实 HTTP/WS/SSE、stdio 取消与进程组清理、窗口 ID 和标题栏、Ed25519 与文件完整性、更新日志恢复，以及真实 Bun + WKWebView 的升级、30 秒观察、后端崩溃和首屏未就绪回退。运行前需要 `runtime:build` 和 `cli:build`。
+
+`bun run smoke` 使用本地依赖创建实际应用，构建时禁止 Swift 调用，检查图标生成、生产首屏就绪、正常退出、进程组回收和签名代码更新产物；还验证双窗口开发会话中的 React Fast Refresh、后端重启和停止钩子。Developer ID 公证验收需要发布者配置证书和 Keychain profile。

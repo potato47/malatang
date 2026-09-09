@@ -10,27 +10,24 @@ public struct FIABunConfiguration: Sendable {
     public let executable: String
     public let arguments: [String]
     public let sha256: String
-    public let nativeOrigin: String
-    public let nativeSession: String
+    public let sessionSecret: String
+    public let webRoot: String
+    public let resourceDirectory: String
+    public let developmentOrigin: String?
+    public let version: String
+    public let build: Int
+    public let preferredPort: Int
+    public let automaticallyRestart: Bool
 
-    public init(
-        development: Bool,
-        appName: String,
-        appIdentifier: String,
-        executable: String,
-        arguments: [String] = [],
-        sha256: String,
-        nativeOrigin: String,
-        nativeSession: String
-    ) {
-        self.development = development
-        self.appName = appName
-        self.appIdentifier = appIdentifier
-        self.executable = executable
-        self.arguments = arguments
-        self.sha256 = sha256
-        self.nativeOrigin = nativeOrigin
-        self.nativeSession = nativeSession
+    public init(development: Bool, appName: String, appIdentifier: String, executable: String,
+                arguments: [String] = [], sha256: String, sessionSecret: String,
+                webRoot: String, resourceDirectory: String, developmentOrigin: String? = nil,
+                version: String, build: Int, preferredPort: Int = 0, automaticallyRestart: Bool = true) {
+        self.development = development; self.appName = appName; self.appIdentifier = appIdentifier
+        self.executable = executable; self.arguments = arguments; self.sha256 = sha256
+        self.sessionSecret = sessionSecret; self.webRoot = webRoot; self.resourceDirectory = resourceDirectory
+        self.developmentOrigin = developmentOrigin; self.version = version; self.build = build
+        self.preferredPort = preferredPort; self.automaticallyRestart = automaticallyRestart
     }
 }
 
@@ -52,11 +49,15 @@ public final class BackendSupervisor {
     private let workingDirectoryURL: URL
     private let onRequest: RequestHandler
     private let onState: (State) -> Void
-    private let sessionSecret = UUID().uuidString + UUID().uuidString
+    private var sessionSecret: String { configuration.sessionSecret }
+    public var generationID: String { generation.uuidString }
+    public var onListening: ((Int) -> Void)?
+    public var allowsAutomaticRestart: Bool
     public var sessionToken: String { sessionSecret }
     private let retryDelays: [Duration] = [.milliseconds(500), .seconds(1), .seconds(2), .seconds(4), .seconds(8)]
 
     private var process: ManagedProcess?
+    public var processIdentifier: Int32? { process?.processIdentifier }
     private var stdoutDecoder = BackendStdoutDecoder()
     private var generation = UUID()
     private var preferredPort = 0
@@ -76,6 +77,8 @@ public final class BackendSupervisor {
         onState: @escaping (State) -> Void
     ) throws {
         self.configuration = configuration
+        preferredPort = configuration.preferredPort
+        allowsAutomaticRestart = configuration.automaticallyRestart
         self.onRequest = onRequest
         self.onState = onState
         executableURL = try Self.resolveExecutable(configuration)
@@ -89,7 +92,9 @@ public final class BackendSupervisor {
         configuration: FIABunConfiguration,
         applicationSupportDirectory: URL? = nil
     ) throws -> URL {
-        let applicationSupport = try applicationSupportDirectory ?? FileManager.default.url(
+        let applicationSupport = try applicationSupportDirectory
+            ?? ProcessInfo.processInfo.environment["FIA_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
@@ -178,6 +183,7 @@ public final class BackendSupervisor {
         }
         process.onOutput = { [weak self] output in
             if case .stdout = output.channel { self?.consumeStdout(output.data, generation: currentGeneration) }
+            else { try? FileHandle.standardError.write(contentsOf: output.data) }
         }
         self.process = process
         do { try process.start() } catch {
@@ -193,8 +199,11 @@ public final class BackendSupervisor {
                 "preferredPort": preferredPort,
                 "development": configuration.development,
                 "applicationSupport": workingDirectoryURL.path,
-                "nativeOrigin": configuration.nativeOrigin,
-                "nativeSession": configuration.nativeSession,
+                "generation": generation.uuidString,
+                "webRoot": configuration.webRoot,
+                "resourceDirectory": configuration.resourceDirectory,
+                "developmentOrigin": configuration.developmentOrigin as Any? ?? NSNull(),
+                "version": configuration.version, "build": configuration.build,
                 "app": ["name": configuration.appName, "identifier": configuration.appIdentifier],
             ])
             diagnostic("sent Backend initialize frame")
@@ -205,7 +214,7 @@ public final class BackendSupervisor {
         }
         startupTask?.cancel()
         startupTask = Task { @MainActor [weak self, weak process] in
-            try? await Task.sleep(for: .seconds(10))
+            try? await Task.sleep(for: .seconds(15))
             guard !Task.isCancelled,
                   let self, let process, process.isRunning,
                   self.generation == currentGeneration else { return }
@@ -227,6 +236,10 @@ public final class BackendSupervisor {
     private func consume(_ frame: [String: Any]) throws {
         guard let type = frame["type"] as? String else { throw BackendProtocolError.invalidFrame }
         switch type {
+        case "listening":
+            guard let port = frame["port"] as? Int, (1 ... 65_535).contains(port), frame["origin"] as? String == "http://127.0.0.1:\(port)" else { throw BackendProtocolError.invalidFrame }
+            preferredPort = port
+            onListening?(port)
         case "ready":
             guard Set(frame.keys) == ["v", "type", "port", "origin"],
                   let port = frame["port"] as? Int, (1 ... 65_535).contains(port),
@@ -389,7 +402,7 @@ public final class BackendSupervisor {
         guard !stopping else { return }
         startupTask?.cancel()
         stableTask?.cancel()
-        guard retryAttempt < retryDelays.count else {
+        guard allowsAutomaticRestart, retryAttempt < retryDelays.count else {
             diagnostic("Backend retries exhausted: \(reason)")
             onState(.failed(reason: reason))
             return

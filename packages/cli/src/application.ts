@@ -1,618 +1,305 @@
-import { createHash } from "node:crypto";
+import { watch } from "node:fs";
+import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import {
-  access,
-  chmod,
-  copyFile,
-  cp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import { basename, dirname, relative, resolve } from "node:path";
-import { checkProject } from "./check.ts";
-import type { CLIIO } from "./cli.ts";
-import {
-  FIA_BACKEND_PROTOCOL_VERSION,
-  FIA_NATIVE_PROTOCOL_VERSION,
-  CLI_VERSION,
-} from "./metadata.ts";
-import { loadProjectConfig, type ResolvedFIAConfig, type UpdateChannel } from "./project-config.ts";
+  assetDirectory,
+  releaseFiles,
+  runtimeId,
+  sha256,
+  verifyAssets,
+  type CodeRelease,
+} from "./artifacts.ts";
+import { CLI_VERSION } from "./metadata.ts";
+import { loadProjectConfig, type ResolvedFIAConfig } from "./project-config.ts";
+import { createSession } from "./session.ts";
+import { readInspection, waitUntil, smokeApplication } from "./smoke.ts";
+import { writeSignedRelease } from "./updates.ts";
 
-export type ApplicationCommand = "dev" | "run" | "test" | "build" | "release";
-export type BrowserCompanion = "chrome" | "edge";
-
-export interface ProcessResult {
-  readonly exitCode: number;
-  readonly stdout?: string;
-  readonly stderr?: string;
+export interface RunSettings {
+  cwd: string;
+  env?: Record<string, string | undefined>;
 }
-
 export type ApplicationProcessRunner = (
   command: readonly string[],
-  options: { cwd: string; env?: Readonly<Record<string, string>>; inherit?: boolean },
-) => Promise<ProcessResult>;
-
-export interface ApplicationCommandDependencies {
-  runner?: ApplicationProcessRunner;
-  launch?: (executable: string, environment: Readonly<Record<string, string>>) => Promise<number>;
-}
-
-export interface ApplicationCommandOptions {
-  readonly command: ApplicationCommand;
-  readonly cwd: string;
-  readonly debug: boolean;
-  readonly io: CLIIO;
-  readonly browser?: BrowserCompanion;
-  readonly app?: boolean;
-  readonly channel?: UpdateChannel;
-  readonly dependencies?: ApplicationCommandDependencies;
-}
-
-interface BuildResult {
-  readonly app: string;
-  readonly executable: string;
-  readonly configuration: "debug" | "release";
-}
-
-interface RuntimeManifest {
-  readonly schema: 1;
-  readonly frameworkVersion: string;
-  readonly nativeProtocolVersion: number;
-  readonly app: Omit<ResolvedFIAConfig["app"], "icon">;
-  readonly web: { enabled: boolean; directory?: string };
-  readonly backend: {
-    enabled: boolean;
-    protocolVersion: number;
-    executable?: string;
-    sha256?: string;
-    mount: string;
-  };
-  readonly statusItem?: ResolvedFIAConfig["statusItem"];
-  readonly permissions: ResolvedFIAConfig["native"]["permissions"];
-  readonly updater?: ResolvedFIAConfig["updater"];
-}
-
-const APP_EXECUTABLE = "FIAAppExecutable";
-
-async function defaultRunner(
-  command: readonly string[],
-  options: { cwd: string; env?: Readonly<Record<string, string>>; inherit?: boolean },
-): Promise<ProcessResult> {
+  settings: RunSettings,
+) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+export const defaultRunner: ApplicationProcessRunner = async (command, settings) => {
   const child = Bun.spawn([...command], {
-    cwd: options.cwd,
-    env: { ...process.env, ...options.env },
-    stdin: options.inherit === false ? "ignore" : "inherit",
-    stdout: options.inherit === false ? "pipe" : "inherit",
-    stderr: options.inherit === false ? "pipe" : "inherit",
+    cwd: settings.cwd,
+    env: { ...process.env, ...settings.env },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
   });
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
-    options.inherit === false ? new Response(child.stdout).text() : Promise.resolve(undefined),
-    options.inherit === false ? new Response(child.stderr).text() : Promise.resolve(undefined),
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
   ]);
-  return {
-    exitCode,
-    ...(stdout === undefined ? {} : { stdout }),
-    ...(stderr === undefined ? {} : { stderr }),
-  };
-}
-
-async function runChecked(
-  runner: ApplicationProcessRunner,
-  command: readonly string[],
-  cwd: string,
-  label: string,
-  options: { env?: Readonly<Record<string, string>>; inherit?: boolean } = {},
-): Promise<ProcessResult> {
-  const result = await runner(command, { cwd, ...options });
-  if (result.exitCode !== 0) {
-    const detail = result.stderr?.trim() || result.stdout?.trim();
-    throw new Error(
-      `${label} failed with exit code ${result.exitCode}${detail ? `: ${detail}` : ""}`,
-    );
-  }
+  return { exitCode, stdout, stderr };
+};
+async function checked(runner: ApplicationProcessRunner, command: readonly string[], cwd: string) {
+  const result = await runner(command, { cwd });
+  if (result.exitCode !== 0)
+    throw new Error(command[0] + " failed: " + (result.stderr || result.stdout));
   return result;
 }
-
-function xml(value: string): string {
-  return value
+const xml = (value: string) =>
+  value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
-function sparkleSignature(appcast: string, archiveName: string): string | undefined {
-  for (const enclosure of appcast.match(/<enclosure\b[^>]*>/gu) ?? []) {
-    const location = /\burl="([^"]+)"/u.exec(enclosure)?.[1];
-    const signature = /\bsparkle:edSignature="([A-Za-z0-9+/=]+)"/u.exec(enclosure)?.[1];
-    if (location === undefined || signature === undefined) continue;
-    try {
-      if (decodeURIComponent(new URL(location).pathname.split("/").at(-1) ?? "") === archiveName) {
-        return signature;
-      }
-    } catch {
-      // Ignore malformed or non-absolute enclosure URLs.
-    }
-  }
-  return undefined;
-}
-
-function infoPlist(config: ResolvedFIAConfig): string {
-  const updater = config.updater;
-  const feed = updater?.feeds[updater.channel];
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleDisplayName</key><string>${xml(config.app.name)}</string>
-  <key>CFBundleExecutable</key><string>${APP_EXECUTABLE}</string>
-  <key>CFBundleIdentifier</key><string>${xml(config.app.identifier)}</string>
-  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>${xml(config.app.name)}</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${xml(config.app.version)}</string>
-  <key>CFBundleVersion</key><string>${config.app.build}</string>
-  <key>LSMinimumSystemVersion</key><string>${xml(config.app.minimumMacOS)}</string>
-  <key>LSArchitecturePriority</key><array><string>arm64</string></array>
-  ${config.app.activationPolicy === "accessory" ? "<key>LSUIElement</key><true/>" : ""}
-  ${config.app.icon === undefined ? "" : "<key>CFBundleIconFile</key><string>AppIcon</string>"}
-  ${updater === undefined ? "" : `<key>SUPublicEDKey</key><string>${xml(updater.publicKey)}</string>`}
-  ${feed === undefined ? "" : `<key>SUFeedURL</key><string>${xml(feed)}</string>`}
-  ${updater?.ui === "custom" ? "<key>SUEnableAutomaticChecks</key><false/>" : ""}
-</dict></plist>
-`;
-}
-
-async function findFile(
-  root: string,
-  predicate: (path: string) => boolean,
-): Promise<string | undefined> {
-  try {
-    const entries = await readdir(root, { withFileTypes: true });
-    for (const entry of entries) {
-      const path = resolve(root, entry.name);
-      if (predicate(path)) return path;
-      if (entry.isDirectory()) {
-        const nested = await findFile(path, predicate);
-        if (nested !== undefined) return nested;
-      }
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
-
-async function copySparkleFramework(projectRoot: string, frameworks: string): Promise<string> {
-  const buildRoot = resolve(projectRoot, ".fia/swift-build");
-  const source = await findFile(buildRoot, (path) => basename(path) === "Sparkle.framework");
-  if (source === undefined) {
-    throw new Error(
-      "Sparkle.framework was not produced by SwiftPM; resolve the native package before building",
-    );
-  }
-  const destination = resolve(frameworks, "Sparkle.framework");
-  await cp(source, destination, { recursive: true, verbatimSymlinks: true });
-  return destination;
-}
-
-async function sign(
-  runner: ApplicationProcessRunner,
-  path: string,
-  identity: string,
-  cwd: string,
-  hardened: boolean,
-): Promise<void> {
-  await runChecked(
-    runner,
-    [
-      "/usr/bin/codesign",
-      "--force",
-      "--sign",
-      identity,
-      "--timestamp",
-      ...(hardened ? ["--options", "runtime"] : []),
-      path,
-    ],
-    cwd,
-    `signing ${basename(path)}`,
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+export function infoPlist(config: ResolvedFIAConfig) {
+  const values: Record<string, string> = {
+    CFBundleExecutable: "FIAHost",
+    CFBundleIdentifier: config.app.identifier,
+    CFBundleName: config.app.name,
+    CFBundleDisplayName: config.app.name,
+    CFBundleShortVersionString: config.app.version,
+    CFBundleVersion: String(config.app.build),
+    CFBundlePackageType: "APPL",
+    LSMinimumSystemVersion: "14.0",
+    ...config.permissions,
+    ...(config.app.icon ? { CFBundleIconFile: "AppIcon" } : {}),
+  };
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>' +
+    Object.entries(values)
+      .map(([key, value]) => "<key>" + xml(key) + "</key><string>" + xml(value) + "</string>")
+      .join("") +
+    "<key>NSHighResolutionCapable</key><true/><key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict></dict></plist>"
   );
 }
-
-async function signSparkle(
-  runner: ApplicationProcessRunner,
-  framework: string,
-  identity: string,
-  cwd: string,
-  hardened: boolean,
-): Promise<void> {
-  const nested = await Promise.all([
-    findFile(framework, (path) => basename(path) === "Downloader.xpc"),
-    findFile(framework, (path) => basename(path) === "Installer.xpc"),
-    findFile(framework, (path) => basename(path) === "Updater.app"),
-    findFile(framework, (path) => basename(path) === "Autoupdate"),
-  ]);
-  if (nested.some((path) => path === undefined))
-    throw new Error("Sparkle.framework is missing required helpers");
-  for (const path of nested) await sign(runner, path!, identity, cwd, hardened);
-  await sign(runner, framework, identity, cwd, hardened);
+export function generatedBackendRunner(entry: string) {
+  return (
+    'import { runBackend } from "@semicoder/fia/backend";\n' +
+    'const log = (...args) => process.stderr.write(args.map(x => typeof x === "string" ? x : Bun.inspect(x)).join(" ") + "\\n");\n' +
+    "console.log = console.info = console.debug = console.warn = console.error = log;\n" +
+    "const { default: backend } = await import(" +
+    JSON.stringify(entry) +
+    ");\nawait runBackend(backend);\n"
+  );
 }
-
-async function assembleApplication(
+export async function buildCode(
   config: ResolvedFIAConfig,
-  runner: ApplicationProcessRunner,
-  configuration: "debug" | "release",
   destination: string,
-  options: { buildWeb: boolean },
-): Promise<BuildResult> {
-  const root = config.projectRoot;
-  const scratch = resolve(root, ".fia/swift-build");
-  const app = resolve(destination, `${config.app.name}.app`);
-  const contents = resolve(app, "Contents");
-  const macOS = resolve(contents, "MacOS");
-  const helpers = resolve(contents, "Helpers");
-  const resources = resolve(contents, "Resources");
-  const frameworks = resolve(contents, "Frameworks");
-  await rm(app, { recursive: true, force: true });
-  await mkdir(macOS, { recursive: true });
-  await mkdir(resources, { recursive: true });
-
-  if (config.web.enabled && options.buildWeb) {
-    await runChecked(runner, [process.execPath, "x", "vite", "build"], root, "Web build");
-  }
-  if (config.backend.enabled) {
-    const backendOutput = resolve(root, ".fia/build/FIABunBackend");
-    const backendRunner = resolve(root, ".fia/build/backend-runner.ts");
-    await mkdir(dirname(backendOutput), { recursive: true });
-    await writeFile(
-      backendRunner,
-      `import definition from ${JSON.stringify(config.backend.entry!)};\nimport { runBackend } from "@semicoder/fia/backend";\nawait runBackend(definition);\n`,
+  runner: ApplicationProcessRunner = defaultRunner,
+  development = false,
+): Promise<CodeRelease> {
+  const assets = await verifyAssets();
+  await mkdir(resolve(destination, "backend"), { recursive: true });
+  await mkdir(resolve(destination, "web"), { recursive: true });
+  const staging = resolve(config.projectRoot, ".fia/build");
+  await mkdir(staging, { recursive: true });
+  const entry = resolve(staging, "backend-runner.ts");
+  await writeFile(entry, generatedBackendRunner(resolve(config.projectRoot, config.backend.entry)));
+  if (development) {
+    await cp(entry, resolve(destination, "backend/index.js"));
+    await cp(
+      resolve(config.projectRoot, config.web.root, "index.html"),
+      resolve(destination, "web/index.html"),
     );
-    if (configuration === "debug") {
-      await writeFile(
-        backendOutput,
-        `#!/bin/sh\nexec ${shellQuote(process.execPath)} --hot ${shellQuote(backendRunner)}\n`,
-      );
-      await chmod(backendOutput, 0o755);
-    } else {
-      await runChecked(
+  } else {
+    const vite = resolve(config.projectRoot, "node_modules/vite/bin/vite.js");
+    await checked(runner, [process.execPath, vite, "build"], config.projectRoot);
+    const result = await Bun.build({
+      entrypoints: [entry],
+      target: "bun",
+      format: "esm",
+      outdir: resolve(destination, "backend"),
+      naming: {
+        entry: "index.[ext]",
+        chunk: "chunks/[name]-[hash].[ext]",
+        asset: "assets/[name]-[hash].[ext]",
+      },
+      packages: "bundle",
+      minify: true,
+    });
+    if (!result.success) throw new AggregateError(result.logs, "Backend build failed");
+    await cp(resolve(config.projectRoot, config.web.dist), resolve(destination, "web"), {
+      recursive: true,
+    });
+  }
+  for (const path of development ? [] : config.backend.assets)
+    await cp(resolve(config.projectRoot, path), resolve(destination, "backend", path), {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+    });
+  const release: CodeRelease = {
+    schema: 1,
+    identifier: config.app.identifier,
+    version: config.app.version,
+    build: config.app.build,
+    runtimeId: await runtimeId(config, assets),
+    baseURL: config.updates
+      ? new URL("releases/" + config.app.build + "/", config.updates.url).href
+      : "https://invalid.local/",
+    ...(config.updates?.downloadURL ? { downloadURL: config.updates.downloadURL } : {}),
+    files: await releaseFiles(destination),
+  };
+  await writeFile(resolve(destination, "manifest.json"), JSON.stringify(release, null, 2) + "\n");
+  return release;
+}
+export async function buildApplication(
+  config: ResolvedFIAConfig,
+  options: {
+    development?: boolean;
+    distribution?: boolean;
+    runner?: ApplicationProcessRunner;
+  } = {},
+) {
+  if (process.platform !== "darwin" || process.arch !== "arm64")
+    throw new Error("FIA requires macOS on Apple Silicon");
+  const runner = options.runner ?? defaultRunner;
+  await verifyAssets();
+  const root = config.projectRoot;
+  const parent = resolve(root, options.development ? ".fia/dev" : "dist");
+  await mkdir(parent, { recursive: true });
+  const temporary = await mkdtemp(resolve(parent, ".assemble-"));
+  const app = resolve(temporary, config.app.name + ".app");
+  const contents = resolve(app, "Contents");
+  const resources = resolve(contents, "Resources");
+  await mkdir(resolve(contents, "MacOS"), { recursive: true });
+  await mkdir(resolve(contents, "Helpers"));
+  await mkdir(resources);
+  try {
+    const release = await buildCode(
+      config,
+      resolve(resources, "code"),
+      runner,
+      options.development,
+    );
+    await cp(resolve(assetDirectory, "FIAHost"), resolve(contents, "MacOS/FIAHost"));
+    await cp(resolve(assetDirectory, "bun"), resolve(contents, "Helpers/bun"));
+    for (const path of ["MacOS/FIAHost", "Helpers/bun"])
+      await chmod(resolve(contents, path), 0o755);
+    if (config.app.icon)
+      await cp(resolve(root, config.app.icon), resolve(resources, "AppIcon.icns"));
+    const identity = options.distribution
+      ? config.signing?.releaseIdentity
+      : (config.signing?.developmentIdentity ?? "-");
+    if (!identity) throw new Error("signing.releaseIdentity is required for distribution");
+    const entitlements = resolve(temporary, "bun.entitlements.plist");
+    await writeFile(
+      entitlements,
+      '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>',
+    );
+    const sign = async (path: string, bun = false) =>
+      checked(
         runner,
         [
-          process.execPath,
-          "build",
-          backendRunner,
-          "--compile",
-          "--target=bun-darwin-arm64",
-          `--outfile=${backendOutput}`,
+          "/usr/bin/codesign",
+          "--force",
+          "--sign",
+          identity,
+          ...(identity === "-" ? [] : ["--timestamp", "--options", "runtime"]),
+          ...(bun ? ["--entitlements", entitlements] : []),
+          path,
         ],
         root,
-        "Bun Backend build",
       );
-    }
-  }
-
-  await runChecked(
-    runner,
-    [
-      "/usr/bin/xcrun",
-      "swift",
-      "build",
-      "--package-path",
-      resolve(root, "native"),
-      "--scratch-path",
-      scratch,
-      ...(config.updater === undefined
-        ? []
-        : ["--manifest-cache", "none", "--disable-build-manifest-caching"]),
-      "--product",
-      APP_EXECUTABLE,
-      "--configuration",
-      configuration,
-      "--arch",
-      "arm64",
-    ],
-    root,
-    "Swift application build",
-    {
-      env: config.updater === undefined ? undefined : { FIA_BUILD_SPARKLE: "1" },
-    },
-  );
-  const sourceExecutable = resolve(scratch, "arm64-apple-macosx", configuration, APP_EXECUTABLE);
-  await access(sourceExecutable);
-  const executable = resolve(macOS, APP_EXECUTABLE);
-  await copyFile(sourceExecutable, executable);
-  await chmod(executable, 0o755);
-  if (config.updater !== undefined) {
-    await runChecked(
-      runner,
-      ["/usr/bin/install_name_tool", "-add_rpath", "@executable_path/../Frameworks", executable],
-      root,
-      "Sparkle runtime search path",
-    );
-  }
-
-  if (config.web.enabled && options.buildWeb) {
-    await cp(config.web.dist, resolve(resources, "web"), { recursive: true });
-  }
-  if (config.backend.enabled) {
-    await mkdir(helpers, { recursive: true });
-    const backend = resolve(helpers, "FIABackend");
-    await copyFile(resolve(root, ".fia/build/FIABunBackend"), backend);
-    await chmod(backend, 0o755);
-  }
-  if (config.app.icon !== undefined)
-    await copyFile(config.app.icon, resolve(resources, "AppIcon.icns"));
-
-  let sparkle: string | undefined;
-  if (config.updater !== undefined) {
-    await mkdir(frameworks, { recursive: true });
-    sparkle = await copySparkleFramework(root, frameworks);
-  }
-  const identity =
-    configuration === "release"
-      ? (config.signing?.releaseIdentity ?? "-")
-      : (config.signing?.developmentIdentity ?? "-");
-  const hardened = configuration === "release" && identity !== "-";
-  if (config.backend.enabled)
-    await sign(runner, resolve(helpers, "FIABackend"), identity, root, hardened);
-  // Signing mutates the executable; runtime integrity must describe the signed bytes.
-  const backendSHA256 = config.backend.enabled
-    ? createHash("sha256")
-        .update(await readFile(resolve(helpers, "FIABackend")))
-        .digest("hex")
-    : undefined;
-  const manifest: RuntimeManifest = {
-    schema: 1,
-    frameworkVersion: CLI_VERSION,
-    nativeProtocolVersion: FIA_NATIVE_PROTOCOL_VERSION,
-    app: {
-      name: config.app.name,
-      identifier: config.app.identifier,
-      version: config.app.version,
-      build: config.app.build,
-      minimumMacOS: config.app.minimumMacOS,
-      activationPolicy: config.app.activationPolicy,
-    },
-    web: { enabled: config.web.enabled, ...(config.web.enabled ? { directory: "web" } : {}) },
-    backend: {
-      enabled: config.backend.enabled,
-      protocolVersion: FIA_BACKEND_PROTOCOL_VERSION,
-      ...(config.backend.enabled ? { executable: "Helpers/FIABackend" } : {}),
-      ...(backendSHA256 === undefined ? {} : { sha256: backendSHA256 }),
-      mount: config.backend.mount,
-    },
-    ...(config.statusItem === undefined ? {} : { statusItem: config.statusItem }),
-    permissions: config.native.permissions,
-    ...(config.updater === undefined ? {} : { updater: config.updater }),
-  };
-  await writeFile(resolve(resources, "fia.runtime.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  await writeFile(resolve(contents, "Info.plist"), infoPlist(config));
-
-  if (sparkle !== undefined) await signSparkle(runner, sparkle, identity, root, hardened);
-  await sign(runner, app, identity, root, hardened);
-  await runChecked(
-    runner,
-    ["/usr/bin/codesign", "--verify", "--deep", "--strict", "--verbose=2", app],
-    root,
-    "code signature verification",
-  );
-  return { app, executable, configuration };
-}
-
-async function build(
-  config: ResolvedFIAConfig,
-  runner: ApplicationProcessRunner,
-  configuration: "debug" | "release",
-  options: { buildWeb?: boolean } = {},
-): Promise<BuildResult> {
-  const destination =
-    configuration === "debug"
-      ? resolve(config.projectRoot, ".fia/dev")
-      : resolve(config.projectRoot, "dist");
-  await mkdir(destination, { recursive: true });
-  return await assembleApplication(config, runner, configuration, destination, {
-    buildWeb: options.buildWeb ?? true,
-  });
-}
-
-async function reservePort(): Promise<number> {
-  return await new Promise<number>((resolvePort, reject) => {
-    const server = Bun.listen({
-      hostname: "127.0.0.1",
-      port: 0,
-      socket: {
-        open(socket) {
-          const port = socket.localPort;
-          server.stop(true);
-          resolvePort(port);
-        },
-        data() {},
-        error(_socket, error) {
-          reject(error);
-        },
-      },
-    });
-    void Bun.connect({
-      hostname: "127.0.0.1",
-      port: server.port,
-      socket: {
-        data() {},
-        error(_socket, error) {
-          reject(error);
-        },
-      },
-    });
-  });
-}
-
-async function waitForEndpoint(
-  path: string,
-): Promise<{ origin: string; bootstrapURL: string; session: string }> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      return JSON.parse(await readFile(path, "utf8")) as {
-        origin: string;
-        bootstrapURL: string;
-        session: string;
-      };
-    } catch {
-      await Bun.sleep(50);
-    }
-  }
-  throw new Error("the native gateway did not publish its endpoint within 15 seconds");
-}
-
-async function waitForDevelopmentServer(url: string): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(1_000) });
-      if (response.status < 500) return;
-    } catch {
-      // Vite may still be binding the reserved port.
-    }
-    await Bun.sleep(50);
-  }
-  throw new Error(`Vite did not become ready within 15 seconds: ${url}`);
-}
-
-async function launchExecutable(
-  executable: string,
-  environment: Readonly<Record<string, string>>,
-): Promise<number> {
-  const child = Bun.spawn([executable], {
-    cwd: dirname(dirname(dirname(executable))),
-    env: { ...process.env, ...environment },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  return await child.exited;
-}
-
-async function openBrowser(
-  runner: ApplicationProcessRunner,
-  browser: BrowserCompanion,
-  url: string,
-  cwd: string,
-): Promise<void> {
-  const name = browser === "chrome" ? "Google Chrome" : "Microsoft Edge";
-  await runChecked(runner, ["/usr/bin/open", "-a", name, url], cwd, `${name} launch`);
-}
-
-async function runDevelopment(
-  config: ResolvedFIAConfig,
-  runner: ApplicationProcessRunner,
-  options: ApplicationCommandOptions,
-): Promise<void> {
-  if (options.browser !== undefined && !config.web.enabled) {
-    throw new Error("Browser Companion requires [web].enabled = true");
-  }
-  const endpointFile = resolve(config.projectRoot, ".fia/dev/gateway.json");
-  const readyFile = resolve(config.projectRoot, ".fia/dev/vite.ready");
-  await rm(endpointFile, { force: true });
-  await rm(readyFile, { force: true });
-  let vite: ReturnType<typeof Bun.spawn> | undefined;
-  let developmentURL: string | undefined;
-  let port: number | undefined;
-  if (config.web.enabled) {
-    port = await reservePort();
-    developmentURL = `http://127.0.0.1:${port}`;
-  }
-  const output = await build(config, runner, "debug", { buildWeb: false });
-  const shouldShowApp = options.app ?? options.browser === undefined;
-  const usesGateway = config.web.enabled || config.backend.enabled || options.browser !== undefined;
-  const environment = {
-    FIA_DEVELOPMENT: "1",
-    ...(shouldShowApp ? {} : { FIA_HEADLESS: "1" }),
-    ...(usesGateway ? { FIA_ENDPOINT_FILE: endpointFile } : {}),
-    ...(developmentURL === undefined ? {} : { FIA_WEB_DEV_URL: developmentURL }),
-    ...(developmentURL === undefined ? {} : { FIA_DEV_READY_FILE: readyFile }),
-  };
-  const launch = options.dependencies?.launch ?? launchExecutable;
-  const appExit = launch(output.executable, environment);
-  try {
-    const endpoint = usesGateway ? await waitForEndpoint(endpointFile) : undefined;
-    if (config.web.enabled && port !== undefined) {
-      vite = Bun.spawn(
-        [
-          process.execPath,
-          "x",
-          "vite",
-          "--host",
-          "127.0.0.1",
-          "--port",
-          String(port),
-          "--strictPort",
-        ],
+    await sign(resolve(contents, "Helpers/bun"), true);
+    await sign(resolve(contents, "MacOS/FIAHost"));
+    await writeFile(
+      resolve(resources, "fia.runtime.json"),
+      JSON.stringify(
         {
-          cwd: config.projectRoot,
-          env: {
-            ...process.env,
-            FIA_NATIVE_ORIGIN: endpoint!.origin,
-            FIA_NATIVE_SESSION: endpoint!.session,
-            FIA_BACKEND_MOUNT: config.backend.mount,
-          },
-          stdin: "inherit",
-          stdout: "inherit",
-          stderr: "inherit",
+          schema: 3,
+          frameworkVersion: CLI_VERSION,
+          app: config.app,
+          runtimeId: release.runtimeId,
+          bunSHA256: await sha256(resolve(contents, "Helpers/bun")),
+          ...(options.development
+            ? {
+                developmentEntry: resolve(resources, "code/backend/index.js").replace(
+                  app,
+                  resolve(parent, config.app.name + ".app"),
+                ),
+              }
+            : {}),
+          ...(config.statusItem ? { statusItem: config.statusItem } : {}),
+          ...(config.updates ? { updates: config.updates } : {}),
         },
-      );
-      await waitForDevelopmentServer(developmentURL!);
-      await writeFile(readyFile, "ready\n");
+        null,
+        2,
+      ),
+    );
+    await writeFile(resolve(contents, "Info.plist"), infoPlist(config));
+    await sign(app);
+    await checked(runner, ["/usr/bin/codesign", "--verify", "--deep", "--strict", app], root);
+    const destination = resolve(parent, config.app.name + ".app");
+    const backup = destination + ".previous";
+    await rm(backup, { recursive: true, force: true });
+    let backedUp = false;
+    try {
+      await rename(destination, backup);
+      backedUp = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    if (options.browser !== undefined) {
-      await openBrowser(runner, options.browser, endpoint!.bootstrapURL, config.projectRoot);
+    try {
+      await rename(app, destination);
+    } catch (error) {
+      if (backedUp) await rename(backup, destination);
+      throw error;
     }
-    const code = await appExit;
-    if (code !== 0) throw new Error(`application exited with status ${code}`);
+    await rm(backup, { recursive: true, force: true });
+    return {
+      app: destination,
+      executable: resolve(destination, "Contents/MacOS/FIAHost"),
+      release,
+    };
   } finally {
-    vite?.kill("SIGTERM");
+    await rm(temporary, { recursive: true, force: true });
   }
 }
-
-async function createRelease(
-  config: ResolvedFIAConfig,
-  runner: ApplicationProcessRunner,
-  channel: UpdateChannel,
-): Promise<void> {
-  if (config.signing?.releaseIdentity === undefined) {
-    throw new Error("release requires signing.releaseIdentity (Developer ID Application)");
+export async function releaseApplication(config: ResolvedFIAConfig, update = false) {
+  if (update) {
+    if (!config.updates)
+      throw new Error("Configure updates.url and updates.publicKey before publishing code updates");
+    const parent = resolve(config.projectRoot, "dist/updates");
+    await mkdir(parent, { recursive: true });
+    const staging = await mkdtemp(resolve(parent, ".release-"));
+    try {
+      const release = await buildCode(config, staging);
+      await rm(resolve(staging, "manifest.json"));
+      const manifest = resolve(parent, "latest.json");
+      const signed = resolve(parent, ".latest-" + crypto.randomUUID() + ".json");
+      await writeSignedRelease(release, config.updates.publicKey, signed);
+      const output = resolve(parent, "releases", String(config.app.build));
+      await mkdir(dirname(output), { recursive: true });
+      await rename(staging, output); // Immutable release IDs: never overwrite a previous build.
+      await rename(signed, manifest);
+      return { directory: parent, manifest, build: config.app.build };
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
   }
-  if (config.signing.notarizationProfile === undefined) {
-    throw new Error("release requires signing.notarizationProfile");
-  }
-  if (config.updater === undefined)
-    throw new Error("release requires a complete [updater] configuration");
-  if (config.updater.feeds[channel] === undefined) {
-    throw new Error(`release channel ${channel} requires updater.feeds.${channel}`);
-  }
-  const releaseConfig: ResolvedFIAConfig = {
-    ...config,
-    updater: { ...config.updater, channel },
-  };
-  const output = await build(releaseConfig, runner, "release");
-  const releaseDirectory = resolve(config.projectRoot, `dist/updates/${channel}`);
-  await mkdir(releaseDirectory, { recursive: true });
-  const fileName = `${config.app.name}-${config.app.version}-${config.app.build}-mac-arm64.zip`;
-  const zip = resolve(releaseDirectory, fileName);
-  await rm(zip, { force: true });
-  await runChecked(
-    runner,
-    ["/usr/bin/ditto", "-c", "-k", "--keepParent", output.app, zip],
+  if (
+    !config.signing?.releaseIdentity?.startsWith("Developer ID Application:") ||
+    !config.signing.notarizationProfile
+  )
+    throw new Error("A Developer ID Application identity and notarizationProfile are required");
+  const output = await buildApplication(config, { distribution: true });
+  const zip = resolve(
     config.projectRoot,
-    "archive creation",
+    "dist",
+    config.app.name + "-" + config.app.version + "-" + config.app.build + "-mac-arm64.zip",
   );
-  await runChecked(
-    runner,
+  const archive = async () => {
+    await rm(zip, { force: true });
+    await checked(
+      defaultRunner,
+      ["/usr/bin/ditto", "-c", "-k", "--keepParent", output.app, zip],
+      config.projectRoot,
+    );
+  };
+  await archive();
+  await checked(
+    defaultRunner,
     [
       "/usr/bin/xcrun",
       "notarytool",
@@ -623,131 +310,203 @@ async function createRelease(
       "--wait",
     ],
     config.projectRoot,
-    "notarization",
   );
-  await runChecked(
-    runner,
+  await checked(
+    defaultRunner,
     ["/usr/bin/xcrun", "stapler", "staple", output.app],
     config.projectRoot,
-    "stapling",
   );
-  await runChecked(
-    runner,
+  await checked(
+    defaultRunner,
     ["/usr/bin/spctl", "--assess", "--type", "execute", "--verbose=4", output.app],
     config.projectRoot,
-    "Gatekeeper verification",
   );
-  await rm(zip, { force: true });
-  await runChecked(
-    runner,
-    ["/usr/bin/ditto", "-c", "-k", "--keepParent", output.app, zip],
+  await archive();
+  await writeFile(zip + ".sha256", (await sha256(zip)) + "  " + basename(zip) + "\n");
+  const report = await smokeApplication(config, output.app);
+  await writeFile(zip + ".report.json", JSON.stringify(report, null, 2));
+  return { app: output.app, zip, report };
+}
+export async function runApplication(config: ResolvedFIAConfig) {
+  const built = await buildApplication(config);
+  const child = Bun.spawn([built.executable], {
+    cwd: config.projectRoot,
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  return await child.exited;
+}
+export async function runDevelopment(
+  initial: ResolvedFIAConfig,
+  output: (message: string) => void = console.log,
+) {
+  let stop = false;
+  let control = "";
+  let config = initial;
+  const session = await createSession(
     config.projectRoot,
-    "stapled archive creation",
+    () => {
+      stop = true;
+    },
+    () => readInspection(control).then((x) => x ?? null),
+    (event) => output("[" + event.component + "] " + (event.message ?? event.event)),
   );
-
-  const sha256 = createHash("sha256")
-    .update(await readFile(zip))
-    .digest("hex");
-  await writeFile(`${zip}.sha256`, `${sha256}  ${basename(zip)}\n`);
-  const sparkleTool = await findFile(
-    resolve(config.projectRoot, ".fia/swift-build/artifacts"),
-    (path) => basename(path) === "generate_appcast",
-  );
-  if (sparkleTool === undefined)
-    throw new Error("Sparkle generate_appcast tool was not found in SwiftPM artifacts");
-  await runChecked(
-    runner,
-    [sparkleTool, releaseDirectory],
-    config.projectRoot,
-    "Sparkle appcast generation",
-  );
-  const appcast = resolve(releaseDirectory, "appcast.xml");
-  const appcastContents = await readFile(appcast, "utf8");
-  const edSignature = sparkleSignature(appcastContents, fileName);
-  const signatureBytes = edSignature === undefined ? undefined : Buffer.from(edSignature, "base64");
-  if (
-    edSignature === undefined ||
-    signatureBytes?.byteLength !== 64 ||
-    signatureBytes.toString("base64") !== edSignature
-  ) {
-    throw new Error("generated appcast does not contain a Sparkle EdDSA signature");
-  }
-  const signature = `${zip}.ed25519`;
-  await writeFile(signature, `${edSignature}\n`);
-  const report = {
-    schemaVersion: 1,
-    frameworkVersion: CLI_VERSION,
-    channel,
-    application: output.app,
-    archive: zip,
-    appcast,
-    sha256,
-    ed25519Signature: signature,
-    signed: true,
-    notarized: true,
-    stapled: true,
+  const onSignal = () => {
+    stop = true;
   };
-  await writeFile(
-    resolve(releaseDirectory, "release-report.json"),
-    `${JSON.stringify(report, null, 2)}\n`,
-  );
-}
-
-export async function executeApplicationCommand(options: ApplicationCommandOptions): Promise<void> {
-  const runner = options.dependencies?.runner ?? defaultRunner;
-  const config = await loadProjectConfig(options.cwd);
-  const report = await checkProject(config.projectRoot);
-  if (!report.ok) {
-    throw new Error(
-      report.checks
-        .filter((check) => check.status === "fail")
-        .map((check) => check.message)
-        .join("; "),
-    );
-  }
-
-  switch (options.command) {
-    case "test":
-      if (config.web.enabled) {
-        await runChecked(
-          runner,
-          [process.execPath, "x", "tsc", "--noEmit"],
-          config.projectRoot,
-          "Web typecheck",
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  try {
+    do {
+      let changedConfig = false;
+      const built = await buildApplication(config, { development: true });
+      control = resolve(config.projectRoot, ".fia/dev/runtime-" + crypto.randomUUID());
+      await mkdir(control, { mode: 0o700 });
+      const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+      const vitePort = probe.port;
+      await probe.stop(true);
+      const host = Bun.spawn([built.executable], {
+        cwd: config.projectRoot,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          FIA_DEVELOPMENT: "1",
+          FIA_CONTROL_DIRECTORY: control,
+          FIA_DATA_DIRECTORY: resolve(config.projectRoot, ".fia/dev/data"),
+          FIA_WEB_DEV_URL: "http://127.0.0.1:" + vitePort,
+          FIA_DEV_READY_FILE: resolve(control, "vite.ready"),
+        },
+      });
+      const drain = async (stream: ReadableStream<Uint8Array>, component: string) => {
+        for await (const bytes of stream)
+          session.emit({
+            event: "log",
+            component,
+            message: new TextDecoder().decode(bytes).trim(),
+          });
+      };
+      const drains = [drain(host.stdout, "host"), drain(host.stderr, "backend")];
+      let vite: ReturnType<typeof Bun.spawn> | undefined;
+      let watcher: ReturnType<typeof watch> | undefined;
+      let debounce: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const endpoint = await waitUntil(
+          async () => {
+            if (host.exitCode !== null) throw new Error("Host exited before its backend was ready");
+            try {
+              return JSON.parse(await readFile(resolve(control, "backend.json"), "utf8")) as {
+                origin: string;
+              };
+            } catch {
+              return undefined;
+            }
+          },
+          15_000,
+          "Bun endpoint",
         );
+        vite = Bun.spawn(
+          [
+            process.execPath,
+            resolve(config.projectRoot, "node_modules/vite/bin/vite.js"),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            String(vitePort),
+            "--strictPort",
+          ],
+          {
+            cwd: config.projectRoot,
+            env: {
+              ...process.env,
+              FIA_BACKEND_ORIGIN: endpoint.origin,
+              FIA_BACKEND_ENDPOINT_FILE: resolve(control, "backend.json"),
+            },
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+        drains.push(
+          drain(vite.stdout as ReadableStream<Uint8Array>, "vite"),
+          drain(vite.stderr as ReadableStream<Uint8Array>, "vite"),
+        );
+        await waitUntil(
+          async () => {
+            if (vite!.exitCode !== null) throw new Error("Vite failed to start");
+            try {
+              return (await fetch("http://127.0.0.1:" + vitePort)).ok ? true : undefined;
+            } catch {
+              return undefined;
+            }
+          },
+          15_000,
+          "Vite",
+        );
+        await writeFile(resolve(control, "vite.ready"), "");
+        session.emit({
+          event: "ready",
+          component: "dev",
+          message: "Application ready; frontend HMR and backend restart enabled",
+        });
+        watcher = watch(config.projectRoot, { recursive: true }, (_event, file) => {
+          const path = file?.toString();
+          if (
+            !path ||
+            /^(node_modules|\.git|\.fia|dist)\//u.test(path) ||
+            path.startsWith(config.web.root + "/")
+          )
+            return;
+          if (["fia.config.ts", "vite.config.ts", "package.json", "bun.lock"].includes(path)) {
+            changedConfig = true;
+            return;
+          }
+          const assetChanged = config.backend.assets.some(
+            (asset) => path === asset || path.startsWith(asset + "/"),
+          );
+          if (!assetChanged && !/\.(?:[cm]?[jt]sx?|json)$/u.test(path)) return;
+          clearTimeout(debounce);
+          debounce = setTimeout(() => {
+            void writeFile(resolve(control, "reload"), "");
+          }, 150);
+        });
+        while (!stop && !changedConfig) {
+          if (host.exitCode !== null) {
+            stop = true;
+            break;
+          }
+          if (vite.exitCode !== null) throw new Error("Vite exited unexpectedly");
+          await Bun.sleep(100);
+        }
+      } finally {
+        watcher?.close();
+        clearTimeout(debounce);
+        await writeFile(resolve(control, "quit"), "");
+        try {
+          await waitUntil(
+            async () => (host.exitCode === null ? undefined : true),
+            20_000,
+            "Host shutdown",
+          );
+        } finally {
+          if (host.exitCode === null) {
+            host.kill("SIGTERM");
+            await host.exited;
+          }
+          if (vite) {
+            vite.kill("SIGTERM");
+            await vite.exited;
+          }
+          await Promise.all(drains);
+        }
       }
-      await runChecked(
-        runner,
-        [
-          "/usr/bin/xcrun",
-          "swift",
-          "test",
-          "--package-path",
-          resolve(config.projectRoot, "native"),
-        ],
-        config.projectRoot,
-        "Swift tests",
-      );
-      return;
-    case "build": {
-      const output = await build(config, runner, "release");
-      options.io.stdout(`${output.app}\n`);
-      return;
-    }
-    case "run": {
-      const output = await build(config, runner, "release");
-      const code = await (options.dependencies?.launch ?? launchExecutable)(output.executable, {});
-      if (code !== 0) throw new Error(`application exited with status ${code}`);
-      return;
-    }
-    case "dev":
-      await runDevelopment(config, runner, options);
-      return;
-    case "release":
-      await createRelease(config, runner, options.channel ?? config.updater?.channel ?? "stable");
+      if (changedConfig && !stop) config = await loadProjectConfig(config.projectRoot);
+    } while (!stop);
+  } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    await session.close();
   }
-}
-
-export function applicationRelativePath(config: ResolvedFIAConfig, path: string): string {
-  return relative(config.projectRoot, path);
 }

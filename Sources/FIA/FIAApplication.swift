@@ -13,22 +13,24 @@ public enum FIAApplication {
     }
 
     @MainActor
-    public static func run(configure: (FIARuntime) throws -> Void) {
+    public static func run() {
         do {
+            if CommandLine.arguments.dropFirst().first == "icon" {
+                try renderIcon(arguments: [CommandLine.arguments[0]] + Array(CommandLine.arguments.dropFirst(2)))
+                return
+            }
             let manifest = try RuntimeManifest.load()
             let runtime = try FIARuntime(manifest: manifest)
-            try configure(runtime)
-            runtime.finishConfiguration()
             let application = NSApplication.shared
-            let headless = ProcessInfo.processInfo.environment["FIA_HEADLESS"] == "1"
+            let headless = false
             let delegate = ApplicationDelegate(runtime: runtime, manifest: manifest, headless: headless)
             application.delegate = delegate
-            application.setActivationPolicy(headless || manifest.app.activationPolicy == "accessory" ? .accessory : .regular)
+            application.setActivationPolicy(.regular)
             application.run()
             withExtendedLifetime(delegate) {}
         } catch {
-            let alert = NSAlert(error: error)
-            alert.runModal()
+            fputs("FIA: " + error.localizedDescription + "\n", stderr)
+            exit(1)
         }
     }
 }
@@ -56,7 +58,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             do {
                 try await runtime.start()
-                if !headless, manifest.app.activationPolicy == "regular" { NSApp.activate(ignoringOtherApps: true) }
+                if !headless { NSApp.activate(ignoringOtherApps: true) }
             } catch {
                 NSAlert(error: error).runModal()
             }
@@ -64,7 +66,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        runtime.lastWindowClosedAction == .quit
+        false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -88,7 +90,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         let applicationItem = NSMenuItem(title: manifest.app.name, action: nil, keyEquivalent: "")
         let applicationMenu = NSMenu()
         applicationMenu.addItem(withTitle: "About \(manifest.app.name)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
-        if runtime.updater.isEnabled, manifest.updater?.ui == "native" {
+        if runtime.updater.isEnabled {
             applicationMenu.addItem(.separator())
             let update = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
             update.target = self
@@ -132,7 +134,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         main.addItem(windowItem)
         NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = main
-        runtime.customizeApplicationMenu(main)
     }
 
     private func installStatusItem() {
@@ -151,11 +152,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard runtime.lifecycle == .running, runtime.reopenAction == .restoreMainWindow else { return false }
+        guard runtime.lifecycle == .running else { return false }
         try? runtime.windows.restoreMainWindow()
         return false
     }
 
     @objc private func showMainWindow() { try? runtime.windows.restoreMainWindow() }
-    @objc private func checkForUpdates() { try? runtime.updater.checkForUpdates() }
+    @objc private func checkForUpdates() { Task { await runtime.updater.checkAndPrompt() } }
 }

@@ -12,7 +12,7 @@ import {
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
-import { isDeepStrictEqual } from "node:util";
+import { verifyAssets, assetDirectory } from "./artifacts.ts";
 import { loadProjectConfig } from "./project-config.ts";
 
 export interface IconArguments {
@@ -67,91 +67,6 @@ export function parseIconArguments(args: readonly string[]): IconArguments {
   return { text, background, foreground, ...(output === undefined ? {} : { output }), force };
 }
 
-// Find edit locations without treating comments or multiline strings as TOML syntax.
-function tokens(source: string): { start: number; end: number; value: string }[] {
-  const result = [];
-  for (let index = 0; index < source.length;) {
-    const start = index;
-    const char = source[index]!;
-    if (char === "#") {
-      while (index < source.length && source[index] !== "\n") index++;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      const triple = source.slice(index, index + 3) === char.repeat(3);
-      const delimiter = char.repeat(triple ? 3 : 1);
-      index += delimiter.length;
-      while (index < source.length) {
-        if (char === '"' && source[index] === "\\") {
-          index += 2;
-          continue;
-        }
-        if (source.startsWith(delimiter, index)) {
-          index += delimiter.length;
-          if (triple) while (source[index] === char) index++;
-          break;
-        }
-        index++;
-      }
-    } else index++;
-    if (char === "\n" || !/\s/.test(char))
-      result.push({ start, end: index, value: source.slice(start, index) });
-  }
-  return result;
-}
-
-export function updateIconConfig(source: string): string {
-  const parsed = Bun.TOML.parse(source) as { app?: Record<string, unknown>; schema?: number };
-  if (parsed.schema !== 2 || !parsed.app || typeof parsed.app !== "object")
-    throw new Error("fia.toml requires schema 2 and an [app] table");
-  const target = structuredClone(parsed);
-  target.app!.icon = "assets/icon.icns";
-  if (isDeepStrictEqual(target, parsed)) return source;
-  const valid = (candidate: string): boolean => {
-    try {
-      return isDeepStrictEqual(Bun.TOML.parse(candidate), target);
-    } catch {
-      return false;
-    }
-  };
-  const literal = '"assets/icon.icns"';
-  const entries = tokens(source);
-  for (let index = 0; index < entries.length; index++) {
-    const token = entries[index]!;
-    const edits: string[] = [];
-    if (
-      parsed.app.icon !== undefined &&
-      (token.value.startsWith('"') || token.value.startsWith("'"))
-    ) {
-      edits.push(source.slice(0, token.start) + literal + source.slice(token.end));
-    } else if (parsed.app.icon === undefined) {
-      if (token.value === "\n") {
-        const newline = source.includes("\r\n") ? "\r\n" : "\n";
-        edits.push(
-          source.slice(0, token.end) + `icon = ${literal}${newline}` + source.slice(token.end),
-        );
-      }
-      if (token.value === "}") {
-        const previous = entries.slice(0, index).findLast((entry) => entry.value !== "\n")?.value;
-        const separator = previous === "{" || previous === "," ? "" : ", ";
-        edits.push(
-          source.slice(0, token.start) +
-            `${separator}icon = ${literal}` +
-            source.slice(token.start),
-        );
-      }
-    }
-    for (const candidate of edits) if (valid(candidate)) return candidate;
-  }
-  // Dotted app keys and an [app] header at EOF need an insertion outside the cases above.
-  for (const candidate of [`app.icon = ${literal}\n${source}`, `${source}\nicon = ${literal}\n`]) {
-    if (valid(candidate)) return candidate;
-  }
-  throw new Error(
-    "Could not update app.icon while preserving fia.toml; use --output and set app.icon manually",
-  );
-}
-
 export interface IconDependencies {
   platform?: string;
   runner?: (command: readonly string[]) => Promise<void>;
@@ -174,25 +89,11 @@ async function renderIcon(
   directory: string,
   runner: NonNullable<IconDependencies["runner"]>,
 ): Promise<void> {
-  try {
-    await access("/usr/bin/iconutil", constants.X_OK);
-    await runner(["/usr/bin/xcrun", "--find", "swift"]);
-  } catch (error) {
-    throw new Error(
-      "fia icon requires the macOS Swift toolchain and iconutil. Install Xcode Command Line Tools with xcode-select --install.",
-      { cause: error },
-    );
-  }
-  const script = resolve(import.meta.dir, "../templates/tools/render-icon.swift");
-  await access(script).catch(() => {
-    throw new Error("Icon renderer is missing from the FIA installation; reinstall @semicoder/fia");
-  });
+  await access("/usr/bin/iconutil", constants.X_OK);
+  await verifyAssets();
   await runner([
-    "/usr/bin/xcrun",
-    "swift",
-    "-module-cache-path",
-    resolve(directory, "module-cache"),
-    script,
+    resolve(assetDirectory, "FIAHost"),
+    "icon",
     options.text,
     options.background,
     options.foreground,
@@ -233,17 +134,14 @@ export async function generateIcon(
   if ((dependencies.platform ?? process.platform) !== "darwin")
     throw new Error("fia icon is only supported on macOS");
   const project = options.output === undefined;
-  const output = resolve(options.cwd, options.output ?? "assets");
-  const configPath = resolve(options.cwd, "fia.toml");
-  let configSource: string | undefined;
-  let config: string | undefined;
-  if (project) {
-    await loadProjectConfig(options.cwd);
-    configSource = await readFile(configPath, "utf8");
-    config = updateIconConfig(configSource);
-  }
-  const outputs = [resolve(output, "icon.png"), resolve(output, "icon.icns")];
-  const destinations = [...outputs, ...(project ? [configPath] : [])];
+  const projectConfig = project ? await loadProjectConfig(options.cwd) : undefined;
+  const projectIcon = resolve(options.cwd, projectConfig?.app.icon ?? "assets/icon.icns");
+  const output = project ? dirname(projectIcon) : resolve(options.cwd, options.output!);
+  const outputs = [
+    resolve(output, "icon.png"),
+    project ? projectIcon : resolve(output, "icon.icns"),
+  ];
+  const destinations = outputs;
   const directoryState = await fileState(output);
   if (directoryState && (!directoryState.isDirectory() || directoryState.isSymbolicLink()))
     throw new Error(`Icon output must be a real directory: ${output}`);
@@ -284,9 +182,7 @@ export async function generateIcon(
       icns.readUInt32BE(4) !== icns.length
     )
       throw new Error("Renderer produced an invalid ICNS");
-    if (project && (await readFile(configPath, "utf8")) !== configSource)
-      throw new Error("fia.toml changed while generating the icon; retry the command");
-    const content = [png, icns, ...(config === undefined ? [] : [Buffer.from(config)])];
+    const content = [png, icns];
     await mkdir(output, { recursive: true });
     createdOutput = directoryState === undefined;
     for (let index = 0; index < destinations.length; index++) {

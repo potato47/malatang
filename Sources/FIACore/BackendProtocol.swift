@@ -1,6 +1,6 @@
 import Foundation
 
-public let FIAStdioProtocolVersion = 3
+public let FIAStdioProtocolVersion = 4
 public let FIAMaximumStdioFrameBytes = 1024 * 1024
 public let FIAMaximumPendingRequests = 128
 

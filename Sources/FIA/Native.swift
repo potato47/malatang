@@ -52,11 +52,13 @@ public final class NativeMethodRegistry {
                     code: .invalidArgument,
                     component: "native",
                     method: method,
-                    message: "Native method parameters do not match the generated contract",
+                    message: "Native method parameters do not match the native API contract",
                     details: .string(error.localizedDescription)
                 )
             }
-            return try JSONEncoder().encode(try await handler(value))
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            return try encoder.encode(try await handler(value))
         }
     }
 
@@ -162,7 +164,7 @@ public actor ResourceStore {
         let session: String
     }
 
-    private let directory: URL
+    public nonisolated let directory: URL
     private var entries: [String: Entry] = [:]
     private var totalBytes: Int64 = 0
 
