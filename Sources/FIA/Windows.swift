@@ -264,6 +264,19 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
     self.action = action
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .default()
+    // macOS WKWebView has no public scrollView/bounces API. Disable viewport
+    // rubber-banding without intercepting wheel events or changing overflow.
+    // A constructed stylesheet also works with restrictive page style-src CSP.
+    configuration.userContentController.addUserScript(
+      WKUserScript(
+        source: """
+          (() => {
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(':root { overscroll-behavior: none !important; }');
+            document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+          })();
+          """,
+        injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient))
     webView = WKWebView(frame: .zero, configuration: configuration)
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: options.width ?? 1000, height: options.height ?? 720),

@@ -20,6 +20,8 @@ Host 与 Bun 使用 stdio protocol 4，JSON Lines，stdout 只能输出协议；
 
 标题栏 items 为 button、text、spacer；每项都有唯一 id，button/text 有 label，按钮可指定 SF Symbol、tooltip、enabled。`setTitlebar({id, items})` 更新整个声明。点击产生 `windows.titlebarAction`，携带 windowId 和 itemId。回调留在 TS，禁止序列化函数或插入 Swift/HTML 标题栏。
 
+WebView 默认关闭页面视口横向、纵向的边缘拉伸回弹，保留正常内容滚动和嵌套滚动区域。该默认行为由宿主在每次文档加载时设置，覆盖加载页、页面跳转和子框架，不要求业务添加 CSS。
+
 后端重启期间窗口显示宿主内置加载页并禁用标题栏按钮；恢复后加载新页面。后端 start 应幂等地绑定监听器和声明控件。普通关窗不退出应用，Dock 点击恢复 main。
 
 ## 构建与代码更新
