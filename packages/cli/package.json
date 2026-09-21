@@ -1,6 +1,6 @@
 {
   "name": "@semicoder/fia",
-  "version": "3.0.0",
+  "version": "0.14.0",
   "description": "Build macOS applications with a precompiled native host, Bun and WebView",
   "bin": {
     "fia": "bin/fia"

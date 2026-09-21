@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import cliPackage from "../package.json";
 import { createProject } from "../src/create.ts";
 import { parseCreateOptions } from "../src/create-options.ts";
 import { loadProjectConfig, validateConfig } from "../src/project-config.ts";
@@ -27,7 +28,7 @@ test("one template generates no Swift, TOML, mode switches or app codegen", asyn
       JSON.parse(await readFile(resolve(projectRoot, "package.json"), "utf8")).dependencies[
         "@semicoder/fia"
       ],
-    ).toBe("3.0.0");
+    ).toBe(cliPackage.version);
     await expect(
       createProject({ name: "hello", git: false, install: false, local: false, yes: true }, root),
     ).rejects.toThrow();

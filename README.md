@@ -63,7 +63,7 @@ await native.clipboard.writeText({ text: "Hello" });
 
 ```bash
 bun install
-bun run runtime:build  # 使用固定版本 Bun 1.4.1，生成 Host、Bun 和校验清单
+bun run runtime:build  # 使用固定版本 Bun 1.4.2，生成 Host、Bun 和校验清单
 bun run cli:build
 bun run check
 bun run smoke
