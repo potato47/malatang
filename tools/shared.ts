@@ -13,6 +13,24 @@ export interface RunOptions {
   quiet?: boolean;
 }
 
+export async function runInteractive(
+  command: readonly string[],
+  options: Omit<RunOptions, "quiet"> = {},
+): Promise<void> {
+  const child = Bun.spawn([...command], {
+    cwd: options.cwd ?? repositoryRoot,
+    env: options.env ?? process.env,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const exitCode = await child.exited;
+  if (exitCode !== 0) {
+    const rendered = command.map((part) => JSON.stringify(part)).join(" ");
+    throw new Error(`Command failed with status ${exitCode}: ${rendered}`);
+  }
+}
+
 export async function run(command: readonly string[], options: RunOptions = {}): Promise<string> {
   const process = Bun.spawn([...command], {
     cwd: options.cwd ?? repositoryRoot,

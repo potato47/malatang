@@ -1,4 +1,4 @@
-import { run, repositoryRoot } from "./shared.ts";
+import { run, runInteractive, repositoryRoot } from "./shared.ts";
 import { verifyAssets } from "../packages/cli/src/artifacts.ts";
 import { CLI_VERSION } from "../packages/cli/src/metadata.ts";
 import cli from "../packages/cli/package.json";
@@ -14,13 +14,22 @@ if (
   (await run(["git", "status", "--porcelain"], { quiet: true })).trim()
 )
   throw new Error("Refusing to publish a dirty worktree");
-await run([process.execPath, "run", "runtime:build"]);
+console.log("release:npm: building bundled runtimes");
+await runInteractive([process.execPath, "run", "runtime:build"]);
 await verifyAssets();
-await run([process.execPath, "run", "check"]);
-await run(["npm", "publish", "--workspace=@semicoder/fia", "--access=public", "--dry-run"], {
-  cwd: repositoryRoot,
-});
-if (!args.includes("--dry-run"))
-  await run(["npm", "publish", "--workspace=@semicoder/fia", "--access=public"], {
+console.log("release:npm: running checks");
+await runInteractive([process.execPath, "run", "check"]);
+console.log("release:npm: checking npm package (dry-run)");
+await runInteractive(
+  ["npm", "publish", "--workspace=@semicoder/fia", "--access=public", "--dry-run"],
+  { cwd: repositoryRoot },
+);
+if (args.includes("--dry-run")) {
+  console.log("release:npm: dry-run complete; nothing was published");
+} else {
+  console.log("release:npm: publishing to npm; complete any authentication prompts below");
+  await runInteractive(["npm", "publish", "--workspace=@semicoder/fia", "--access=public"], {
     cwd: repositoryRoot,
   });
+  console.log(`release:npm: published ${cli.name}@${cli.version}`);
+}
