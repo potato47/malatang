@@ -16,10 +16,6 @@ const VERSIONED_PATHS = [
   LOCK_PATH,
 ] as const;
 
-export interface VersionArguments {
-  readonly help: boolean;
-  readonly version?: string;
-}
 interface ParsedVersion {
   readonly core: readonly [number, number, number];
   readonly prerelease: readonly string[];
@@ -27,15 +23,6 @@ interface ParsedVersion {
 interface Snapshot {
   readonly path: string;
   readonly contents: Uint8Array;
-}
-
-export function parseVersionArguments(arguments_: readonly string[]): VersionArguments {
-  if (arguments_.length === 1 && (arguments_[0] === "-h" || arguments_[0] === "--help"))
-    return { help: true };
-  const option = arguments_.find((argument) => argument.startsWith("-"));
-  if (option !== undefined) throw new Error(`unknown option: ${option}`);
-  if (arguments_.length !== 1) throw new Error("exactly one target version is required");
-  return { help: false, version: arguments_[0]! };
 }
 
 function parseVersion(value: string): ParsedVersion {
@@ -154,13 +141,21 @@ function replaceLockVersion(source: string, current: string, target: string): st
   );
 }
 
-export async function updateNPMVersion(target: string): Promise<void> {
+export function nextMinorVersion(current: string): string {
+  const { core } = parseVersion(current);
+  return `${core[0]}.${core[1] + 1}.0`;
+}
+
+export async function updateNPMVersion(target: string): Promise<() => Promise<void>> {
   requireBunVersion();
   const current = cliPackage.version;
   requireIncreasingVersion(current, target);
   const snapshots: Snapshot[] = await Promise.all(
     VERSIONED_PATHS.map(async (path) => ({ path, contents: await readFile(path) })),
   );
+  const restore = async () => {
+    await Promise.all(snapshots.map((snapshot) => writeFile(snapshot.path, snapshot.contents)));
+  };
   try {
     const packageValue = JSON.parse(await readFile(PACKAGE_PATH, "utf8")) as Record<
       string,
@@ -189,22 +184,9 @@ export async function updateNPMVersion(target: string): Promise<void> {
       writeFile(LOCK_PATH, lock),
     ]);
     await run([process.execPath, "install", "--lockfile-only"]);
-    await run([process.execPath, "run", "cli:build"]);
+    return restore;
   } catch (error) {
-    await Promise.all(snapshots.map((snapshot) => writeFile(snapshot.path, snapshot.contents)));
+    await restore();
     throw new Error("version update failed; versioned files were rolled back", { cause: error });
-  }
-}
-
-if (import.meta.main) {
-  try {
-    const arguments_ = parseVersionArguments(process.argv.slice(2));
-    if (arguments_.help) process.stdout.write("Usage: bun run version:npm -- <version>\n");
-    else await updateNPMVersion(arguments_.version!);
-  } catch (error) {
-    process.stderr.write(
-      `version:npm: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
-    process.exitCode = 1;
   }
 }
