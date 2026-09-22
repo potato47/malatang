@@ -73,4 +73,6 @@ bun run smoke
 
 `fia create playground --local` 使用当前包目录的本地依赖；修改框架 TS 后重新构建 CLI，修改 Swift 后重新运行 `runtime:build`。应用侧仍使用预编译产物。
 
-发布使用 `bun run release:npm --dry-run` 检查分发内容；正式发布要求干净工作区。此仓库不再提供 Swift 应用工程、Native/Hybrid 模板或 Sparkle 更新。
+发布使用 `bun run release:npm --dry-run` 检查分发内容，使用 `bun run release:npm` 正式发布；正式发布要求干净工作区。模拟和正式发布均对 `registry.npmjs.org` 绕过代理，单次请求超时为 15 分钟，关闭自动重试，并显示 HTTP 请求日志。
+
+此仓库不再提供 Swift 应用工程、Native/Hybrid 模板或 Sparkle 更新。
