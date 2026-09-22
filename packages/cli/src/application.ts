@@ -337,6 +337,10 @@ export async function runApplication(config: ResolvedFIAConfig) {
   });
   return await child.exited;
 }
+export function hasProcessExited(child: Pick<Bun.Subprocess, "exitCode" | "signalCode">) {
+  // Bun leaves exitCode null when a process exits because of a signal.
+  return child.exitCode !== null || child.signalCode !== null;
+}
 export async function runDevelopment(
   initial: ResolvedFIAConfig,
   output: (message: string) => void = console.log,
@@ -368,6 +372,9 @@ export async function runDevelopment(
       await probe.stop(true);
       const host = Bun.spawn([built.executable], {
         cwd: config.projectRoot,
+        // Let the CLI request orderly shutdown instead of terminal SIGINT killing
+        // the host before it can stop its separately managed backend process group.
+        detached: true,
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
@@ -395,7 +402,7 @@ export async function runDevelopment(
       try {
         const endpoint = await waitUntil(
           async () => {
-            if (host.exitCode !== null) throw new Error("Host exited before its backend was ready");
+            if (hasProcessExited(host)) throw new Error("Host exited before its backend was ready");
             try {
               return JSON.parse(await readFile(resolve(control, "backend.json"), "utf8")) as {
                 origin: string;
@@ -419,6 +426,7 @@ export async function runDevelopment(
           ],
           {
             cwd: config.projectRoot,
+            detached: true,
             env: {
               ...process.env,
               FIA_BACKEND_ORIGIN: endpoint.origin,
@@ -435,7 +443,7 @@ export async function runDevelopment(
         );
         await waitUntil(
           async () => {
-            if (vite!.exitCode !== null) throw new Error("Vite failed to start");
+            if (hasProcessExited(vite!)) throw new Error("Vite failed to start");
             try {
               return (await fetch("http://127.0.0.1:" + vitePort)).ok ? true : undefined;
             } catch {
@@ -473,11 +481,11 @@ export async function runDevelopment(
           }, 150);
         });
         while (!stop && !changedConfig) {
-          if (host.exitCode !== null) {
+          if (hasProcessExited(host)) {
             stop = true;
             break;
           }
-          if (vite.exitCode !== null) throw new Error("Vite exited unexpectedly");
+          if (hasProcessExited(vite)) throw new Error("Vite exited unexpectedly");
           await Bun.sleep(100);
         }
       } finally {
@@ -486,12 +494,12 @@ export async function runDevelopment(
         await writeFile(resolve(control, "quit"), "");
         try {
           await waitUntil(
-            async () => (host.exitCode === null ? undefined : true),
+            async () => (hasProcessExited(host) ? true : undefined),
             20_000,
             "Host shutdown",
           );
         } finally {
-          if (host.exitCode === null) {
+          if (!hasProcessExited(host)) {
             host.kill("SIGTERM");
             await host.exited;
           }

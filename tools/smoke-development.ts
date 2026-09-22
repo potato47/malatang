@@ -1,6 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { runDevelopment } from "../packages/cli/src/application.ts";
 import { requestSession } from "../packages/cli/src/session.ts";
 import { waitUntil } from "../packages/cli/src/smoke.ts";
 import type { ResolvedFIAConfig } from "../packages/cli/src/project-config.ts";
@@ -39,7 +38,21 @@ export default function App() {
   const logs: string[] = [];
   let failure: unknown;
   let exited = false;
-  const running = runDevelopment(config, (line) => logs.push(line))
+  const development = Bun.spawn(
+    [process.execPath, resolve(import.meta.dir, "../packages/cli/src/index.ts"), "dev"],
+    { cwd: root, detached: true, stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+  );
+  const drain = async (stream: ReadableStream<Uint8Array>) => {
+    for await (const bytes of stream) logs.push(new TextDecoder().decode(bytes));
+  };
+  const running = Promise.all([
+    development.exited,
+    drain(development.stdout),
+    drain(development.stderr),
+  ])
+    .then(([code]) => {
+      if (code !== 0) throw new Error("Development exited with status " + code);
+    })
     .catch((error) => {
       failure = error;
     })
@@ -134,8 +147,31 @@ export default function App() {
       recorded.filter((event) => event.event === "stop" && event.generation === 1).length !== 1
     )
       throw new Error("Duplicate start or missing stop hook");
+    const interruptedAt = Date.now();
+    // A terminal sends Ctrl+C to the entire foreground process group.
+    process.kill(-development.pid, "SIGINT");
+    await waitUntil(async () => (exited ? true : undefined), 3000, "Ctrl+C shutdown");
+    if (failure) throw failure;
+    const stopped = (await readFile(events, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    if (stopped.filter((event) => event.event === "stop" && event.generation === 2).length !== 1)
+      throw new Error("Ctrl+C did not execute the backend stop hook exactly once");
+    for (const pid of [second.pid, ...second.processGroups.map((pid) => -pid)]) {
+      try {
+        process.kill(pid, 0);
+        throw new Error("Process remains after Ctrl+C: " + pid);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }
+    if (((await requestSession(root, "status")) as { running: boolean }).running)
+      throw new Error("Development session remains after Ctrl+C");
     console.log(
-      "Development: frontend HMR, two stable windows, backend restart, stop hook and process cleanup passed.",
+      "Development: frontend HMR, two stable windows, backend restart, stop hook and process cleanup passed; Ctrl+C shutdown in " +
+        (Date.now() - interruptedAt) +
+        " ms.",
     );
   } catch (error) {
     throw new Error(String(error) + "\n" + logs.join("\n"));
