@@ -101,6 +101,7 @@ struct WindowTests {
     let manager = WindowManager()
     let initial = try manager.create(WindowOptions(id: "main", title: "First"))
     #expect(initial.id == "main")
+    #expect(!initial.orderedIn) // Declaration must not present a window during CLI startup.
     _ = try manager.create(WindowOptions(id: "main", title: "Second"))
     #expect(manager.registeredIDs == ["main"])
     let items = [

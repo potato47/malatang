@@ -15,6 +15,7 @@ public enum FIAApplication {
     @MainActor
     public static func run() {
         do {
+            if CommandLine.arguments.dropFirst().first == "--cli" { try AgentCLI.run() }
             if CommandLine.arguments.dropFirst().first == "icon" {
                 try renderIcon(arguments: [CommandLine.arguments[0]] + Array(CommandLine.arguments.dropFirst(2)))
                 return
@@ -22,13 +23,14 @@ public enum FIAApplication {
             let manifest = try RuntimeManifest.load()
             let runtime = try FIARuntime(manifest: manifest)
             let application = NSApplication.shared
-            let headless = false
+            let headless = CommandLine.arguments.contains("--agent-background")
             let delegate = ApplicationDelegate(runtime: runtime, manifest: manifest, headless: headless)
             application.delegate = delegate
-            application.setActivationPolicy(.regular)
+            application.setActivationPolicy(headless ? .accessory : .regular)
             application.run()
             withExtendedLifetime(delegate) {}
         } catch {
+            if CommandLine.arguments.contains("--agent-background") { AgentCLI.recordStartupFailure(error) }
             fputs("FIA: " + error.localizedDescription + "\n", stderr)
             exit(1)
         }
@@ -39,8 +41,8 @@ public enum FIAApplication {
 final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     private let runtime: FIARuntime
     private let manifest: RuntimeManifest
-    private let headless: Bool
-    private var statusItem: NSStatusItem?
+    private var headless: Bool
+    private(set) var statusItem: NSStatusItem?
     private var stopping = false
     private var menuInstalled = false
 
@@ -51,16 +53,18 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if !headless {
-            installMenu()
-            installStatusItem()
-        }
+        runtime.onShow = { [weak self] in self?.showApplication() }
+        installStatusItem()
+        if !headless { installMenu() }
         Task { @MainActor in
             do {
-                try await runtime.start()
+                try await runtime.start(background: headless)
+                AgentCLI.clearStartupFailure(identifier: manifest.app.identifier)
                 if !headless { NSApp.activate(ignoringOtherApps: true) }
             } catch {
-                NSAlert(error: error).runModal()
+                AgentCLI.recordStartupFailure(error)
+                if headless { fputs("FIA startup: \(error.localizedDescription)\n", stderr); NSApp.terminate(nil) }
+                else { NSAlert(error: error).runModal() }
             }
         }
     }
@@ -77,7 +81,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             sender.reply(toApplicationShouldTerminate: report.completed)
             if !report.completed {
                 stopping = false
-                NSAlert(error: ManagedProcessError(report.issues.map(\.message).joined(separator: "\n"))).runModal()
+                let message = report.issues.map(\.message).joined(separator: "\n")
+                if headless { fputs("FIA shutdown: \(message)\n", stderr) }
+                else { NSAlert(error: ManagedProcessError(message)).runModal() }
             }
         }
         return .terminateLater
@@ -96,6 +102,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             update.target = self
             applicationMenu.addItem(update)
         }
+        let install = NSMenuItem(title: "Install Command Line Tool…", action: #selector(installCLI), keyEquivalent: "")
+        install.target = self
+        applicationMenu.addItem(install)
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Hide \(manifest.app.name)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = applicationMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
@@ -136,7 +145,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = main
     }
 
-    private func installStatusItem() {
+    func installStatusItem() {
         guard let configuration = manifest.statusItem else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: configuration.symbol, accessibilityDescription: configuration.tooltip)
@@ -145,6 +154,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         let show = NSMenuItem(title: "Show", action: #selector(showMainWindow), keyEquivalent: "")
         show.target = self
         menu.addItem(show)
+        let install = NSMenuItem(title: "Install Command Line Tool…", action: #selector(installCLI), keyEquivalent: "")
+        install.target = self
+        menu.addItem(install)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
@@ -153,10 +165,27 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard runtime.lifecycle == .running else { return false }
-        try? runtime.windows.restoreMainWindow()
+        showApplication()
         return false
     }
 
-    @objc private func showMainWindow() { try? runtime.windows.restoreMainWindow() }
+    private func showApplication() {
+        headless = false
+        NSApp.setActivationPolicy(.regular)
+        installMenu()
+        try? runtime.presentMainWindow()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    @objc private func showMainWindow() { showApplication() }
+    @objc private func installCLI() {
+        Task { @MainActor in
+            do {
+                let result = try await runtime.manageCLI("install")
+                let alert = NSAlert(); alert.messageText = "Command installed"
+                alert.informativeText = result.pathHint ?? result.path
+                alert.runModal()
+            } catch { NSAlert(error: error).runModal() }
+        }
+    }
     @objc private func checkForUpdates() { Task { await runtime.updater.checkAndPrompt() } }
 }

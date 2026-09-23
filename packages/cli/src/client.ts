@@ -195,6 +195,7 @@ export class NativeResource {
 export class NativeClient extends EventTarget implements NativeTransport {
   private readonly api = createNativeAPI(this);
   readonly application = this.api.application;
+  readonly agent = this.api.agent;
   readonly clipboard = this.api.clipboard;
   readonly dialogs = this.api.dialogs;
   readonly keychain = this.api.keychain;
@@ -439,3 +440,6 @@ export class NativeClient extends EventTarget implements NativeTransport {
 export const native = new NativeClient();
 
 export type { TitlebarItem, WindowOptions, UpdateState } from "./api.ts";
+
+export { createClient, APIError } from "./api-client.ts";
+export type { APIClient, CallOptions } from "./business-api.ts";

@@ -11,8 +11,8 @@ struct BackendProtocolTests {
 
     @Test func decodesFragmentedJSONLines() throws {
         var decoder = BackendStdoutDecoder()
-        #expect(try decoder.append(Data(#"{"v":4,"type":"rea"#.utf8)).isEmpty)
-        let frames = try decoder.append(Data("dy\",\"port\":49152,\"origin\":\"http://127.0.0.1:49152\"}\n{\"v\":4,\"type\":\"request\",\"id\":1,\"method\":\"application.getState\",\"params\":{}}\n".utf8))
+        #expect(try decoder.append(Data(#"{"v":5,"type":"rea"#.utf8)).isEmpty)
+        let frames = try decoder.append(Data("dy\",\"port\":49152,\"origin\":\"http://127.0.0.1:49152\"}\n{\"v\":5,\"type\":\"request\",\"id\":1,\"method\":\"application.getState\",\"params\":{}}\n".utf8))
         #expect(frames.count == 2)
         #expect(frames[0]["type"] as? String == "ready")
         #expect(frames[1]["id"] as? Int == 1)

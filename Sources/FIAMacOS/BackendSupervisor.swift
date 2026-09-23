@@ -10,6 +10,10 @@ public struct FIABunConfiguration: Sendable {
     public let executable: String
     public let arguments: [String]
     public let sha256: String
+    public let bundlePath: String?
+    public let runtimeId: String?
+    public let agentCommand: String?
+    public let updating: Bool
     public let sessionSecret: String
     public let webRoot: String
     public let resourceDirectory: String
@@ -21,10 +25,12 @@ public struct FIABunConfiguration: Sendable {
 
     public init(development: Bool, appName: String, appIdentifier: String, executable: String,
                 arguments: [String] = [], sha256: String, sessionSecret: String,
+                bundlePath: String? = nil, runtimeId: String? = nil, agentCommand: String? = nil, updating: Bool = false,
                 webRoot: String, resourceDirectory: String, developmentOrigin: String? = nil,
                 version: String, build: Int, preferredPort: Int = 0, automaticallyRestart: Bool = true) {
         self.development = development; self.appName = appName; self.appIdentifier = appIdentifier
         self.executable = executable; self.arguments = arguments; self.sha256 = sha256
+        self.bundlePath = bundlePath; self.runtimeId = runtimeId; self.agentCommand = agentCommand; self.updating = updating
         self.sessionSecret = sessionSecret; self.webRoot = webRoot; self.resourceDirectory = resourceDirectory
         self.developmentOrigin = developmentOrigin; self.version = version; self.build = build
         self.preferredPort = preferredPort; self.automaticallyRestart = automaticallyRestart
@@ -196,6 +202,10 @@ public final class BackendSupervisor {
                 "v": FIAStdioProtocolVersion,
                 "type": "initialize",
                 "sessionSecret": sessionSecret,
+                "bundlePath": configuration.bundlePath as Any? ?? NSNull(),
+                "runtimeId": configuration.runtimeId as Any? ?? NSNull(),
+                "agentCommand": configuration.agentCommand as Any? ?? NSNull(),
+                "updating": configuration.updating,
                 "preferredPort": preferredPort,
                 "development": configuration.development,
                 "applicationSupport": workingDirectoryURL.path,

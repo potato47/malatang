@@ -1,3 +1,7 @@
+import { APIServer } from "./api-server.ts";
+import { startAgentServer } from "./agent-server.ts";
+import type { APIImplementation } from "./business-api.ts";
+export { implementAPI } from "./business-api.ts";
 import { createGateway } from "./gateway.ts";
 import { resolve } from "node:path";
 import { createNativeAPI } from "./api.ts";
@@ -14,8 +18,8 @@ import {
 export { NativeError, NativeResource };
 export type { NativeCallOptions, NativeErrorPayload, NativeResourceDescriptor };
 
-const FIA_BACKEND = Symbol.for("@semicoder/fia/backend-definition-v3");
-const FIA_RUNTIME = Symbol.for("@semicoder/fia/backend-runtime-v3");
+const FIA_BACKEND = Symbol.for("@semicoder/fia/backend-definition-v4");
+const FIA_RUNTIME = Symbol.for("@semicoder/fia/backend-runtime-v4");
 const PROTOCOL = FIA_BACKEND_PROTOCOL_VERSION;
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_PENDING = 128;
@@ -65,13 +69,21 @@ export interface BackendContext<WebSocketData = unknown> extends BackendRouteCon
 
 export interface BackendDefinition<WebSocketData = unknown, RoutePaths extends string = string> {
   readonly [FIA_BACKEND]: true;
+  readonly api?: APIImplementation;
+  readonly beforeUpdate?: (
+    context: BackendContext<WebSocketData>,
+  ) => MaybePromise<{ ready: boolean; reason?: string } | void>;
   readonly http: BackendHTTPDefinition<WebSocketData, RoutePaths>;
   readonly start?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
   readonly stop?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
 }
 
 interface BackendInput<WebSocketData, RoutePaths extends string> {
-  readonly http: BackendHTTPDefinition<WebSocketData, RoutePaths>;
+  readonly api?: APIImplementation;
+  readonly beforeUpdate?: (
+    context: BackendContext<WebSocketData>,
+  ) => MaybePromise<{ ready: boolean; reason?: string } | void>;
+  readonly http?: BackendHTTPDefinition<WebSocketData, RoutePaths>;
   readonly start?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
   readonly stop?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
 }
@@ -79,8 +91,9 @@ interface BackendInput<WebSocketData, RoutePaths extends string> {
 export function defineBackend<WebSocketData = unknown, const RoutePaths extends string = string>(
   definition: BackendInput<WebSocketData, RoutePaths>,
 ): BackendDefinition<WebSocketData, RoutePaths> {
-  if (!isObject(definition) || !isObject(definition.http))
-    throw new TypeError("defineBackend expects an http definition");
+  if (!isObject(definition) || (definition.http !== undefined && !isObject(definition.http)))
+    throw new TypeError("defineBackend expects a backend definition");
+  definition.http ??= {};
   Object.defineProperty(definition, FIA_BACKEND, { value: true, enumerable: false });
   return definition as unknown as BackendDefinition<WebSocketData, RoutePaths>;
 }
@@ -99,6 +112,10 @@ export interface InitializeFrame {
   readonly generation: string;
   readonly webRoot: string;
   readonly resourceDirectory: string;
+  readonly bundlePath?: string;
+  readonly runtimeId?: string;
+  readonly agentCommand?: string;
+  readonly updating?: boolean;
   readonly developmentOrigin?: string;
   readonly version: string;
   readonly build: number;
@@ -121,6 +138,8 @@ interface Runtime {
   definition?: BackendDefinition;
   context?: BackendContext;
   stopping: boolean;
+  api?: APIServer;
+  agent?: Awaited<ReturnType<typeof startAgentServer>>;
 }
 
 function isObject(value: unknown): value is Record<string | symbol, unknown> {
@@ -292,6 +311,7 @@ class StdioPeer {
 export class BackendNativeClient extends EventTarget implements NativeTransport {
   private readonly api = createNativeAPI(this);
   readonly application = this.api.application;
+  readonly agent = this.api.agent;
   readonly clipboard = this.api.clipboard;
   readonly dialogs = this.api.dialogs;
   readonly keychain = this.api.keychain;
@@ -343,6 +363,8 @@ async function shutdown(current: Runtime): Promise<void> {
     console.error(error);
     process.exitCode = 1;
   } finally {
+    current.api?.close();
+    await current.agent?.stop();
     current.server?.stop(true);
     process.exit(process.exitCode ?? 0);
   }
@@ -372,7 +394,7 @@ export async function runBackend<Data, Paths extends string>(
     typeof value.development !== "boolean" ||
     !isObject(value.app)
   ) {
-    throw new Error("Expected FIA stdio protocol 4 initialization");
+    throw new Error("Expected FIA stdio protocol 5 initialization");
   }
   const initialize = value as unknown as InitializeFrame;
   const peer = new StdioPeer(iterator);
@@ -390,7 +412,18 @@ export async function runBackend<Data, Paths extends string>(
       ? process.cwd()
       : resolve(initialize.webRoot, "../backend"),
   };
-  const gateway = createGateway(definition, { native, app }, initialize);
+  const api = new APIServer(
+    definition.api ?? { contract: { methods: {}, events: {} }, handlers: {} },
+    { native, app },
+  );
+  api.updating = initialize.updating ?? false;
+  current.api = api;
+  const gateway = createGateway(definition, { native, app }, initialize, api, async (action) => {
+    if (action === "prepare")
+      await api.prepare(async () => definition.beforeUpdate?.(current.context!));
+    else api.updating = false;
+    await current.agent?.publish();
+  });
   const serve = (port: number) =>
     Bun.serve({
       hostname: "127.0.0.1",
@@ -423,6 +456,9 @@ export async function runBackend<Data, Paths extends string>(
   // Listening and business readiness are distinct; start hooks may configure native windows.
   writeFrame({ v: PROTOCOL, type: "listening", port: server.port, origin });
   await definition.start?.(context);
+  api.ready = true;
+  if (initialize.bundlePath && initialize.agentCommand && initialize.runtimeId)
+    current.agent = await startAgentServer(api, initialize);
   gateway.ready = true;
   writeFrame({ v: PROTOCOL, type: "ready", port: server.port, origin });
 }

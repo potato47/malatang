@@ -14,10 +14,12 @@ export async function smokeDevelopment(config: ResolvedFIAConfig) {
   const events = resolve(root, ".fia/dev-events.jsonl");
   const report = resolve(root, ".fia/hmr.json");
   const source = (generation: number) => `
-import { defineBackend } from "@semicoder/fia/backend";
+import { defineBackend, implementAPI } from "@semicoder/fia/backend";
+import api from "../shared/api";
 import { appendFile } from "node:fs/promises";
 const generation = ${generation};
 export default defineBackend({
+  api: implementAPI(api, { "counter.get": () => ({value:generation}), "counter.increment": () => ({value:generation}) }),
   http: { routes: { "/hmr": { POST: async (request) => { await Bun.write(${JSON.stringify(report)}, await request.text()); return new Response("ok"); } } } },
   async start({ native }) {
     await native.windows.create({ id: "aux", title: "Auxiliary" });
@@ -72,6 +74,24 @@ export default function App() {
       };
     };
   };
+  const agentValue = async () => {
+    const cli = Bun.spawn(
+      [
+        process.execPath,
+        resolve(import.meta.dir, "../packages/cli/src/index.ts"),
+        "agent",
+        "call",
+        "counter.get",
+        "--json",
+        "{}",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    const output = await new Response(cli.stdout).text();
+    const error = await new Response(cli.stderr).text();
+    if (await cli.exited) throw new Error("Development agent failed: " + error);
+    return JSON.parse(output).value;
+  };
   try {
     const first = await waitUntil(
       async () => {
@@ -85,6 +105,7 @@ export default function App() {
       30_000,
       "Development windows ready",
     );
+    if ((await agentValue()) !== 1) throw new Error("fia agent did not connect to this project");
     const before = await waitUntil(
       async () => {
         try {
@@ -132,6 +153,8 @@ export default function App() {
       JSON.stringify(second.windows) !== JSON.stringify(first.windows)
     )
       throw new Error("Bun restart replaced native windows or host");
+    if ((await agentValue()) !== 2)
+      throw new Error("fia agent did not reconnect to the new backend generation");
     try {
       process.kill(-first.processGroups[0]!, 0);
       throw new Error("Old Bun process group remains");

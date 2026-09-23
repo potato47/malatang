@@ -1,3 +1,4 @@
+import { APIServer, apiError } from "./api-server.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { resolve, sep } from "node:path";
@@ -18,6 +19,8 @@ export function createGateway<Data, Paths extends string>(
   input: BackendDefinition<Data, Paths>,
   context: BackendRouteContext,
   init: InitializeFrame,
+  api?: APIServer,
+  update?: (action: "prepare" | "resume") => Promise<void>,
 ) {
   const definition = input as unknown as BackendDefinition;
   const cookieName = "fia_" + init.sessionSecret.slice(0, 12);
@@ -99,6 +102,23 @@ export function createGateway<Data, Paths extends string>(
       }
       if (path.startsWith("/_fia") || path === "/api" || path.startsWith("/api/")) {
         if (!authorized(request, server)) return response("Unauthorized", 401);
+      }
+      if (path.startsWith("/_fia/update/") && request.method === "POST") {
+        if (!equal(request.headers.get("x-fia-session") ?? "", init.sessionSecret))
+          return response("Forbidden", 403);
+        const action = path.slice("/_fia/update/".length);
+        if (action !== "prepare" && action !== "resume") return response("Not Found", 404);
+        try {
+          await update?.(action);
+          return Response.json({ result: { ready: true } });
+        } catch (error) {
+          return apiError(error, 409);
+        }
+      }
+      if (path.startsWith("/_fia/api/") && api) {
+        const target = new URL(request.url);
+        target.pathname = path.slice("/_fia/api".length);
+        return api.fetch(new Request(target, request), "ui");
       }
       if (path === "/_fia/health")
         return Response.json(

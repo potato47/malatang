@@ -15,14 +15,14 @@ struct CodeReleaseTests {
     var updates: URL { root.appending(path: "Updates") }
     func write(
       _ build: Int, at directory: URL, runtime: String = String(repeating: "a", count: 64),
-      backend: String? = nil, frontend: String? = nil
+      backend: String? = nil, frontend: String? = nil, extra: [String: String] = [:]
     ) throws -> CodeRelease {
       var files: [CodeRelease.File] = []
-      for path in ["backend/index.js", "web/index.html"] {
+      for path in ["backend/index.js", "web/index.html"] + extra.keys.sorted() {
         let file = directory.appending(path: path)
         try FileManager.default.createDirectory(
           at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let content = path == "backend/index.js" ? backend : frontend
+        let content = extra[path] ?? (path == "backend/index.js" ? backend : frontend)
         let data = Data((content ?? "version \(build): \(path)").utf8)
         try data.write(to: file)
         files.append(

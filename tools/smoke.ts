@@ -1,3 +1,4 @@
+import { smokeAgent } from "./smoke-agent.ts";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -15,7 +16,7 @@ import { checkProject } from "../packages/cli/src/check.ts";
 import { repositoryRoot } from "./shared.ts";
 import { smokeDevelopment } from "./smoke-development.ts";
 
-const temporary = await mkdtemp(resolve(tmpdir(), "fia-v3-smoke-"));
+const temporary = await mkdtemp(resolve(tmpdir(), "fia-v4-smoke-"));
 try {
   const { projectRoot } = await createProject(
     { name: "fia-smoke", install: false, git: false, yes: true, local: true },
@@ -63,6 +64,7 @@ try {
   console.log("Generated, typechecked, packaged and rendered an icon without Swift compilation.");
   const result = await smokeApplication(config, built.app);
   console.log(JSON.stringify(result, null, 2));
+  await smokeAgent(config, built.app);
   const keys = await generateUpdateKeys(resolve(temporary, "keys"));
   const source = await readFile(resolve(projectRoot, "fia.config.ts"), "utf8");
   await writeFile(

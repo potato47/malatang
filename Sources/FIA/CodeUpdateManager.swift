@@ -20,6 +20,10 @@ public final class CodeUpdateManager {
   public private(set) var state = CodeUpdateState(phase: "disabled")
   public var onState: ((CodeUpdateState) -> Void)?
   public var activate: ((CodeRelease, URL, Bool) async throws -> Void)?
+  public var prepare: (() async throws -> Void)?
+  public var resume: (() async -> Void)?
+  public var committed: (() async throws -> Void)?
+  public var allowsAutomaticPrompts: () -> Bool = { true }
   private let config: UpdateConfiguration?
   private let store: CodeReleaseStore
   private var envelope: SignedCodeRelease?
@@ -49,7 +53,7 @@ public final class CodeUpdateManager {
     guard config != nil else { return }
     periodic = Task { @MainActor [weak self] in
       while !Task.isCancelled {
-        await self?.checkAndPrompt()
+        await self?.checkAndPrompt(allowPrompt: self?.allowsAutomaticPrompts() ?? false)
         do { try await Task.sleep(for: .seconds(86_400)) } catch { return }
       }
     }
@@ -59,11 +63,12 @@ public final class CodeUpdateManager {
     periodic?.cancel()
     applying?.cancel()
   }
-  public func checkAndPrompt() async {
+  public func checkAndPrompt(allowPrompt: Bool = true) async {
     do {
       _ = try await check()
       if state.phase == "available" { _ = try await download() }
-      if state.phase == "downloaded" { _ = try apply() }
+      if !allowPrompt { return }
+      if state.phase == "downloaded" { _ = try await apply() }
       if state.phase == "requiresInstall" {
         let alert = NSAlert()
         alert.messageText = "A new application installer is required"
@@ -77,7 +82,10 @@ public final class CodeUpdateManager {
           NSWorkspace.shared.open(url)
         }
       }
-    } catch { transition("failed", message: error.localizedDescription) }
+    } catch {
+      // A preflight refusal keeps the verified candidate available for a later attempt.
+      transition(state.phase == "downloaded" ? "downloaded" : "failed", message: error.localizedDescription)
+    }
   }
   @discardableResult public func check() async throws -> CodeUpdateState {
     guard let config else { return state }
@@ -196,11 +204,14 @@ public final class CodeUpdateManager {
       throw error
     }
   }
-  @discardableResult public func apply() throws -> CodeUpdateState {
+  @discardableResult public func apply() async throws -> CodeUpdateState {
     guard state.phase == "downloaded", !busy, applying == nil, !stopped, let candidate, let activate
     else { throw UpdateError("No downloaded update is ready") }
     guard confirmInstallation(candidate) else { return state }
-    try store.begin(candidate)
+    busy = true
+    do { try await prepare?(); try store.begin(candidate) }
+    catch { busy = false; await resume?(); throw error }
+    busy = false
     transition("applying")
     applying = Task { @MainActor [weak self] in
       guard let self else { return }
@@ -211,6 +222,7 @@ public final class CodeUpdateManager {
         try await activate(candidate, self.store.releaseDirectory(candidate.build), true)
         try Task.checkCancellation()
         try self.store.commit(candidate.build)
+        try await self.committed?()
         self.transition("current")
       } catch {
         do { try self.store.rollback(candidate.build) } catch {

@@ -1,3 +1,4 @@
+import { runAgentCLI } from "./agent-cli.ts";
 import { resolve } from "node:path";
 import { intro, text as promptText, confirm, isCancel } from "@clack/prompts";
 import { createProject } from "./create.ts";
@@ -19,9 +20,10 @@ import { smokeApplication } from "./smoke.ts";
 import { generateUpdateKeys } from "./updates.ts";
 import { CLI_VERSION } from "./metadata.ts";
 
-export const help = `FIA ${CLI_VERSION} — macOS applications with Bun and WebView
+export const help = `FIA ${CLI_VERSION} — macOS applications for humans and agents
 
 fia create [name] [--yes] [--git|--no-git] [--install|--no-install] [--local]
+fia agent <args>         Call this project's running development application
 fia dev                  Vite HMR and supervised Bun restart
 fia run                  Build and run a production .app
 fia build                Assemble an application using precompiled runtimes
@@ -84,6 +86,15 @@ export async function runCLI(args: readonly string[], cwd = process.cwd()): Prom
       if (rest.some((arg) => arg !== "--json")) throw new Error("Unknown option");
       emit(await requestSession(cwd, command as "status" | "logs" | "stop"));
       return 0;
+    }
+    if (command === "agent") {
+      const config = await loadProjectConfig(cwd);
+      return runAgentCLI(
+        rest,
+        resolve(config.projectRoot, ".fia/dev", config.app.name + ".app"),
+        resolve(config.projectRoot, ".fia/dev/data", config.app.identifier),
+        true,
+      );
     }
     if (command === "doctor") {
       const clean = rest.filter((arg) => arg !== "--json");

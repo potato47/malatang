@@ -6,6 +6,7 @@ import type { FIAConfig } from "./config.ts";
 export interface ResolvedFIAConfig extends FIAConfig {
   projectRoot: string;
   configPath: string;
+  api: { entry: string };
   backend: { entry: string; assets: readonly string[] };
   web: { root: string; dist: string };
   permissions: Readonly<Record<string, string>>;
@@ -23,7 +24,7 @@ function object(value: unknown, name: string): Record<string, unknown> {
 }
 function keys(value: Record<string, unknown>, allowed: string[], name: string) {
   for (const key of Object.keys(value))
-    if (!allowed.includes(key)) fail(name + "." + key + " is not supported in FIA 3");
+    if (!allowed.includes(key)) fail(name + "." + key + " is not supported in FIA 4");
 }
 function nonempty(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || !value.trim() || value.trim() !== value || value.includes("\0"))
@@ -50,7 +51,7 @@ export function validateConfig(input: unknown, root: string): ResolvedFIAConfig 
   const value = object(input, "config");
   keys(
     value,
-    ["app", "backend", "web", "permissions", "statusItem", "updates", "signing"],
+    ["app", "api", "agent", "backend", "web", "permissions", "statusItem", "updates", "signing"],
     "config",
   );
   const app = object(value.app, "app");
@@ -67,6 +68,20 @@ export function validateConfig(input: unknown, root: string): ResolvedFIAConfig 
     fail("app.version must be a semantic version");
   if (!Number.isSafeInteger(app.build) || (app.build as number) < 1)
     fail("app.build must be a positive safe integer");
+  const agent = object(value.agent, "agent");
+  keys(agent, ["command", "description", "instructions"], "agent");
+  nonempty(agent.command, "agent.command");
+  nonempty(agent.description, "agent.description");
+  if (
+    !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(agent.command) ||
+    agent.command.length > 64 ||
+    agent.command === "fia"
+  )
+    fail("agent.command must be a skill-compatible command name, other than fia");
+  if (agent.description.length > 1024) fail("agent.description must be at most 1024 characters");
+  const api = object(value.api ?? {}, "api");
+  keys(api, ["entry"], "api");
+  const apiEntry = api.entry ?? "shared/api.ts";
   const backend = object(value.backend ?? {}, "backend");
   const web = object(value.web ?? {}, "web");
   keys(backend, ["entry", "assets"], "backend");
@@ -78,6 +93,8 @@ export function validateConfig(input: unknown, root: string): ResolvedFIAConfig 
   if (!Array.isArray(assets)) fail("backend.assets must be an array of relative paths");
   for (const path of [
     entry,
+    apiEntry,
+    ...(agent.instructions === undefined ? [] : [agent.instructions]),
     webRoot,
     dist,
     ...(assets as unknown[]),
@@ -126,6 +143,7 @@ export function validateConfig(input: unknown, root: string): ResolvedFIAConfig 
     ...(value as unknown as FIAConfig),
     projectRoot: resolve(root),
     configPath: resolve(root, "fia.config.ts"),
+    api: { entry: apiEntry as string },
     backend: { entry: entry as string, assets: assets as string[] },
     web: { root: webRoot as string, dist: dist as string },
     permissions: permissions as Record<string, string>,
@@ -166,6 +184,8 @@ export async function loadProjectConfig(root: string): Promise<ResolvedFIAConfig
     config.app.icon = "assets/icon.icns";
   for (const entry of [
     config.backend.entry,
+    config.api.entry,
+    ...(config.agent.instructions ? [config.agent.instructions] : []),
     config.web.root,
     ...config.backend.assets,
     ...(config.app.icon ? [config.app.icon] : []),

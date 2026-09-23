@@ -1,9 +1,10 @@
-# FIA 3
+# FIA 4
 
-用 TypeScript 构建 macOS 14+、Apple Silicon 桌面应用。默认 React + Vite 前端和 Bun 后端，预编译 Swift 宿主提供原生窗口和系统能力。
+用一套 TypeScript API 构建同时面向人类和 agent 的 macOS 14+、Apple Silicon 应用。框架提供桌面 UI、应用 CLI、TypeScript 脚本 SDK 和随应用更新的 skill。默认 React + Vite 前端和 Bun 后端，预编译 Swift 宿主提供原生窗口和系统能力。
 
 ```text
-WKWebView / React → HTTP、WebSocket → Bun → stdio → Swift Host
+桌面 UI → HTTP / 事件流 ─┐
+CLI / TypeScript → Unix Socket ─┴→ 共享 Bun API → Swift Host
 ```
 
 ```bash
@@ -14,22 +15,24 @@ bun run dev
 
 应用开发不需要 Swift 编译器或 Xcode 工程。`fia dev` 自动启动窗口、Bun 和 Vite；前端使用 HMR，后端变更执行受控进程重启。
 
-项目只有三个入口：
+项目入口：
 
 - `fia.config.ts`：应用信息、系统权限说明、签名和更新设置。
-- `backend/index.ts`：HTTP/WebSocket、业务逻辑和原生窗口控制。
-- `frontend/`：React 页面，通过 `/api` 或原生 TS SDK 访问能力。
+- `shared/api.ts`：方法、事件、Zod 输入输出、说明和示例的唯一契约。
+- `backend/index.ts`：共享 API 实现、业务逻辑和原生窗口控制，可补充 HTTP/WebSocket。
+- `frontend/`：React 页面，通过带类型的客户端调用共享 API。
+- `agent/instructions.md`：应用补充的业务流程，与生成的 skill 一起发布。
 
 ```ts
 // backend/index.ts
-import { defineBackend } from "@semicoder/fia/backend";
+import { defineBackend, implementAPI } from "@semicoder/fia/backend";
+import api from "../shared/api";
 
 export default defineBackend({
-  http: {
-    routes: {
-      "/hello": { GET: () => Response.json({ message: "Hello" }) },
-    },
-  },
+  api: implementAPI(api, {
+    "counter.get": () => ({ value: 0 }),
+    "counter.increment": ({ by }) => ({ value: by }),
+  }),
   async start({ native }) {
     await native.windows.setTitlebar({
       id: "main",
@@ -45,17 +48,30 @@ export default defineBackend({
 
 ```ts
 // frontend
-import { native } from "@semicoder/fia/client";
+import { createClient, native } from "@semicoder/fia/client";
+import type api from "../shared/api";
 
-const response = await fetch("/api/hello");
+const app = createClient<typeof api>();
+const counter = await app.call("counter.get", {});
 await native.clipboard.writeText({ text: "Hello" });
 ```
 
-窗口统一使用系统标题栏和下方 WebView，支持多窗口和 TS 声明的原生标题栏按钮、文字、间隔。窗口由宿主持有，后端重启时保留。
+默认模板包含完整的持久化共享计数器。开发时在另一终端执行 `bun run agent call counter.increment --json '{"by":1}'`，桌面立即收到同一事件。
+
+安装应用后，从应用菜单或 tray 选择安装 CLI，再运行：
+
+```bash
+my-app call counter.get --json '{}'
+my-app exec -e 'console.log(await app.call("counter.increment", {by: 1}))'
+my-app skill install --dir ~/.agents/skills
+my-app open
+```
+
+应用自带 Bun，不依赖系统 Node/Bun。CLI 冷启动不弹窗、不抢焦点，tray 可显示或退出应用。`windows.create` 声明窗口，`open/focus` 显示；后端重启保留窗口状态。脚本是可信本机代码，独立进程提供取消与超时，不是安全沙箱。长期任务由应用 API 管理。
 
 `fia build` 生成本机 `.app`。`fia release` 使用 Developer ID 签名和公证生成安装包；`fia release --update` 生成 Ed25519 签名的前后端代码更新，上传普通 HTTPS 静态托管即可。代码更新须用户确认；失败回退上一版代码，用户数据不随代码回退。
 
-详见 [框架契约](docs/framework/README.md)、[CLI 与发布](packages/cli/README.md)、[从 FIA 2 迁移](docs/framework/migration-v3.md)。
+详见 [框架契约](docs/framework/README.md)、[CLI 与发布](packages/cli/README.md)、[从 FIA 3 迁移](docs/framework/migration-v4.md)。
 
 ## 框架开发
 

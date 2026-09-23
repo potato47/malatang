@@ -1,3 +1,4 @@
+import { generateAgentArtifacts } from "./agent-artifacts.ts";
 import { watch } from "node:fs";
 import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
@@ -72,14 +73,20 @@ export function infoPlist(config: ResolvedFIAConfig) {
     "<key>NSHighResolutionCapable</key><true/><key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict></dict></plist>"
   );
 }
-export function generatedBackendRunner(entry: string) {
+export function generatedBackendRunner(entry: string, contract?: string) {
   return (
     'import { runBackend } from "@semicoder/fia/backend";\n' +
     'const log = (...args) => process.stderr.write(args.map(x => typeof x === "string" ? x : Bun.inspect(x)).join(" ") + "\\n");\n' +
     "console.log = console.info = console.debug = console.warn = console.error = log;\n" +
     "const { default: backend } = await import(" +
     JSON.stringify(entry) +
-    ");\nawait runBackend(backend);\n"
+    ");\n" +
+    (contract
+      ? 'const { describeAPI } = await import("@semicoder/fia/api");\nconst { default: contract } = await import(' +
+        JSON.stringify(contract) +
+        ');\nif (!backend.api || JSON.stringify(describeAPI(backend.api.contract)) !== JSON.stringify(describeAPI(contract))) throw new Error("Backend API does not match shared contract");\n'
+      : "") +
+    "await runBackend(backend);\n"
   );
 }
 export async function buildCode(
@@ -89,12 +96,19 @@ export async function buildCode(
   development = false,
 ): Promise<CodeRelease> {
   const assets = await verifyAssets();
+  await generateAgentArtifacts(config, resolve(destination, "agent"));
   await mkdir(resolve(destination, "backend"), { recursive: true });
   await mkdir(resolve(destination, "web"), { recursive: true });
   const staging = resolve(config.projectRoot, ".fia/build");
   await mkdir(staging, { recursive: true });
   const entry = resolve(staging, "backend-runner.ts");
-  await writeFile(entry, generatedBackendRunner(resolve(config.projectRoot, config.backend.entry)));
+  await writeFile(
+    entry,
+    generatedBackendRunner(
+      resolve(config.projectRoot, config.backend.entry),
+      resolve(config.projectRoot, config.api.entry),
+    ),
+  );
   if (development) {
     await cp(entry, resolve(destination, "backend/index.js"));
     await cp(
@@ -174,6 +188,8 @@ export async function buildApplication(
     );
     await cp(resolve(assetDirectory, "FIAHost"), resolve(contents, "MacOS/FIAHost"));
     await cp(resolve(assetDirectory, "bun"), resolve(contents, "Helpers/bun"));
+    for (const name of ["agent-cli", "script-preload"])
+      await cp(resolve(import.meta.dir, "../dist", name + ".js"), resolve(resources, name + ".js"));
     for (const path of ["MacOS/FIAHost", "Helpers/bun"])
       await chmod(resolve(contents, path), 0o755);
     if (config.app.icon)
@@ -207,7 +223,8 @@ export async function buildApplication(
       resolve(resources, "fia.runtime.json"),
       JSON.stringify(
         {
-          schema: 3,
+          schema: 4,
+          agent: { command: config.agent.command, description: config.agent.description },
           frameworkVersion: CLI_VERSION,
           app: config.app,
           runtimeId: release.runtimeId,

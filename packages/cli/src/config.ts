@@ -1,6 +1,8 @@
 /** Build settings only. Window behavior belongs in the Bun backend. */
 export interface FIAConfig {
   app: { name: string; identifier: string; version: string; build: number; icon?: string };
+  api?: { entry?: string };
+  agent: { command: string; description: string; instructions?: string };
   backend?: { entry?: string; assets?: readonly string[] };
   web?: { root?: string; dist?: string };
   permissions?: Readonly<Record<string, string>>;

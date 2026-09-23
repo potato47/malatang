@@ -1,7 +1,7 @@
 {
   "name": "@semicoder/fia",
   "version": "0.14.1",
-  "description": "Build macOS applications with a precompiled native host, Bun and WebView",
+  "description": "Build macOS applications for humans and agents with a shared API, UI and CLI",
   "bin": {
     "fia": "bin/fia"
   },
@@ -14,6 +14,10 @@
   ],
   "type": "module",
   "exports": {
+    "./api": {
+      "types": "./dist/business-api.d.ts",
+      "import": "./dist/business-api.js"
+    },
     "./client": {
       "types": "./dist/client.d.ts",
       "import": "./dist/client.js",
@@ -39,12 +43,14 @@
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && bun build src/index.ts --target=bun --outfile=dist/index.js && bun build src/config.ts --target=bun --outfile=dist/config.js && bun build src/client.ts --target=browser --outfile=dist/client.js && bun build src/backend.ts --target=bun --outfile=dist/backend.js && bun build src/vite.ts --target=bun --outfile=dist/vite.js && bun ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "build": "bun scripts/build.ts",
     "test": "bun run build && bun test tests",
     "prepack": "bun run build && bun -e 'await import(\"./src/artifacts.ts\").then(m => m.verifyAssets())'"
   },
   "dependencies": {
-    "@clack/prompts": "^1.7.0"
+    "@clack/prompts": "^1.7.0",
+    "json-schema-to-typescript": "^15.0.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "19.2.17",

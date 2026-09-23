@@ -49,10 +49,18 @@ struct UpdateManagerTests {
     manager.confirmInstallation = { _ in false }
     #expect(try await manager.check().phase == "available")
     #expect(try await manager.download().phase == "downloaded")
-    #expect(try manager.apply().phase == "downloaded")
+    #expect(try await manager.apply().phase == "downloaded")
     #expect(try store.selected().release.build == 1)
     manager.confirmInstallation = { _ in true }
-    #expect(try manager.apply().phase == "applying")
+    manager.prepare = { throw UpdateError("update_busy") }
+    await #expect(throws: (any Error).self) { try await manager.apply() }
+    #expect(manager.state.phase == "downloaded")
+    #expect(try store.selected().release.build == 1)
+    await manager.checkAndPrompt()
+    #expect(manager.state.phase == "downloaded")
+    #expect(manager.state.message == "update_busy")
+    manager.prepare = nil
+    #expect(try await manager.apply().phase == "applying")
     for _ in 0..<100 where manager.state.phase == "applying" {
       try await Task.sleep(for: .milliseconds(10))
     }
@@ -73,7 +81,7 @@ struct UpdateManagerTests {
       if trial { throw UpdateError("candidate crashed") }
       restored = release.build
     }
-    _ = try manager.apply()
+    _ = try await manager.apply()
     for _ in 0..<100 where manager.state.phase == "applying" {
       try await Task.sleep(for: .milliseconds(10))
     }

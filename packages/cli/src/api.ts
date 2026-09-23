@@ -95,7 +95,16 @@ export type BuiltinScreenDescriptor = {
 
 export function createNativeAPI(transport: NativeTransport) {
   return {
+    agent: {
+      installCLI: (options?: NativeCallOptions) =>
+        transport.call<{ path: string; installed: boolean }>("agent.installCLI", {}, options),
+      status: (options?: NativeCallOptions) =>
+        transport.call<{ path: string; installed: boolean }>("agent.status", {}, options),
+      uninstallCLI: (options?: NativeCallOptions) =>
+        transport.call<{ path: string; installed: boolean }>("agent.uninstallCLI", {}, options),
+    },
     application: {
+      show: (options?: NativeCallOptions) => transport.call("application.show", {}, options),
       info: (options?: NativeCallOptions): Promise<BuiltinApplicationInfo> =>
         transport.call("application.info", {}, options),
       quit: (options?: NativeCallOptions): Promise<Record<string, never>> =>

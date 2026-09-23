@@ -409,6 +409,10 @@ public final class WindowManager {
     Set(instances.values.filter { $0.state.lifecycle != .closed }.map(\.id))
   }
   public func beginShutdown() { stopping = true }
+  func prepareHiddenMainWindow() throws {
+    if instances["main"]?.state.lifecycle == .closed { instances.removeValue(forKey: "main") }
+    _ = try create(definitions["main"] ?? WindowOptions(id: "main"))
+  }
   public func restoreMainWindow() throws { try operate("open", id: "main") }
   public init() {}
   func suspend() {
@@ -441,7 +445,6 @@ public final class WindowManager {
     instances[options.id] = window
     window.onContentFailure = { [weak self] in self?.onContentFailure?(options.id) }
     if connected, let url { window.load(url(window.id, window.route)) }
-    try window.show()
     return window.state
   }
   @discardableResult
@@ -482,7 +485,7 @@ public final class WindowManager {
     if operation == "open", instances[id]?.state.lifecycle == .closed, let options = definitions[id]
     {
       instances.removeValue(forKey: id)
-      return try create(options)
+      _ = try create(options)
     }
     guard let window = instances[id] else { throw failure("Window not found: " + id) }
     switch operation {

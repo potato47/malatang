@@ -17,7 +17,7 @@ async function fixture() {
   await writeFile(resolve(directory, "web/index.html"), "<main>FIA</main>");
   const secret = "s".repeat(64);
   const init: InitializeFrame = {
-    v: 4,
+    v: 5,
     type: "initialize",
     sessionSecret: secret,
     preferredPort: 0,

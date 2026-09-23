@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import Darwin
 import FIACore
 @_exported import FIAMacOS
 import Foundation
@@ -38,6 +39,8 @@ public final class FIARuntime {
   private var port = 0
   private var inspectionTask: Task<Void, Never>?
   private var transitioning = false
+  public var onShow: (() -> Void)?
+  private var background = false
   private var shutdownTask: Task<ShutdownReport, Never>?
   private var control: URL? {
     ProcessInfo.processInfo.environment["FIA_CONTROL_DIRECTORY"].map { URL(fileURLWithPath: $0) }
@@ -78,7 +81,7 @@ public final class FIARuntime {
       Dictionary(
         uniqueKeysWithValues: [
           "application", "windows", "dialogs", "clipboard", "keychain", "screens", "screenCapture",
-          "notifications", "system", "globalShortcuts",
+          "notifications", "system", "globalShortcuts", "agent",
         ].map { ($0, true) }))
     windows.appName = manifest.app.name
     windows.registerNativeMethods(native)
@@ -95,10 +98,20 @@ public final class FIARuntime {
       guard let self else { throw CancellationError() }
       try await self.activate(release, directory: directory, trial: trial)
     }
+    updater.prepare = { [weak self] in try await self?.updateGate("prepare") }
+    updater.resume = { [weak self] in try? await self?.updateGate("resume") }
+    updater.committed = { [weak self] in
+      guard let self else { return }
+      try self.publishAgentAssets()
+      try await self.updateGate("resume")
+    }
+    updater.allowsAutomaticPrompts = { [weak self] in self?.windows.states.contains(where: { $0.orderedIn }) ?? false }
     registerServices()
     registerRuntimeMethods()
   }
-  func start(automaticUpdates: Bool = true) async throws {
+  func start(automaticUpdates: Bool = true, background: Bool = false) async throws {
+    self.background = background
+    try publishAgentAssets()
     _ = try windows.create(WindowOptions(id: "main"))
     launchBackend()
     try await waitForBackend()
@@ -110,6 +123,8 @@ public final class FIARuntime {
       }
     }
     connectWindows()
+    try publishAgentAssets()
+    if !background { try windows.restoreMainWindow() }
     startInspection()
     if automaticUpdates { updater.startAutomaticChecks() }
   }
@@ -126,7 +141,7 @@ public final class FIARuntime {
       development: development, appName: manifest.app.name, appIdentifier: manifest.app.identifier,
       executable: bundle.bundleURL.appending(path: "Contents/Helpers/bun").path,
       arguments: ["--no-env-file", entry], sha256: manifest.bunSHA256,
-      sessionSecret: session, webRoot: activeDirectory.appending(path: "web").path,
+      sessionSecret: session, bundlePath: bundle.bundleURL.resolvingSymlinksInPath().path, runtimeId: manifest.runtimeId, agentCommand: manifest.agent?.command, updating: trial, webRoot: activeDirectory.appending(path: "web").path,
       resourceDirectory: resources.directory.path,
       developmentOrigin: developmentOrigin?.absoluteString, version: activeRelease.version,
       build: activeRelease.build, preferredPort: port, automaticallyRestart: !trial)
@@ -244,7 +259,7 @@ public final class FIARuntime {
     }
     connectWindows()
     if trial {
-      if windows.openIDs.isEmpty { try windows.restoreMainWindow() }
+      if windows.openIDs.isEmpty { try windows.prepareHiddenMainWindow(); connectWindows() }
       while !windows.openIDs.isSubset(of: frontendReady) {
         try Task.checkCancellation()
         if !backendReady || frontendFailure != nil || Date() >= deadline {
@@ -261,6 +276,37 @@ public final class FIARuntime {
         try await Task.sleep(for: .milliseconds(100))
       }
       backend?.allowsAutomaticRestart = true
+    } else {
+      try publishAgentAssets()
+      try await updateGate("resume")
+    }
+  }
+  func presentMainWindow() throws { background = false; try windows.restoreMainWindow() }
+  func manageCLI(_ command: String) async throws -> AgentCLIStatus {
+    try await AgentCLI.manage(bundleURL: bundle.bundleURL, support: supportDirectory.appending(path: manifest.app.identifier), command: command)
+  }
+  private func publishAgentAssets() throws {
+    guard manifest.agent != nil else { return }
+    let source = activeDirectory.appending(path: "agent")
+    guard FileManager.default.fileExists(atPath: source.path) else { throw UpdateError("Agent assets are missing") }
+    let directory = supportDirectory.appending(path: manifest.app.identifier + "/Agent")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    let temporary = directory.appending(path: "current-" + UUID().uuidString)
+    try FileManager.default.createSymbolicLink(at: temporary, withDestinationURL: source)
+    let target = directory.appending(path: "current")
+    guard Darwin.rename(temporary.path, target.path) == 0 else { try? FileManager.default.removeItem(at: temporary); throw UpdateError("Could not publish agent assets") }
+  }
+  private func updateGate(_ action: String) async throws {
+    guard let origin = backendOrigin else { throw UpdateError("Backend is unavailable") }
+    var request = URLRequest(url: origin.appending(path: "_fia/update/" + action))
+    request.httpMethod = "POST"; request.setValue(session, forHTTPHeaderField: "x-fia-session"); request.timeoutInterval = 5
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+      struct Failure: Decodable { struct Detail: Decodable { let code: String; let message: String }; let error: Detail }
+      if let failure = try? JSONDecoder().decode(Failure.self, from: data) {
+        throw FIAError(code: FIAErrorCode(rawValue: failure.error.code), component: "updates", message: failure.error.message, recoverable: true)
+      }
+      throw UpdateError(String(decoding: data, as: UTF8.self))
     }
   }
   private func emit<Value: Encodable>(_ event: String, _ value: Value) {
@@ -280,7 +326,7 @@ public final class FIARuntime {
           "backend": self.backendReady
             ? "ready" : (self.backendFailure == nil ? "starting" : "failed"),
           "build": self.activeRelease.build,
-          "windows": self.windows.registeredIDs, "frontendsReady": self.frontendReady.sorted(),
+          "windows": self.windows.registeredIDs, "visibleWindows": self.windows.states.filter { $0.orderedIn }.map(\.id), "background": self.background, "frontendsReady": self.frontendReady.sorted(),
           "methods": self.native.methods,
           "processGroups": [self.backend?.processIdentifier].compactMap { $0 },
         ]
@@ -373,6 +419,20 @@ public final class FIARuntime {
     }
   }
   private func registerServices() {
+    native.register("application.show", input: FIAEmpty.self, output: FIAEmpty.self, permission: "application") { [weak self] _ in
+      try await MainActor.run {
+        guard let self else { throw CancellationError() }
+        self.background = false
+        if let show = self.onShow { show() } else { try self.windows.restoreMainWindow() }
+        return FIAEmpty()
+      }
+    }
+    for (method, command) in [("agent.installCLI", "install"), ("agent.status", "installation-status"), ("agent.uninstallCLI", "uninstall")] {
+      native.register(method, input: FIAEmpty.self, output: AgentCLIStatus.self, permission: "agent") { [weak self] _ in
+        guard let self else { throw CancellationError() }
+        return try await self.manageCLI(command)
+      }
+    }
     native.register(
       "application.info", input: FIAEmpty.self, output: ApplicationInfo.self,
       permission: "application"
@@ -387,7 +447,11 @@ public final class FIARuntime {
     native.register(
       "application.quit", input: FIAEmpty.self, output: FIAEmpty.self, permission: "application"
     ) { _ in
-      await MainActor.run { FIAApplication.requestQuit() }
+      Task { @MainActor in
+        // Send the native and CLI acknowledgements before shutdown cancels transports.
+        try? await Task.sleep(for: .milliseconds(100))
+        FIAApplication.requestQuit()
+      }
       return FIAEmpty()
     }
     native.register(
@@ -555,6 +619,7 @@ struct RuntimeManifest: Codable, Sendable {
   let bunSHA256: String
   let runtimeId: String
   let developmentEntry: String?
+  var agent: AgentConfiguration? = nil
   let statusItem: StatusItem?
   let updates: UpdateConfiguration?
   static func load() throws -> RuntimeManifest {
@@ -562,7 +627,7 @@ struct RuntimeManifest: Codable, Sendable {
       throw UpdateError("FIA must run from an application bundle")
     }
     let value = try JSONDecoder().decode(Self.self, from: Data(contentsOf: path))
-    guard value.schema == 3, value.frameworkVersion == FIAVersion.current else {
+    guard value.schema == 4, value.agent != nil, value.frameworkVersion == FIAVersion.current else {
       throw UpdateError("Incompatible FIA runtime manifest")
     }
     return value

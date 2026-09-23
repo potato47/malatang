@@ -69,7 +69,7 @@ struct RuntimeUpdateTests {
       "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>CFBundleIdentifier</key><string>com.example.updates</string><key>CFBundleExecutable</key><string>FIAHost</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>"
         .utf8
     ).write(to: bundleURL.appending(path: "Contents/Info.plist"))
-    let first = try f.write(1, at: factory, backend: backend, frontend: frontend)
+    let first = try f.write(1, at: factory, backend: backend, frontend: frontend, extra: ["agent/update-test/SKILL.md": "skill-1"])
     let bundle = try #require(Bundle(url: bundleURL))
     let networkConfig = URLSessionConfiguration.ephemeral
     networkConfig.protocolClasses = [RuntimeUpdateURLProtocol.self]
@@ -78,12 +78,13 @@ struct RuntimeUpdateTests {
     try await codesign(["--force", "--sign", "-", helpers.appending(path: "bun").path])
     try await codesign(["--force", "--sign", "-", executables.appending(path: "FIAHost").path])
     let manifest = RuntimeManifest(
-      schema: 3, frameworkVersion: FIAVersion.current,
+      schema: 4, frameworkVersion: FIAVersion.current,
       app: .init(
         name: "Update Test", identifier: first.identifier, version: first.version, build: 1),
       bunSHA256: try fileSHA256(helpers.appending(path: "bun")), runtimeId: first.runtimeId,
       developmentEntry: nil,
-      statusItem: nil,
+      agent: AgentConfiguration(command: "update-test", description: "Update test"),
+      statusItem: .init(symbol: "number.circle", tooltip: "FIA test"),
       updates: UpdateConfiguration(
         url: "https://example.com/latest.json", publicKey: f.publicKey, downloadURL: nil))
     try JSONEncoder().encode(manifest).write(
@@ -95,12 +96,26 @@ struct RuntimeUpdateTests {
       updateNetwork: network)
     runtime.updater.confirmInstallation = { _ in true }
     do {
-      try await runtime.start(automaticUpdates: false)
+      try await runtime.start(automaticUpdates: false, background: true)
+      #expect(runtime.windows.states.allSatisfy { !$0.orderedIn })
+      let delegate = ApplicationDelegate(runtime: runtime, manifest: manifest, headless: true)
+      delegate.installStatusItem()
+      let tray = try #require(delegate.statusItem)
+      defer { NSStatusBar.system.removeStatusItem(tray) }
+      let menu = try #require(tray.menu)
+      #expect(menu.items.map(\.title) == ["Show", "Install Command Line Tool…", "", "Quit"])
+      #expect(menu.items.last?.action == #selector(NSApplication.terminate(_:)))
+      menu.performActionForItem(at: 0)
+      #expect(runtime.windows.states.contains { $0.id == "main" && $0.orderedIn })
+      _ = try runtime.windows.operate("hide", id: "main")
+      #expect(runtime.windows.states.allSatisfy { !$0.orderedIn })
+      let installedSkill = f.root.appending(path: "data/\(first.identifier)/Agent/current/update-test/SKILL.md")
+      #expect(try String(contentsOf: installedSkill, encoding: .utf8) == "skill-1")
       let windows = runtime.windows.registeredIDs
       #expect(windows == ["aux", "main"])
       func offer(_ build: Int, code: String, page: String) throws {
         let remote = f.root.appending(path: "remote/\(build)")
-        let release = try f.write(build, at: remote, backend: code, frontend: page)
+        let release = try f.write(build, at: remote, backend: code, frontend: page, extra: ["agent/update-test/SKILL.md": "skill-\(build)"])
         RuntimeUpdateURLProtocol.files = [
           "https://example.com/latest.json": try Data(
             contentsOf: remote.appending(path: "release.json"))
@@ -113,7 +128,7 @@ struct RuntimeUpdateTests {
       func applyAndWait() async throws {
         _ = try await runtime.updater.check()
         _ = try await runtime.updater.download()
-        _ = try runtime.updater.apply()
+        _ = try await runtime.updater.apply()
         let deadline = Date().addingTimeInterval(48)
         while runtime.updater.state.phase == "applying" {
           if Date() >= deadline { throw UpdateError("Runtime update did not finish") }
@@ -122,6 +137,8 @@ struct RuntimeUpdateTests {
       }
       try offer(2, code: backend, page: frontend)
       try await applyAndWait()
+      #expect(try String(contentsOf: installedSkill, encoding: .utf8) == "skill-2")
+      #expect(runtime.windows.states.allSatisfy { !$0.orderedIn })
       #expect(runtime.updater.state.phase == "current")
       #expect(runtime.windows.registeredIDs == windows)
       #expect(try await currentBuild(runtime) == 2)
@@ -131,13 +148,18 @@ struct RuntimeUpdateTests {
       try await applyAndWait()
       #expect(runtime.updater.state.phase == "failed")
       #expect(try await currentBuild(runtime) == 2)
+      #expect(try String(contentsOf: installedSkill, encoding: .utf8) == "skill-2")
 
+      // Closed windows must not allow a broken frontend to bypass hidden validation.
+      for id in runtime.windows.openIDs { _ = try runtime.windows.operate("close", id: id) }
       // Serving HTML alone is insufficient: every WebView must report its first mount.
       try offer(4, code: backend, page: "<!doctype html><html><body>No ready report</body></html>")
       try await applyAndWait()
       #expect(runtime.updater.state.phase == "failed")
       #expect(try await currentBuild(runtime) == 2)
       #expect(runtime.windows.registeredIDs == windows)
+      #expect(try String(contentsOf: installedSkill, encoding: .utf8) == "skill-2")
+      #expect(runtime.windows.states.allSatisfy { !$0.orderedIn })
       #expect(try await runtime.updater.check().phase == "current")
       try await codesign(["--verify", "--deep", "--strict", bundleURL.path])
     } catch {
