@@ -1,13 +1,18 @@
 import { z } from "zod";
 import type { BackendRouteContext } from "./backend.ts";
 export { z };
+import { assertJSON, type EventOptions } from "./api-values.ts";
+export { assertJSON } from "./api-values.ts";
+export type { EventOptions, JSONScalar } from "./api-values.ts";
 
+/** Request and response JSON envelopes each have a 1 MiB UTF-8 limit. Use pagination for large results. */
 export interface APIMethod {
   description: string;
   input: z.ZodType;
   output: z.ZodType;
   examples?: readonly { input: unknown; output?: unknown }[];
 }
+/** Each encoded event frame is limited to 1 MiB; delivery is live-only, without replay. */
 export interface APIEvent {
   description: string;
   payload: z.ZodType;
@@ -42,17 +47,20 @@ export interface APIClient<C extends APIContract = APIContract> {
   on<K extends keyof C["events"] & string>(
     event: K,
     listener: (payload: z.output<C["events"][K]["payload"]>) => void,
+    options?: EventOptions,
   ): () => void;
   onReconnect(listener: () => void): () => void;
   close(): void;
 }
 export interface InvocationContext<
   C extends APIContract = APIContract,
-> extends BackendRouteContext {
+> extends BackendRouteContext<C> {
   source: "ui" | "cli" | "script";
   requestId: string;
   sessionId: string;
   signal: AbortSignal;
+}
+export interface APIEmitter<C extends APIContract = APIContract> {
   emit<K extends keyof C["events"] & string>(
     event: K,
     payload: z.input<C["events"][K]["payload"]>,
@@ -64,8 +72,8 @@ export type APIHandlers<C extends APIContract> = {
     context: InvocationContext<C>,
   ) => z.input<C["methods"][K]["output"]> | Promise<z.input<C["methods"][K]["output"]>>;
 };
-export interface APIImplementation {
-  contract: APIContract;
+export interface APIImplementation<C extends APIContract = APIContract> {
+  contract: C;
   handlers: Record<string, (input: never, context: InvocationContext) => unknown>;
 }
 export function defineAPI<
@@ -79,7 +87,7 @@ export function defineAPI<
 export function implementAPI<C extends APIContract>(
   contract: C,
   handlers: APIHandlers<C>,
-): APIImplementation {
+): APIImplementation<C> {
   for (const name of new Set([...Object.keys(contract.methods), ...Object.keys(handlers)])) {
     if (!Object.hasOwn(contract.methods, name) || typeof handlers[name] !== "function")
       throw new TypeError("API handler mismatch: " + name);
@@ -95,13 +103,23 @@ export function describeAPI(contract: APIContract): APISchema {
     )
       throw new TypeError("API names and descriptions are required: " + key);
   };
+  const schema = (value: z.ZodType, path: string, io: "input" | "output" = "output") => {
+    try {
+      return z.toJSONSchema(value, { io, unrepresentable: "throw" });
+    } catch (error) {
+      throw new TypeError(
+        `Invalid API schema at ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  };
   return {
     protocolVersion: 1,
     methods: Object.fromEntries(
       Object.entries(contract.methods).map(([key, method]) => {
         name(key, method.description);
-        const input = z.toJSONSchema(method.input, { io: "input", unrepresentable: "throw" });
-        const output = z.toJSONSchema(method.output, { unrepresentable: "throw" });
+        const input = schema(method.input, `methods.${key}.input`, "input");
+        const output = schema(method.output, `methods.${key}.output`);
         for (const example of method.examples ?? []) {
           assertJSON(example);
           method.input.parse(example.input);
@@ -125,30 +143,10 @@ export function describeAPI(contract: APIContract): APISchema {
           key,
           {
             description: event.description,
-            payload: z.toJSONSchema(event.payload, { unrepresentable: "throw" }),
+            payload: schema(event.payload, `events.${key}.payload`),
           },
         ];
       }),
     ),
   };
-}
-export function assertJSON(value: unknown, seen = new Set<object>()): void {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    (typeof value === "number" && Number.isFinite(value))
-  )
-    return;
-  if (typeof value !== "object" || seen.has(value))
-    throw new TypeError("API values must be JSON serializable");
-  if (
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) !== Object.prototype &&
-    Object.getPrototypeOf(value) !== null
-  )
-    throw new TypeError("API values must be plain JSON");
-  seen.add(value);
-  for (const child of Array.isArray(value) ? value : Object.values(value)) assertJSON(child, seen);
-  seen.delete(value);
 }

@@ -1,12 +1,16 @@
 import { APIServer, apiError } from "./api-server.ts";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { APIError } from "./api-client.ts";
+import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { BackendDefinition, BackendRouteContext, InitializeFrame } from "./backend.ts";
 
 const equal = (a: string, b: string) =>
   Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-const response = (message: string, status: number) => new Response(message, { status });
+const response = (message: string, status: number) =>
+  status === 401 || status === 403
+    ? apiError(new APIError(status === 401 ? "unauthorized" : "forbidden", message), status)
+    : new Response(message, { status });
 const safePath = (path: string) =>
   path.startsWith("/") &&
   !path.startsWith("//") &&
@@ -17,12 +21,22 @@ type Socket = Bun.ServerWebSocket<unknown>;
 /** Bun is the only HTTP authority. All native operations leave it over stdio. */
 export function createGateway<Data, Paths extends string>(
   input: BackendDefinition<Data, Paths>,
-  context: BackendRouteContext,
+  routeContext: Omit<BackendRouteContext, "emit"> & Partial<Pick<BackendRouteContext, "emit">>,
   init: InitializeFrame,
   api?: APIServer,
   update?: (action: "prepare" | "resume") => Promise<void>,
 ) {
   const definition = input as unknown as BackendDefinition;
+  const context: BackendRouteContext = {
+    ...routeContext,
+    emit:
+      routeContext.emit ??
+      api?.emit ??
+      (() => {
+        throw new APIError("not_found", "No API events are configured");
+      }),
+  };
+  const browserTickets = new Map<string, number>();
   const cookieName = "fia_" + init.sessionSecret.slice(0, 12);
   const usedTickets = new Set<string>();
   const nativeSockets = new Map<Socket, Map<number, AbortController>>();
@@ -65,9 +79,48 @@ export function createGateway<Data, Paths extends string>(
   }
   const gateway = {
     ready: false,
+    issueBrowserURL(): string {
+      if (!init.development || !init.developmentOrigin)
+        throw new APIError("forbidden", "Browser tickets are only available in fia dev");
+      for (const [ticket, expires] of browserTickets)
+        if (expires <= Date.now()) browserTickets.delete(ticket);
+      if (browserTickets.size >= 64)
+        throw new APIError(
+          "resource_limit",
+          "Too many outstanding browser tickets; retry after 60 seconds",
+        );
+      const ticket = randomBytes(32).toString("hex");
+      browserTickets.set(ticket, Date.now() + 60_000);
+      const url = new URL("/_fia/dev/bootstrap", init.developmentOrigin);
+      url.searchParams.set("ticket", ticket);
+      return url.href;
+    },
     async fetch(request: Request, server: Bun.Server<unknown>): Promise<Response | undefined> {
       const url = new URL(request.url);
       const path = url.pathname;
+      if (path === "/_fia/dev/bootstrap") {
+        if (!init.development || !init.developmentOrigin) return response("Not Found", 404);
+        const ticket = url.searchParams.get("ticket") ?? "";
+        const expires = browserTickets.get(ticket) ?? 0;
+        if (
+          request.method !== "GET" ||
+          !validOrigins(server).some((origin) => new URL(origin).host === url.host)
+        )
+          return response("Invalid browser request", 403);
+        browserTickets.delete(ticket);
+        if (expires <= Date.now()) return response("Invalid or expired browser ticket", 403);
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              "/?" + new URLSearchParams({ fiaBrowser: "1", fiaGeneration: init.generation }),
+            "set-cookie":
+              cookieName + "=" + init.sessionSecret + "; HttpOnly; SameSite=Strict; Path=/",
+            "cache-control": "no-store",
+            "referrer-policy": "no-referrer",
+          },
+        });
+      }
       if (path === "/_fia/bootstrap") {
         const id = url.searchParams.get("window") ?? "";
         const route = url.searchParams.get("route") ?? "/";
@@ -126,8 +179,16 @@ export function createGateway<Data, Paths extends string>(
           { status: gateway.ready ? 200 : 503 },
         );
       if (path === "/_fia/ready" && request.method === "POST") {
-        const body = (await request.json()) as { windowId?: string; generation?: string };
+        const body = (await request.json()) as {
+          windowId?: string;
+          generation?: string;
+          browser?: boolean;
+        };
         if (body.generation !== init.generation) return response("Stale frontend", 409);
+        if (body.browser === true) {
+          if (!init.development) return response("Browser readiness is development-only", 403);
+          return Response.json({ ok: true });
+        }
         await context.native.call("runtime.frontendReady", body);
         return Response.json({ ok: true });
       }

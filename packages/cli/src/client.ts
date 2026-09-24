@@ -221,6 +221,7 @@ export class NativeClient extends EventTarget implements NativeTransport {
       body: JSON.stringify({
         windowId: query.get("fiaWindow") ?? "main",
         generation: query.get("fiaGeneration"),
+        ...(query.get("fiaBrowser") === "1" ? { browser: true } : {}),
       }),
     });
     if (!response.ok) throw new Error("FIA frontend readiness was rejected");

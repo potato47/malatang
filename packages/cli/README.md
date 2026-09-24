@@ -16,7 +16,7 @@ There is one project template. `create` accepts `--yes`, `--git/--no-git`, `--in
 | Command                               | Purpose                                                    |
 | ------------------------------------- | ---------------------------------------------------------- |
 | `agent <args>`                        | Invoke this project’s running development application      |
-| `dev`                                 | Native window, Vite HMR and supervised Bun restart         |
+| `dev [--open-browser]`                | Native window, Vite HMR and supervised Bun restart         |
 | `run`                                 | Build and launch a production layout                       |
 | `build`                               | Assemble and sign a local `.app` without Swift compilation |
 | `release`                             | Developer ID signing, notarization, stapling and ZIP       |
@@ -91,4 +91,17 @@ Calls automatically start the app without presenting a window. `open` presents t
 
 The CLI launcher, command name and Bun are part of the immutable runtime. API handlers, schema, UI, skill and type definitions are a single signed code release. Active calls/scripts or an application `beforeUpdate` veto postpone activation. CLI calls return `updating` during the switch and observation period. Candidate skills remain unpublished until commit; rollback retains the previous skill.
 
-See [FIA 4 migration](../../docs/framework/migration-v4.md) and [framework contract](../../docs/framework/README.md).
+See [FIA 4 migration](docs/framework/migration-v4.md) and [framework contract](docs/framework/README.md).
+
+## Browser debugging and event waits
+
+`fia dev` prints a one-use browser URL that expires after 60 seconds. Use `fia dev --open-browser` to open it automatically, or `fia agent open --browser --url` to get a new URL for browser automation. Omit `--url` to open it in the default browser. Obtain a new URL after a backend restart; the bare Vite URL does not establish authentication. Browser debugging connects to the running native host, and is unavailable in production.
+
+```sh
+my-app events session.changed --jsonl --count 1 --timeout 30000 \
+  --match '{"sessionId":"session-1","status":"idle"}'
+```
+
+Matching uses top-level scalar equality (all fields must match). Count completion exits 0; timeout exits 124 without an error frame; cancellation exits 130. No count means unlimited events; no timeout or 0 means unlimited time. Subscribe before triggering work and read current state after waiting; events have no replay.
+
+Shared API requests, responses and individual events each have a 1 MiB UTF-8 limit, including their envelope. Use pagination for histories and custom `defineBackend.http` routes for attachments or token streams. Routes are relative to `/api` and are not exposed by the application CLI. Background lifecycle hooks and routes receive typed `context.emit`. See the packaged [framework documentation](docs/framework/README.md) for background tasks, JSON diagnostics and WebSocket option sharing.

@@ -24,7 +24,7 @@ export const help = `FIA ${CLI_VERSION} — macOS applications for humans and ag
 
 fia create [name] [--yes] [--git|--no-git] [--install|--no-install] [--local]
 fia agent <args>         Call this project's running development application
-fia dev                  Vite HMR and supervised Bun restart
+fia dev [--open-browser] Vite HMR and supervised Bun restart
 fia run                  Build and run a production .app
 fia build                Assemble an application using precompiled runtimes
 fia release [--update]   Notarized installer or signed frontend/backend update
@@ -136,14 +136,15 @@ export async function runCLI(args: readonly string[], cwd = process.cwd()): Prom
       rest.some(
         (arg) =>
           !(command === "release" && arg === "--update") &&
-          !(command === "smoke" && arg === "--json"),
+          !(command === "smoke" && arg === "--json") &&
+          !(command === "dev" && arg === "--open-browser"),
       )
     )
       throw new Error("Unknown option for " + command);
     const config = await loadProjectConfig(cwd);
     switch (command) {
       case "dev":
-        await runDevelopment(config);
+        await runDevelopment(config, console.log, { openBrowser: rest.includes("--open-browser") });
         break;
       case "run":
         return await runApplication(config);

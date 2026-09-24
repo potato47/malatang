@@ -13,7 +13,7 @@ cd my-app
 bun run dev
 ```
 
-应用开发不需要 Swift 编译器或 Xcode 工程。`fia dev` 自动启动窗口、Bun 和 Vite；前端使用 HMR，后端变更执行受控进程重启。
+应用开发不需要 Swift 编译器或 Xcode 工程。`fia dev` 自动启动窗口、Bun 和 Vite；前端使用 HMR，后端变更执行受控进程重启。`fia dev --open-browser` 可打开普通浏览器调试；使用 `fia agent open --browser --url` 获取新的单次认证链接。
 
 项目入口：
 

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { APIError, createAPIClient, readLines, readResult, type APIFetch } from "./api-client.ts";
 import { installSkill, manageCLI, type AgentInstallation } from "./agent-install.ts";
+import { eventPath, parseEventMatch } from "./api-values.ts";
 import type { AgentRecord } from "./agent-server.ts";
 
 export function agentFetch(record: AgentRecord, source: "cli" | "script" = "cli"): APIFetch {
@@ -237,7 +238,26 @@ export async function runAgentCLI(
       return 0;
     }
     if (command === "open" || command === "quit") {
+      const browser = command === "open" && flag(args, "--browser");
+      const urlOnly = command === "open" && flag(args, "--url");
       noExtra(args);
+      if (urlOnly && !browser) throw new APIError("usage", "--url requires open --browser");
+      if (browser) {
+        const { url } = (await readResult(
+          await send("/browser", { method: "POST", signal: lifetime.signal }),
+        )) as { url: string };
+        if (urlOnly) process.stdout.write(url + "\n");
+        else {
+          const child = Bun.spawn(["/usr/bin/open", url], { stdout: "ignore", stderr: "pipe" });
+          if (await child.exited)
+            throw new APIError(
+              "open_failed",
+              "Could not open the browser; use open --browser --url",
+            );
+          emit({ url });
+        }
+        return 0;
+      }
       emit(
         await readResult(await send("/" + command, { method: "POST", signal: lifetime.signal })),
       );
@@ -250,7 +270,7 @@ export async function runAgentCLI(
       if (command === "schema") emit(schema);
       else
         process.stdout.write(
-          `${app.command} — ${record.description ?? manifest.agent.description ?? manifest.app.name}\n\nCommands: help, schema --json, call METHOD --json JSON, events EVENT --jsonl, exec (--file FILE | -e CODE | < stdin) [--timeout MS] [--jsonl], open, status --json, quit, install, uninstall, skill install [--dir DIRECTORY]\n\n${JSON.stringify(schema, null, 2)}\n`,
+          `${app.command} — ${record.description ?? manifest.agent.description ?? manifest.app.name}\n\nCommands: help, schema --json, call METHOD --json JSON, events EVENT --jsonl [--count N] [--timeout MS] [--match JSON], exec (--file FILE | -e CODE | < stdin) [--timeout MS] [--jsonl], open [--browser [--url]], status --json, quit, install, uninstall, skill install [--dir DIRECTORY]\n\n${JSON.stringify(schema, null, 2)}\n`,
         );
       return 0;
     }
@@ -265,20 +285,60 @@ export async function runAgentCLI(
     if (command === "events") {
       const event = args.shift();
       flag(args, "--jsonl");
+      const countArg = option(args, "--count");
+      const timeoutArg = option(args, "--timeout");
+      const matchArg = option(args, "--match");
       noExtra(args);
-      const schema = (await readResult(await send("/schema"))) as {
+      const count = countArg === undefined ? Infinity : Number(countArg);
+      const timeout = timeoutArg === undefined ? 0 : Number(timeoutArg);
+      if (
+        (countArg !== undefined &&
+          (!/^\d+$/u.test(countArg) || !Number.isSafeInteger(count) || count < 1)) ||
+        (timeoutArg !== undefined &&
+          (!/^\d+$/u.test(timeoutArg) || !Number.isSafeInteger(timeout) || timeout > 2_147_483_647))
+      )
+        throw new APIError(
+          "usage",
+          "--count must be positive; --timeout must be 0..2147483647 milliseconds",
+        );
+      let match;
+      try {
+        match = matchArg === undefined ? undefined : parseEventMatch(JSON.parse(matchArg));
+      } catch (error) {
+        throw new APIError("usage", error instanceof Error ? error.message : String(error));
+      }
+      const schema = (await readResult(await send("/schema", { signal: lifetime.signal }))) as {
         events: Record<string, unknown>;
       };
       if (!event || !Object.hasOwn(schema.events, event))
         throw new APIError("not_found", "Unknown event: " + event);
-      for await (const frame of readLines(await send("/events", { signal: lifetime.signal })))
-        if (frame.type === "event" && frame.event === event) emit(frame);
-      if (!lifetime.signal.aborted)
+      const waiting = new AbortController();
+      const signal = AbortSignal.any([lifetime.signal, waiting.signal]);
+      const timer = timeout ? setTimeout(() => waiting.abort(), timeout) : undefined;
+      let received = 0;
+      try {
+        for await (const frame of readLines(
+          await send(eventPath([{ event, ...(match ? { match } : {}) }]), { signal }),
+        )) {
+          if (frame.type === "event" && frame.event === event) {
+            emit(frame);
+            if (++received >= count) return 0;
+          }
+        }
+        if (lifetime.signal.aborted) throw lifetime.signal.reason;
+        if (waiting.signal.aborted) return 124;
         throw new APIError(
           "disconnected",
           "Event connection closed; refresh state before subscribing again",
         );
-      return 130;
+      } catch (error) {
+        if (lifetime.signal.aborted) throw lifetime.signal.reason;
+        if (waiting.signal.aborted) return 124;
+        throw error;
+      } finally {
+        clearTimeout(timer);
+        waiting.abort();
+      }
     }
     if (command === "exec") return await executeScript(args, app, record, lifetime.signal);
     throw new APIError("usage", "Unknown command: " + command);

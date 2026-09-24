@@ -10,7 +10,7 @@ const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const dispose of cleanup.splice(0)) await dispose();
 });
-async function fixture() {
+async function fixture(development = false) {
   const directory = await mkdtemp(resolve(tmpdir(), "fia-gateway-"));
   await mkdir(resolve(directory, "web"));
   await mkdir(resolve(directory, "resources"));
@@ -22,7 +22,8 @@ async function fixture() {
     sessionSecret: secret,
     preferredPort: 0,
     generation: "generation-1",
-    development: false,
+    development,
+    ...(development ? { developmentOrigin: "http://127.0.0.1:5173" } : {}),
     webRoot: resolve(directory, "web"),
     resourceDirectory: resolve(directory, "resources"),
     applicationSupport: directory,
@@ -115,6 +116,7 @@ async function fixture() {
   });
   return {
     server,
+    gateway,
     origin,
     init,
     cookie,
@@ -243,4 +245,49 @@ test("SSE cancellation releases the upstream operation", async () => {
   controller.abort();
   for (let i = 0; i < 100 && !f.aborted(); i++) await Bun.sleep(10);
   expect(f.aborted()).toBe(true);
+});
+
+test("development browser tickets are one-use, expire and never report native window readiness", async () => {
+  const f = await fixture(true);
+  const issued = f.gateway.issueBrowserURL();
+  const url = f.origin + new URL(issued).pathname + new URL(issued).search;
+  const first = await fetch(url, { redirect: "manual" });
+  expect(first.status).toBe(302);
+  expect(first.headers.get("location")).toContain("fiaBrowser=1");
+  expect(first.headers.get("set-cookie")).toContain("HttpOnly; SameSite=Strict");
+  expect(first.headers.get("referrer-policy")).toBe("no-referrer");
+  expect((await fetch(url, { redirect: "manual" })).status).toBe(403);
+  const cookie = first.headers.get("set-cookie")!.split(";")[0]!;
+  expect((await fetch(f.origin + "/api/hello/browser", { headers: { cookie } })).status).toBe(200);
+  const ready = (generation: string) =>
+    fetch(f.origin + "/_fia/ready", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ browser: true, generation }),
+    });
+  expect((await ready(f.init.generation)).status).toBe(200);
+  expect(f.calls).not.toContain("runtime.frontendReady");
+  expect((await ready("old-generation")).status).toBe(409);
+  const second = new URL(f.gateway.issueBrowserURL());
+  const originalNow = Date.now;
+  try {
+    const now = Date.now();
+    Date.now = () => now + 60_001;
+    expect(
+      (await f.gateway.fetch(new Request(f.origin + second.pathname + second.search), f.server))
+        ?.status,
+    ).toBe(403);
+  } finally {
+    Date.now = originalNow;
+  }
+  const other = await fixture(true);
+  const third = new URL(f.gateway.issueBrowserURL());
+  expect(
+    (await fetch(other.origin + third.pathname + third.search, { redirect: "manual" })).status,
+  ).toBe(403);
+  const production = await fixture();
+  expect(() => production.gateway.issueBrowserURL()).toThrow("fia dev");
+  expect((await fetch(production.origin + third.pathname + third.search)).status).toBe(404);
+  const denied = await fetch(f.origin + "/api/hello/test");
+  expect(await denied.json()).toMatchObject({ error: { code: "unauthorized" } });
 });

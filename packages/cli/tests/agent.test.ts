@@ -36,9 +36,15 @@ const contract = defineAPI({
     "bad.output": { description: "Invalid output", input: z.strictObject({}), output: z.number() },
     wait: { description: "Wait for cancellation", input: z.strictObject({}), output: z.null() },
   },
-  events: { "counter.changed": { description: "Changed", payload: z.number() } },
+  events: {
+    "counter.changed": { description: "Changed", payload: z.number() },
+    "session.changed": {
+      description: "Session",
+      payload: z.object({ sessionId: z.string(), status: z.string() }),
+    },
+  },
 });
-async function fixture() {
+async function fixture(development = false) {
   const root = await realpath(await mkdtemp(resolve(tmpdir(), "fia-agent-")));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const bundlePath = resolve(root, "Test App.app");
@@ -108,7 +114,7 @@ async function fixture() {
     type: "initialize",
     sessionSecret: "x".repeat(64),
     preferredPort: 0,
-    development: false,
+    development,
     applicationSupport: resolve(supportPath, "Backend"),
     generation: crypto.randomUUID(),
     webRoot: root,
@@ -120,7 +126,11 @@ async function fixture() {
     runtimeId: "runtime",
     agentCommand: "test-app",
   };
-  const server = await startAgentServer(api, init);
+  const server = await startAgentServer(
+    api,
+    init,
+    () => "http://127.0.0.1:5173/_fia/dev/bootstrap?ticket=test",
+  );
   cleanup.push(() => server.stop());
   const record = JSON.parse(
     await readFile(resolve(supportPath, "Agent/instance.json"), "utf8"),
@@ -455,4 +465,64 @@ test("CLI and skill installation are explicit, repairable and never overwrite fo
   await symlink(resolve(f.root, "assets"), resolve(f.supportPath, "Agent/current"));
   const skill = await installSkill(app, resolve(f.root, "skills"));
   expect(await readFile(resolve(skill.path, "SKILL.md"), "utf8")).toBe("version one");
+});
+
+test("CLI event waits filter, count, time out quietly and preserve cancellation", async () => {
+  const f = await fixture();
+  const timeout = await f.cli(["events", "counter.changed", "--jsonl", "--timeout", "25"]);
+  expect(timeout).toEqual({ stdout: "", stderr: "", exitCode: 124 });
+  for (const args of [
+    ["--count", "0"],
+    ["--timeout", "-1"],
+    ["--match", "[]"],
+    ["--match", '{"x":{}}'],
+  ])
+    expect((await f.cli(["events", "counter.changed", ...args])).exitCode).toBe(2);
+  const child = f.spawn([
+    "events",
+    "session.changed",
+    "--count",
+    "2",
+    "--timeout",
+    "2000",
+    "--match",
+    '{"sessionId":"a","status":"idle"}',
+  ]);
+  await until(() => (f.api as unknown as { streams: Set<unknown> }).streams.size === 1);
+  f.api.emit("session.changed", { sessionId: "b", status: "idle" });
+  f.api.emit("session.changed", { sessionId: "a", status: "running" });
+  f.api.emit("session.changed", { sessionId: "a", status: "idle" });
+  f.api.emit("session.changed", { sessionId: "a", status: "idle" });
+  expect(await child.exited).toBe(0);
+  expect(
+    (await new Response(child.stdout).text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).payload),
+  ).toEqual([
+    { sessionId: "a", status: "idle" },
+    { sessionId: "a", status: "idle" },
+  ]);
+  expect(await new Response(child.stderr).text()).toBe("");
+  await until(() => (f.api as unknown as { streams: Set<unknown> }).streams.size === 0);
+  const cancelled = f.spawn(["events", "counter.changed"]);
+  await until(() => (f.api as unknown as { streams: Set<unknown> }).streams.size === 1);
+  cancelled.kill("SIGINT");
+  expect(await cancelled.exited).toBe(130);
+  expect(await new Response(cancelled.stdout).text()).toBe("");
+  expect(await new Response(cancelled.stderr).text()).toContain('"cancelled"');
+});
+
+test("browser URLs require the authenticated development agent endpoint", async () => {
+  const production = await fixture();
+  expect((await production.cli(["open", "--browser", "--url"])).exitCode).toBe(1);
+  const dev = await fixture(true);
+  const result = await dev.cli(["open", "--browser", "--url"]);
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout.trim()).toBe("http://127.0.0.1:5173/_fia/dev/bootstrap?ticket=test");
+  expect(result.stderr).toBe("");
+  expect((await dev.cli(["open", "--url"])).exitCode).toBe(2);
+  expect(
+    (await fetch("http://localhost/browser", { unix: dev.record.socket, method: "POST" })).status,
+  ).toBe(401);
 });

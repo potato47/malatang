@@ -10,7 +10,8 @@
     "dist",
     "templates",
     "assets",
-    "README.md"
+    "README.md",
+    "docs/framework"
   ],
   "type": "module",
   "exports": {

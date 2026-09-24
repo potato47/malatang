@@ -1,6 +1,6 @@
 import { APIServer } from "./api-server.ts";
 import { startAgentServer } from "./agent-server.ts";
-import type { APIImplementation } from "./business-api.ts";
+import type { APIImplementation, APIContract, APIEmitter } from "./business-api.ts";
 export { implementAPI } from "./business-api.ts";
 import { createGateway } from "./gateway.ts";
 import { resolve } from "node:path";
@@ -35,67 +35,100 @@ export interface AppContext {
   readonly codeDirectory: string;
 }
 
-export interface BackendRouteContext {
+export interface BackendRouteContext<C extends APIContract = APIContract> extends APIEmitter<C> {
   readonly native: BackendNativeClient;
   readonly app: AppContext;
 }
 
-export type BackendRouteHandler<WebSocketData = unknown, Path extends string = string> = (
+export type BackendRouteHandler<
+  WebSocketData = unknown,
+  Path extends string = string,
+  C extends APIContract = APIContract,
+> = (
   request: Bun.BunRequest<Path>,
   server: BackendServer<WebSocketData>,
-  context: BackendRouteContext,
+  context: BackendRouteContext<C>,
 ) => MaybePromise<Response | undefined | void>;
 
-export type BackendRoute<WebSocketData = unknown, Path extends string = string> =
-  | BackendRouteHandler<WebSocketData, Path>
-  | Partial<Record<Bun.Serve.HTTPMethod, BackendRouteHandler<WebSocketData, Path>>>;
+export type BackendRoute<
+  WebSocketData = unknown,
+  Path extends string = string,
+  C extends APIContract = APIContract,
+> =
+  | BackendRouteHandler<WebSocketData, Path, C>
+  | Partial<Record<Bun.Serve.HTTPMethod, BackendRouteHandler<WebSocketData, Path, C>>>;
 
 export interface BackendHTTPDefinition<
   WebSocketData = unknown,
   RoutePaths extends string = string,
+  C extends APIContract = APIContract,
 > {
-  readonly routes?: Readonly<{ [Path in RoutePaths]: BackendRoute<WebSocketData, Path> }>;
-  readonly fetch?: BackendRouteHandler<WebSocketData>;
+  /** Routes are relative to /api: "/stream" is served at /api/stream. Not exposed by the application CLI. */
+  readonly routes?: Readonly<{ [Path in RoutePaths]: BackendRoute<WebSocketData, Path, C> }>;
+  /** Fallback receives paths with the /api prefix removed. */
+  readonly fetch?: BackendRouteHandler<WebSocketData, string, C>;
+  /** Bun server-level options also affect FIA native sockets. Callbacks only receive business sockets. */
   readonly websocket?: Bun.WebSocketHandler<WebSocketData>;
   readonly error?: (error: Error) => MaybePromise<Response | undefined | void>;
   readonly maxRequestBodySize?: number;
   readonly idleTimeout?: number;
 }
 
-export interface BackendContext<WebSocketData = unknown> extends BackendRouteContext {
+export interface BackendContext<
+  WebSocketData = unknown,
+  C extends APIContract = APIContract,
+> extends BackendRouteContext<C> {
   readonly server: BackendServer<WebSocketData>;
   url(path?: string): URL;
 }
 
-export interface BackendDefinition<WebSocketData = unknown, RoutePaths extends string = string> {
+export interface BackendDefinition<
+  WebSocketData = unknown,
+  RoutePaths extends string = string,
+  C extends APIContract = APIContract,
+> {
   readonly [FIA_BACKEND]: true;
-  readonly api?: APIImplementation;
+  readonly api?: APIImplementation<C>;
+  readonly apiOptions?: APIOptions;
   readonly beforeUpdate?: (
-    context: BackendContext<WebSocketData>,
+    context: BackendContext<WebSocketData, C>,
   ) => MaybePromise<{ ready: boolean; reason?: string } | void>;
-  readonly http: BackendHTTPDefinition<WebSocketData, RoutePaths>;
-  readonly start?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
-  readonly stop?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
+  readonly http: BackendHTTPDefinition<WebSocketData, RoutePaths, C>;
+  readonly start?: (context: BackendContext<WebSocketData, C>) => MaybePromise<void>;
+  readonly stop?: (context: BackendContext<WebSocketData, C>) => MaybePromise<void>;
 }
 
-interface BackendInput<WebSocketData, RoutePaths extends string> {
-  readonly api?: APIImplementation;
+interface BackendInput<WebSocketData, RoutePaths extends string, C extends APIContract> {
+  readonly api?: APIImplementation<C>;
+  readonly apiOptions?: APIOptions;
   readonly beforeUpdate?: (
-    context: BackendContext<WebSocketData>,
+    context: BackendContext<WebSocketData, C>,
   ) => MaybePromise<{ ready: boolean; reason?: string } | void>;
-  readonly http?: BackendHTTPDefinition<WebSocketData, RoutePaths>;
-  readonly start?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
-  readonly stop?: (context: BackendContext<WebSocketData>) => MaybePromise<void>;
+  readonly http?: BackendHTTPDefinition<WebSocketData, RoutePaths, C>;
+  readonly start?: (context: BackendContext<WebSocketData, C>) => MaybePromise<void>;
+  readonly stop?: (context: BackendContext<WebSocketData, C>) => MaybePromise<void>;
 }
 
-export function defineBackend<WebSocketData = unknown, const RoutePaths extends string = string>(
-  definition: BackendInput<WebSocketData, RoutePaths>,
-): BackendDefinition<WebSocketData, RoutePaths> {
+export interface APIOptions {
+  /** Per-event-connection queue budget in bytes, at least 1 MiB. Defaults to 4 MiB. */
+  eventBufferBytes?: number;
+}
+
+export function defineBackend<
+  WebSocketData = unknown,
+  const RoutePaths extends string = string,
+  C extends APIContract = APIContract,
+>(
+  definition: BackendInput<WebSocketData, RoutePaths, C>,
+): BackendDefinition<WebSocketData, RoutePaths, C> {
   if (!isObject(definition) || (definition.http !== undefined && !isObject(definition.http)))
     throw new TypeError("defineBackend expects a backend definition");
+  const budget = (definition.apiOptions as APIOptions | undefined)?.eventBufferBytes;
+  if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < MAX_FRAME_BYTES))
+    throw new TypeError("apiOptions.eventBufferBytes must be a safe integer of at least 1 MiB");
   definition.http ??= {};
   Object.defineProperty(definition, FIA_BACKEND, { value: true, enumerable: false });
-  return definition as unknown as BackendDefinition<WebSocketData, RoutePaths>;
+  return definition as unknown as BackendDefinition<WebSocketData, RoutePaths, C>;
 }
 
 export function isDefinedBackend(value: unknown): value is BackendDefinition {
@@ -415,10 +448,11 @@ export async function runBackend<Data, Paths extends string>(
   const api = new APIServer(
     definition.api ?? { contract: { methods: {}, events: {} }, handlers: {} },
     { native, app },
+    definition.apiOptions,
   );
   api.updating = initialize.updating ?? false;
   current.api = api;
-  const gateway = createGateway(definition, { native, app }, initialize, api, async (action) => {
+  const gateway = createGateway(definition, api.context, initialize, api, async (action) => {
     if (action === "prepare")
       await api.prepare(async () => definition.beforeUpdate?.(current.context!));
     else api.updating = false;
@@ -447,8 +481,7 @@ export async function runBackend<Data, Paths extends string>(
   current.server = server;
   const origin = "http://127.0.0.1:" + server.port;
   const context: BackendContext = {
-    native,
-    app,
+    ...api.context,
     server,
     url: (path = "/") => new URL(path, origin),
   };
@@ -458,7 +491,7 @@ export async function runBackend<Data, Paths extends string>(
   await definition.start?.(context);
   api.ready = true;
   if (initialize.bundlePath && initialize.agentCommand && initialize.runtimeId)
-    current.agent = await startAgentServer(api, initialize);
+    current.agent = await startAgentServer(api, initialize, () => gateway.issueBrowserURL());
   gateway.ready = true;
   writeFrame({ v: PROTOCOL, type: "ready", port: server.port, origin });
 }

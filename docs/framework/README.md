@@ -65,3 +65,99 @@ WebView 默认关闭页面视口横向、纵向的边缘拉伸回弹，保留正
 `bun run check` 覆盖 TS 检查、真实 HTTP/WS/SSE、stdio 取消与进程组清理、窗口 ID 和标题栏、Ed25519 与文件完整性、更新日志恢复，以及真实 Bun + WKWebView 的升级、30 秒观察、后端崩溃和首屏未就绪回退。运行前需要 `runtime:build` 和 `cli:build`。
 
 `bun run smoke` 使用本地依赖创建实际应用，构建时禁止 Swift 调用，检查图标生成、生产首屏就绪、正常退出、进程组回收和签名代码更新产物；还验证并发 CLI 冷启动、后台开窗语义、持久计数器并发修改、TypeScript 执行、临时 CLI/skill 安装与卸载和签名保持；开发会话验证 React Fast Refresh、双窗口、后端重启、fia agent 重连和停止钩子。Developer ID 公证验收需要发布者配置证书和 Keychain profile。
+
+## 后台任务、事件与数据大小
+
+契约请求、响应和单条事件（含 JSON envelope，事件含换行）各限制为 **1 MiB UTF-8 字节**，与 stdio 的限制分别执行；不能通过修改 `http.maxRequestBodySize` 放宽契约限制。会话历史应分页，附件和高频 token 数据可用 `defineBackend.http` 的 HTTP/SSE/WebSocket 路由。路由 `"/stream"` 挂在 `/api/stream`，fallback 收到移除 `/api` 前缀后的路径；这些路由不经应用 CLI 暴露。UI 与 CLI 共用的业务操作应放在契约内。
+
+对象中值为 `undefined` 的属性在 JSON 传输时省略。顶层 `undefined`、数组中的 `undefined`/空洞、非有限数字、BigInt、函数、类实例和循环引用仍然拒绝；错误会标出 `input`、`result` 或事件 payload 下的字段路径。`z` 从标准 Zod 4 依赖导出，npm 库入口不内联另一份 Zod；独立 SDK 可用自己的 Zod 4 schema，FIA 在契约生成时验证 JSON Schema 可表示性并报告位置。
+
+`defineBackend({ api: implementAPI(api, handlers) })` 从 `api` 推断事件类型。`start`、`stop`、`beforeUpdate` 和 HTTP 路由上下文都提供同一个 `emit`，无需先进行方法调用。Bun WebSocket 回调签名不变，可通过闭包或升级时的连接数据保存路由上下文中的 emit。已有显式泛型顺序仍为 WebSocketData、RoutePaths；如需同时显式指定契约，使用第三个泛型。
+
+```ts
+const app = createClient<typeof api>();
+const unsubscribe = app.on("session.changed", (event) => render(event), {
+  match: { sessionId: "session-1", status: "idle" },
+});
+app.onReconnect(() => refreshCurrentState());
+```
+
+`match` 只支持 payload 顶层字段与 JSON 标量（string/number/boolean/null）的等值匹配，多字段为 AND；不解释表达式或嵌套路径。服务端先过滤，再进入连接队列。同一个客户端复用一条事件连接；订阅集合变化会重建连接并触发 `onReconnect`，期间可能漏掉事件，因此应重新读取状态。事件没有历史重放，也不保证持久交付。
+
+事件队列默认每连接 4 MiB，可通过 `defineBackend({ apiOptions: { eventBufferBytes: 8 * 1024 * 1024 }, ... })` 调整，要求为不小于 1 MiB 的安全整数。预算计算编码后的字节，包含 ready 和 heartbeat 帧；超出预算的慢连接会被关闭并清理资源，不阻塞其他消费者。该预算约束 FIA 的流队列，不包含 Bun 和操作系统的网络缓冲区。
+
+应用 CLI 可以有界地等待事件：
+
+```sh
+my-app events session.changed --jsonl --count 1 --timeout 30000 \
+  --match '{"sessionId":"session-1","status":"idle"}'
+```
+
+达到匹配数量退出 0；超时退出 124，stdout 不添加结束帧、stderr 不添加 error 帧。未指定 count 时不限数量，未指定 timeout 或设置 0 时不限时间。Ctrl-C 退出 130；意外断线仍报告错误。先建立订阅再触发工作，等待结束后重新读取当前状态，避免把错过的事件误判为任务未完成。
+
+长任务不要占住一次 API 调用；返回任务 ID 后在后台执行，并在 `beforeUpdate` 报忙。以下示例的契约应声明 `job.start`、`job.read` 和 `job.changed`，任务状态为 `running/done/cancelled/failed`：
+
+```ts
+import { defineBackend, implementAPI } from "@semicoder/fia/backend";
+import type { APIEmitter } from "@semicoder/fia/api";
+import api from "../shared/api";
+
+type Status = "running" | "done" | "cancelled" | "failed";
+const jobs = new Map<string, { status: Status }>();
+const active = new Map<string, { abort: AbortController; done: Promise<void> }>();
+let publish: APIEmitter<typeof api>["emit"];
+
+export default defineBackend({
+  api: implementAPI(api, {
+    "job.start": () => {
+      const id = crypto.randomUUID();
+      const abort = new AbortController();
+      jobs.set(id, { status: "running" });
+      const done = Promise.resolve().then(async () => {
+        try {
+          await runJob(abort.signal); // 应用实现；应响应 AbortSignal。
+          jobs.set(id, { status: "done" });
+        } catch (error) {
+          jobs.set(id, { status: abort.signal.aborted ? "cancelled" : "failed" });
+          if (!abort.signal.aborted) console.error(error);
+        } finally {
+          active.delete(id);
+          publish("job.changed", { id, ...jobs.get(id)! });
+        }
+      });
+      active.set(id, { abort, done });
+      return { id };
+    },
+    "job.read": ({ id }) => ({ id, ...jobs.get(id)! }),
+  }),
+  start({ emit }) {
+    publish = emit;
+  },
+  beforeUpdate() {
+    return { ready: active.size === 0, reason: "Background jobs are running" };
+  },
+  async stop() {
+    for (const job of active.values()) job.abort.abort();
+    await Promise.allSettled([...active.values()].map((job) => job.done));
+  },
+});
+```
+
+生产任务还需校验不存在的任务 ID，并按需要将状态写到 `context.app.dataDirectory`，实现重启恢复、幂等和失败处理；此示例只演示生命周期。取消不会撤销已发生的副作用，框架不提供持久任务调度。
+
+`http.websocket` 的 `maxPayloadLength`、`backpressureLimit`、`closeOnBackpressureLimit`、`idleTimeout` 和 `sendPings` 等是 **Bun 服务级选项**，同时影响业务与 FIA native WebSocket。设置时应考虑两者；native 消息仍单独限制为 1 MiB，业务回调不会收到 native 消息。框架不承诺按连接隔离这些选项。
+
+## 普通浏览器调试
+
+`fia dev` 启动原生宿主和 Vite 后打印一次性浏览器链接；`fia dev --open-browser` 自动打开它。链接仅可用一次、60 秒过期。需要新链接或后端重启后，执行：
+
+```sh
+fia agent open --browser --url  # 只输出 URL，适用于浏览器自动化
+fia agent open --browser       # 在默认浏览器打开
+```
+
+不要直接使用 Vite 打印的裸地址。开发票据经受保护的 Unix Socket 签发，不向前端公开宿主密钥；bootstrap 建立 HttpOnly、SameSite=Strict Cookie，生产实例不提供此入口。不要分享票据 URL。
+
+浏览器仍连接 `fia dev` 的真实宿主，`native.capabilities()` 报告宿主能力，原生窗口操作会作用于真实窗口。浏览器的 `native.ready()` 只验证开发会话与后端代次，不冒充原生窗口完成代码更新就绪验证。后端重启后使用新链接重新进入；这不是独立运行、无宿主的网页模式。
+
+401/403 分别报告 `unauthorized`/`forbidden`；收到完整但无效的响应报告 `protocol_error`；调用输入无法序列化报告 `invalid_argument`。真正的传输中断仍可能报告 `execution_unknown`，此时不要自动重放写操作，应检查应用状态。

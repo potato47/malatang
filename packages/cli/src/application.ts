@@ -1,3 +1,5 @@
+import { agentFetch, connectAgent } from "./agent-cli.ts";
+import { readResult } from "./api-client.ts";
 import { generateAgentArtifacts } from "./agent-artifacts.ts";
 import { watch } from "node:fs";
 import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -361,6 +363,7 @@ export function hasProcessExited(child: Pick<Bun.Subprocess, "exitCode" | "signa
 export async function runDevelopment(
   initial: ResolvedFIAConfig,
   output: (message: string) => void = console.log,
+  options: { openBrowser?: boolean } = {},
 ) {
   let stop = false;
   let control = "";
@@ -476,6 +479,36 @@ export async function runDevelopment(
           component: "dev",
           message: "Application ready; frontend HMR and backend restart enabled",
         });
+        const record = await waitUntil(
+          async () => {
+            try {
+              return await connectAgent(
+                {
+                  bundlePath: built.app,
+                  identifier: config.app.identifier,
+                  command: config.agent.command,
+                  supportPath: resolve(config.projectRoot, ".fia/dev/data", config.app.identifier),
+                },
+                JSON.parse(
+                  await readFile(resolve(built.app, "Contents/Resources/fia.runtime.json"), "utf8"),
+                ).runtimeId,
+                false,
+              );
+            } catch {
+              return undefined;
+            }
+          },
+          15_000,
+          "Development agent endpoint",
+        );
+        const { url } = (await readResult(
+          await agentFetch(record)("/browser", { method: "POST" }),
+        )) as { url: string };
+        // Tickets are credentials: print directly, never persist them in session logs.
+        output("Browser (one use, valid for 60 seconds): " + url);
+        output("New browser link: fia agent open --browser --url");
+        if (options.openBrowser)
+          await checked(defaultRunner, ["/usr/bin/open", url], config.projectRoot);
         watcher = watch(config.projectRoot, { recursive: true }, (_event, file) => {
           const path = file?.toString();
           if (

@@ -20,7 +20,11 @@ export interface AgentRecord {
   command: string;
   description?: string;
 }
-export async function startAgentServer(api: APIServer, init: InitializeFrame) {
+export async function startAgentServer(
+  api: APIServer,
+  init: InitializeFrame,
+  issueBrowserURL?: () => string,
+) {
   const directory = resolve(dirname(init.applicationSupport), "Agent");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(directory, 0o700);
@@ -81,6 +85,18 @@ export async function startAgentServer(api: APIServer, init: InitializeFrame) {
         return apiError(new APIError("stale_instance", "Application instance changed"), 409);
       if (!api.ready || api.updating)
         return apiError(new APIError("updating", "Application is updating"), 503);
+      if (path === "/browser" && request.method === "POST") {
+        if (!init.development || !issueBrowserURL)
+          return apiError(
+            new APIError("forbidden", "Browser access is only available in fia dev"),
+            403,
+          );
+        try {
+          return Response.json({ result: { url: issueBrowserURL() } });
+        } catch (error) {
+          return apiError(error);
+        }
+      }
       if (["/open", "/quit"].includes(path) && request.method === "POST") {
         try {
           return Response.json({

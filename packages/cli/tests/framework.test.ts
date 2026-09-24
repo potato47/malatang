@@ -194,3 +194,40 @@ test("icon input retains Unicode and color validation", () => {
   expect(() => parseIconArguments(["hello"])).toThrow();
   expect(() => parseIconArguments(["F", "--background", "red"])).toThrow();
 });
+
+test("npm library entrypoints share standard Zod and include readable framework docs", async () => {
+  const packageRoot = resolve(import.meta.dir, "..");
+  const { z: standardZ } = await import("zod");
+  const library = await import(resolve(packageRoot, "dist/business-api.js"));
+  expect(library.z).toBe(standardZ);
+  const sdkBuild = await Bun.build({
+    entrypoints: [resolve(packageRoot, "src/business-api.ts")],
+    target: "bun",
+    format: "esm",
+  });
+  expect(sdkBuild.success).toBe(true);
+  const independent = await import(
+    "data:text/javascript;base64," +
+      Buffer.from(await sdkBuild.outputs[0]!.text()).toString("base64")
+  );
+  expect(independent.z).not.toBe(standardZ);
+  expect(
+    library.describeAPI({
+      methods: {
+        sdk: {
+          description: "SDK",
+          input: independent.z.object({ name: independent.z.string() }),
+          output: independent.z.string(),
+        },
+      },
+      events: {},
+    }).methods.sdk.input.type,
+  ).toBe("object");
+  expect(cliPackage.files).toContain("docs/framework");
+  expect(await readFile(resolve(packageRoot, "docs/framework/README.md"), "utf8")).toBe(
+    await readFile(resolve(packageRoot, "../../docs/framework/README.md"), "utf8"),
+  );
+  const readme = await readFile(resolve(packageRoot, "README.md"), "utf8");
+  for (const match of readme.matchAll(/\]\((docs\/framework\/[^)]+)\)/gu))
+    expect(await Bun.file(resolve(packageRoot, match[1]!)).exists()).toBe(true);
+});
