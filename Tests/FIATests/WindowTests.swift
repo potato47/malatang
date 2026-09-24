@@ -6,6 +6,63 @@ import WebKit
 
 @MainActor @Suite("Web windows", .serialized)
 struct WindowTests {
+  @Test(.timeLimit(.minutes(1))) func mainWindowUserClosePreservesPageOnReopen() async throws {
+    _ = NSApplication.shared
+    let manager = WindowManager()
+    let title = "Close and reopen \(UUID().uuidString)"
+    _ = try manager.create(WindowOptions(id: "main", title: title))
+    defer { _ = try? manager.operate("close", id: "main") }
+    let nativeWindow = try #require(NSApp.windows.first { $0.title == title })
+    let window = try #require(nativeWindow.delegate as? WebWindow)
+    var loads = 0
+    manager.connect { _, _ in
+      loads += 1
+      return URL(string: "about:blank")!
+    }
+    try await waitForPage(
+      window.webView,
+      condition: "document.readyState === 'complete' && document.body?.textContent === ''")
+    #expect(
+      try await evaluateBoolean(
+        window.webView,
+        script: "window.fiaDraft = 'unsaved draft'; document.body.textContent = window.fiaDraft; true"))
+
+    for _ in 0..<3 {
+      try manager.restoreMainWindow()
+      #expect(nativeWindow.isVisible)
+      // Both the red close button and Command-W dispatch performClose.
+      nativeWindow.performClose(nil)
+      #expect(!nativeWindow.isVisible)
+      #expect(window.state.lifecycle == .open)
+      #expect(manager.openIDs == ["main"])
+
+      // This is the same restore path used by the Dock reopen delegate.
+      try manager.restoreMainWindow()
+      #expect(nativeWindow.isVisible)
+      #expect(nativeWindow.contentView === window.webView)
+      #expect(loads == 1)
+      #expect(
+        try await evaluateBoolean(
+          window.webView,
+          script: "window.fiaDraft === 'unsaved draft' && document.body.textContent === window.fiaDraft"))
+    }
+    _ = try manager.operate("close", id: "main")
+    #expect(window.state.lifecycle == .closed)
+    #expect(manager.openIDs.isEmpty)
+  }
+
+  @Test func auxiliaryWindowUserCloseStillCloses() throws {
+    _ = NSApplication.shared
+    let window = WebWindow(
+      options: WindowOptions(id: "auxiliary"), appName: "FIA", emit: { _ in },
+      action: { _, _ in })
+    defer { try? window.close() }
+    try window.show()
+    window.window.performClose(nil)
+    #expect(window.state.lifecycle == .closed)
+    #expect(!window.window.isVisible)
+  }
+
   @Test(.timeLimit(.minutes(1))) func viewportDoesNotBounceButContentStillScrolls() async throws {
     _ = NSApplication.shared
     for id in ["scroll-main", "scroll-aux"] {

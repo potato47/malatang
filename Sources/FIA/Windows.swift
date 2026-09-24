@@ -285,7 +285,11 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
     window.title = options.title ?? appName
     window.contentView = webView
     window.center()
-    super.init(id: options.id, window: window, emit: emit)
+    // Keep the main page alive when dismissed so Dock reopen only presents it.
+    // Explicit close() still closes the window; auxiliary windows close normally.
+    super.init(
+      id: options.id, window: window,
+      userCloseAction: options.id == "main" ? .hideWindow : .closeWindow, emit: emit)
     webView.navigationDelegate = self
     if #available(macOS 13.3, *) {
       webView.isInspectable = ProcessInfo.processInfo.environment["FIA_DEVELOPMENT"] == "1"

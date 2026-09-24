@@ -34,7 +34,7 @@ exec 支持 --file FILE、-e CODE 或 stdin，注入 app SDK 和 help。独立 B
 
 `defineConfig` 从 `@semicoder/fia/config` 导入。`app` 包含 name、identifier、version、递增 build 和可选 icon。后端默认入口 `backend/index.ts`；前端默认 root=`frontend`、dist=`frontend/dist`。系统权限说明直接使用 Info.plist 的 `NS…UsageDescription` 键。可选 `statusItem` 配置菜单栏图标；这不会改变应用模式。
 
-窗口默认 main、1000×720、标准标题栏、红绿灯和下方 WKWebView。`create` 不隐式显示，使用 `open/focus` 呈现；普通前台启动自动显示 main，CLI 启动只保留配置的 tray。窗口 ID 稳定，`create` 对已有 ID 同步声明并复用，保留尺寸与打开/隐藏/关闭状态；关闭后 `open` 可恢复。新增窗口只接受应用内 route。`update` 可显式修改 route、title、width、height、titlebar。最小化、最大化、恢复、全屏、focus/hide/close 统一由 `native.windows` 提供。
+窗口默认 main、1000×720、标准标题栏、红绿灯和下方 WKWebView。`create` 不隐式显示，使用 `open/focus` 呈现；普通前台启动自动显示 main，CLI 启动只保留配置的 tray。主窗口点击关闭按钮或按 ⌘W 只隐藏，保留 WebView 和页面状态；点击 Dock 图标或调用 `open/focus` 直接显示，不重新加载。辅助窗口的用户关闭操作和显式调用 `native.windows.close` 仍会真正关闭窗口。窗口 ID 稳定，`create` 对已有 ID 同步声明并复用，保留尺寸与打开/隐藏/关闭状态；真正关闭后 `open` 会重建窗口并加载页面。新增窗口只接受应用内 route。`update` 可显式修改 route、title、width、height、titlebar。最小化、最大化、恢复、全屏、focus/hide/close 统一由 `native.windows` 提供。
 
 标题栏 items 为 button、text、spacer；每项都有唯一 id，button/text 有 label，按钮可指定 SF Symbol、tooltip、enabled。`setTitlebar({id, items})` 更新整个声明。点击产生 `windows.titlebarAction`，携带 windowId 和 itemId。回调留在 TS，禁止序列化函数或插入 Swift/HTML 标题栏。
 
