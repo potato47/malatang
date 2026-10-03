@@ -15,6 +15,17 @@ public struct BuiltinApplicationInfo: Codable, Sendable {
   }
 }
 
+public struct BuiltinApplicationAppearance: Codable, Sendable {
+  public enum Mode: String, Codable, Sendable {
+    case system, light, dark
+  }
+  public let mode: Mode
+
+  public init(mode: Mode) {
+    self.mode = mode
+  }
+}
+
 public struct BuiltinClipboardText: Codable, Sendable {
   public let text: String
 

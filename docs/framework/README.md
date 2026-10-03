@@ -161,3 +161,7 @@ fia agent open --browser       # 在默认浏览器打开
 浏览器仍连接 `fia dev` 的真实宿主，`native.capabilities()` 报告宿主能力，原生窗口操作会作用于真实窗口。浏览器的 `native.ready()` 只验证开发会话与后端代次，不冒充原生窗口完成代码更新就绪验证。后端重启后使用新链接重新进入；这不是独立运行、无宿主的网页模式。
 
 401/403 分别报告 `unauthorized`/`forbidden`；收到完整但无效的响应报告 `protocol_error`；调用输入无法序列化报告 `invalid_argument`。真正的传输中断仍可能报告 `execution_unknown`，此时不要自动重放写操作，应检查应用状态。
+
+## 应用外观
+
+前后端都可以调用 `native.application.setAppearance({ mode: "light" | "dark" | "system" })`，同步应用原生标题栏、菜单和原生控件的外观。默认跟随系统；`system` 清除应用级覆盖，不修改 macOS 设置。应用自己持久化用户偏好，并在 backend `start` 时重新应用。该接口不替应用生成网页样式：WebView 的 CSS 主题仍由应用管理；跟随系统时可使用 `prefers-color-scheme`。

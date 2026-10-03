@@ -7,6 +7,10 @@ export type BuiltinApplicationInfo = {
   readonly build: number;
 };
 
+export type BuiltinApplicationAppearance = {
+  readonly mode: "system" | "light" | "dark";
+};
+
 export type BuiltinClipboardText = {
   readonly text: string;
 };
@@ -107,6 +111,12 @@ export function createNativeAPI(transport: NativeTransport) {
       show: (options?: NativeCallOptions) => transport.call("application.show", {}, options),
       info: (options?: NativeCallOptions): Promise<BuiltinApplicationInfo> =>
         transport.call("application.info", {}, options),
+      /** Set app-local native appearance. Reapply saved preferences at backend startup. */
+      setAppearance: (
+        input: BuiltinApplicationAppearance,
+        options?: NativeCallOptions,
+      ): Promise<Record<string, never>> =>
+        transport.call("application.setAppearance", input, options),
       quit: (options?: NativeCallOptions): Promise<Record<string, never>> =>
         transport.call("application.quit", {}, options),
     },

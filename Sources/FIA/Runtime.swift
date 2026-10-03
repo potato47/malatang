@@ -419,6 +419,7 @@ public final class FIARuntime {
     }
   }
   private func registerServices() {
+    ApplicationAppearance.registerNativeMethods(native)
     native.register("application.show", input: FIAEmpty.self, output: FIAEmpty.self, permission: "application") { [weak self] _ in
       try await MainActor.run {
         guard let self else { throw CancellationError() }
