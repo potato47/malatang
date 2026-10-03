@@ -21,6 +21,11 @@
     "frontend",
     "backend",
     "shared",
+    "packages",
+    "plugins",
+    "examples",
+    "scripts",
+    "tests",
     "fia.config.ts",
     "vite.config.ts"
   ]

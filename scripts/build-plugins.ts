@@ -1,0 +1,10 @@
+import { buildPlugin } from "../packages/sdk/build";
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
+await buildPlugin("plugins/translate");
+await buildPlugin("examples/quick-notes");
+await mkdir("resources/plugins", { recursive: true });
+const archive = resolve("resources/plugins/quick-notes.tgz");
+const child = Bun.spawn([process.execPath, "pm", "pack", "--filename", archive, "--ignore-scripts"], { cwd: resolve("examples/quick-notes"), stdout: "ignore", stderr: "inherit" });
+if (await child.exited !== 0) throw new Error("Could not pack the Quick Notes example");
+console.log("Built translation plugin and packed resources/plugins/quick-notes.tgz");

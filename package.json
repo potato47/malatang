@@ -3,17 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "plugins/*",
+    "examples/*"
+  ],
   "scripts": {
-    "dev": "fia dev",
+    "dev": "bun run plugins:build && fia dev",
     "agent": "fia agent",
-    "run": "fia run",
-    "build": "fia build",
-    "release": "fia release",
-    "check": "fia check",
-    "test": "fia test"
+    "run": "bun run plugins:build && fia run",
+    "build": "bun run plugins:build && fia build",
+    "release": "bun run plugins:build && fia release",
+    "check": "bun run plugins:build && fia check",
+    "test": "bun test tests",
+    "plugins:build": "bun scripts/build-plugins.ts"
   },
   "dependencies": {
-    "@semicoder/fia": "0.16.1",
+    "@semicoder/fia": "file:../fia/packages/cli",
+    "@malatang/sdk": "workspace:*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

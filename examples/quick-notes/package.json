@@ -1,0 +1,9 @@
+{
+  "name": "@malatang/example-quick-notes", "version": "0.1.0", "type": "module",
+  "files": ["dist"],
+  "devDependencies": { "@malatang/sdk": "workspace:*" },
+  "malatang": {
+    "schemaVersion": 1, "id": "quick-notes", "name": "随手记", "description": "给灵感一个落脚点。使用宿主 KV 保存的独立示例插件。",
+    "icon": "记", "color": "#6e8169", "sdkVersion": "0.1", "frontend": "dist/client.js"
+  }
+}

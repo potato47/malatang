@@ -1,0 +1,24 @@
+{
+  "name": "@malatang/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "files": [
+    "src",
+    "build.ts",
+    "README.md"
+  ],
+  "exports": {
+    "./types": "./src/types.ts",
+    "./client": "./src/client.ts",
+    "./ui": "./src/ui.tsx",
+    "./runtime": "./src/runtime.ts",
+    "./build": "./build.ts",
+    "./theme.css": "./src/theme.css"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "peerDependencies": {
+    "react": ">=19 <20"
+  }
+}
