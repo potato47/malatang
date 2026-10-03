@@ -54,7 +54,7 @@ export class Plugins {
   private async inspect(root: string, source: string, builtin: boolean): Promise<Loaded> {
     const pkg = await Bun.file(join(root, "package.json")).json();
     const manifest = manifestSchema.parse(pkg.malatang);
-    if (["models", "plugins"].includes(manifest.id)) throw new Error("此插件 ID 为宿主保留名称");
+    if (["models", "plugins", "settings"].includes(manifest.id)) throw new Error("此插件 ID 为宿主保留名称");
     if (typeof pkg.name !== "string" || typeof pkg.version !== "string") throw new Error("插件缺少 package name/version");
     await containedFile(root, manifest.frontend);
     if (manifest.backend) await containedFile(root, manifest.backend);

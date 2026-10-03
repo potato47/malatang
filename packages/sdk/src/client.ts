@@ -7,6 +7,7 @@ export function createPluginClient(pluginId: string) {
   return {
     models: {
       list: () => call<ModelInfo[]>("models.list", {}),
+      onChange: (listener: () => void) => bridge.on("models.changed", listener),
       start: (input: ModelRequest) => call<ModelRun>("models.generate", { pluginId, ...input }),
     },
     runs: {

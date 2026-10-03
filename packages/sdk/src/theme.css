@@ -1,32 +1,32 @@
-/* Palette reference: VS Code Light Modern / Dark Modern; see ../README.md. */
+/* Neutral palette based on the user-provided ChatGPT desktop screenshot; see ../README.md. */
 :root {
   color-scheme: light;
   --m-bg: #ffffff;
-  --m-surface: #ffffff;
-  --m-surface-muted: #f8f8f8;
-  --m-surface-hover: #f2f2f2;
-  --m-sidebar: #f8f8f8;
-  --m-sidebar-hover: #f2f2f2;
-  --m-sidebar-active: #e4e6f1;
-  --m-sidebar-text: #1f1f1f;
-  --m-sidebar-muted: #616161;
-  --m-heading: #1f1f1f;
-  --m-text: #3b3b3b;
-  --m-text-secondary: #3b3b3b;
+  --m-surface: #f7f7f7;
+  --m-surface-muted: #f3f3f3;
+  --m-surface-hover: #e8e8e8;
+  --m-sidebar: #ebebeb;
+  --m-sidebar-hover: #e1e1e1;
+  --m-sidebar-active: #d5d5d5;
+  --m-sidebar-text: #242424;
+  --m-sidebar-muted: #6b6b6b;
+  --m-heading: #202020;
+  --m-text: #303030;
+  --m-text-secondary: #454545;
   --m-muted: #616161;
-  --m-placeholder: #767676;
-  --m-line: #e5e5e5;
+  --m-placeholder: #707070;
+  --m-line: #e2e2e2;
   --m-line-soft: #eeeeee;
-  --m-input-bg: #ffffff;
-  --m-input-border: #cecece;
-  --m-accent: #005fb8;
-  --m-accent-hover: #0258a8;
+  --m-input-bg: #f7f7f7;
+  --m-input-border: #d9d9d9;
+  --m-accent: #242424;
+  --m-accent-hover: #404040;
   --m-accent-border: #0000001a;
   --m-on-accent: #ffffff;
-  --m-focus: #005fb8;
-  --m-button-secondary: #e5e5e5;
-  --m-button-secondary-hover: #cccccc;
-  --m-selection: #add6ff;
+  --m-focus: #686868;
+  --m-button-secondary: #ededed;
+  --m-button-secondary-hover: #dfdfdf;
+  --m-selection: #d6d6d6;
   --m-success: #287d3c;
   --m-success-bg: #edf7ef;
   --m-success-line: #c5e4cb;
@@ -45,32 +45,32 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --m-bg: #1f1f1f;
-  --m-surface: #1f1f1f;
-  --m-surface-muted: #252526;
-  --m-surface-hover: #2b2b2b;
-  --m-sidebar: #181818;
-  --m-sidebar-hover: #ffffff11;
-  --m-sidebar-active: #ffffff22;
-  --m-sidebar-text: #d7d7d7;
-  --m-sidebar-muted: #868686;
-  --m-heading: #f1f1f1;
-  --m-text: #cccccc;
-  --m-text-secondary: #cccccc;
-  --m-muted: #9d9d9d;
-  --m-placeholder: #989898;
-  --m-line: #2b2b2b;
-  --m-line-soft: #292929;
-  --m-input-bg: #313131;
-  --m-input-border: #3c3c3c;
-  --m-accent: #0078d4;
-  --m-accent-hover: #026ec1;
+  --m-bg: #181818;
+  --m-surface: #232323;
+  --m-surface-muted: #1e1e1e;
+  --m-surface-hover: #303030;
+  --m-sidebar: #292a2a;
+  --m-sidebar-hover: #343535;
+  --m-sidebar-active: #3d3e3e;
+  --m-sidebar-text: #f5f5f5;
+  --m-sidebar-muted: #a3a3a3;
+  --m-heading: #f5f5f5;
+  --m-text: #ededed;
+  --m-text-secondary: #d4d4d4;
+  --m-muted: #ababab;
+  --m-placeholder: #999999;
+  --m-line: #363636;
+  --m-line-soft: #303030;
+  --m-input-bg: #2b2b2b;
+  --m-input-border: #404040;
+  --m-accent: #ededed;
+  --m-accent-hover: #d5d5d5;
   --m-accent-border: #ffffff1a;
-  --m-on-accent: #ffffff;
-  --m-focus: #0078d4;
-  --m-button-secondary: transparent;
-  --m-button-secondary-hover: #2b2b2b;
-  --m-selection: #264f78;
+  --m-on-accent: #202020;
+  --m-focus: #a3a3a3;
+  --m-button-secondary: #303030;
+  --m-button-secondary-hover: #3b3b3b;
+  --m-selection: #4a4a4a;
   --m-success: #89d185;
   --m-success-bg: #223127;
   --m-success-line: #354d3c;
@@ -81,39 +81,39 @@
   --m-error-bg: #382525;
   --m-error-line: #633332;
   --m-shadow: #0000005c;
-  --m-art-bg: #2b2b2b;
-  --m-art-text: #868686;
+  --m-art-bg: #303030;
+  --m-art-text: #a3a3a3;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
     color-scheme: dark;
-    --m-bg: #1f1f1f;
-    --m-surface: #1f1f1f;
-    --m-surface-muted: #252526;
-    --m-surface-hover: #2b2b2b;
-    --m-sidebar: #181818;
-    --m-sidebar-hover: #ffffff11;
-    --m-sidebar-active: #ffffff22;
-    --m-sidebar-text: #d7d7d7;
-    --m-sidebar-muted: #868686;
-    --m-heading: #f1f1f1;
-    --m-text: #cccccc;
-    --m-text-secondary: #cccccc;
-    --m-muted: #9d9d9d;
-    --m-placeholder: #989898;
-    --m-line: #2b2b2b;
-    --m-line-soft: #292929;
-    --m-input-bg: #313131;
-    --m-input-border: #3c3c3c;
-    --m-accent: #0078d4;
-    --m-accent-hover: #026ec1;
+    --m-bg: #181818;
+    --m-surface: #232323;
+    --m-surface-muted: #1e1e1e;
+    --m-surface-hover: #303030;
+    --m-sidebar: #292a2a;
+    --m-sidebar-hover: #343535;
+    --m-sidebar-active: #3d3e3e;
+    --m-sidebar-text: #f5f5f5;
+    --m-sidebar-muted: #a3a3a3;
+    --m-heading: #f5f5f5;
+    --m-text: #ededed;
+    --m-text-secondary: #d4d4d4;
+    --m-muted: #ababab;
+    --m-placeholder: #999999;
+    --m-line: #363636;
+    --m-line-soft: #303030;
+    --m-input-bg: #2b2b2b;
+    --m-input-border: #404040;
+    --m-accent: #ededed;
+    --m-accent-hover: #d5d5d5;
     --m-accent-border: #ffffff1a;
-    --m-on-accent: #ffffff;
-    --m-focus: #0078d4;
-    --m-button-secondary: transparent;
-    --m-button-secondary-hover: #2b2b2b;
-    --m-selection: #264f78;
+    --m-on-accent: #202020;
+    --m-focus: #a3a3a3;
+    --m-button-secondary: #303030;
+    --m-button-secondary-hover: #3b3b3b;
+    --m-selection: #4a4a4a;
     --m-success: #89d185;
     --m-success-bg: #223127;
     --m-success-line: #354d3c;
@@ -124,8 +124,8 @@
     --m-error-bg: #382525;
     --m-error-line: #633332;
     --m-shadow: #0000005c;
-    --m-art-bg: #2b2b2b;
-    --m-art-text: #868686;
+    --m-art-bg: #303030;
+    --m-art-text: #a3a3a3;
   }
 }
 
@@ -167,3 +167,4 @@ input,textarea,select{color:var(--m-text);accent-color:var(--m-accent)}
 input::placeholder,textarea::placeholder{color:var(--m-placeholder)}
 
 ::selection{background:var(--m-selection);color:var(--m-text)}
+.m-model-picker{display:flex;flex-direction:column;gap:6px;min-width:0}.m-model-picker select{max-width:100%}.m-plan-notice{font-size:10px;line-height:1.6;color:var(--m-muted)}.m-plan-notice button{border:0;background:none;color:var(--m-text-secondary);cursor:pointer;font-size:inherit;padding:0 0 0 6px;text-decoration:underline}

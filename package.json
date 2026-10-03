@@ -19,8 +19,10 @@
     "plugins:build": "bun scripts/build-plugins.ts"
   },
   "dependencies": {
-    "@semicoder/fia": "file:../fia/packages/cli",
+    "@earendil-works/pi-ai": "1.0.0",
     "@malatang/sdk": "workspace:*",
+    "@semicoder/fia": "file:../fia/packages/cli",
+    "jose": "^6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

@@ -2,66 +2,61 @@ import { z } from "@semicoder/fia/api";
 import type { ModelInfo, ModelRequest, ModelRun } from "@malatang/sdk/types";
 import { modelInput } from "../shared/api";
 import { Store, type ModelConfig } from "./store";
+import type { ChatGPT } from "./chatgpt";
+import { streamPreset, validatePreset } from "./providers";
 
-export const DEMO_MODEL: ModelInfo = { id: "demo", name: "演示模型", provider: "本地预览", model: "demo", baseURL: "", kind: "demo", configured: true };
-export const DEMO_TEXT = "Good tools disappear into the work. They give ideas room to grow, and make the complicated feel simple.";
-const demoTranslations: Record<string, string> = {
-  "简体中文": "好的工具会融入工作本身。它们为想法留出成长的空间，让复杂的事情变得简单。",
-  "English": DEMO_TEXT,
-  "日本語": "優れた道具は、仕事の中に自然に溶け込む。アイデアが育つ余地を生み、複雑なことをシンプルにしてくれる。",
-  "한국어": "좋은 도구는 작업 속에 자연스럽게 녹아듭니다. 아이디어가 자랄 공간을 만들고, 복잡한 일을 단순하게 해줍니다.",
-  "Français": "Les bons outils se fondent dans le travail. Ils laissent aux idées l’espace de grandir et rendent simple ce qui semblait compliqué.",
-};
-
-/** SSE parser preserves UTF-8 and frame boundaries across arbitrary network chunks. */
-export async function* readSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let pending = "";
-  let data: string[] = [];
-  try {
-    while (true) {
-      const chunk = await reader.read();
-      pending += decoder.decode(chunk.value, { stream: !chunk.done });
-      if (pending.length > 2 * 1024 * 1024) throw new Error("模型返回的单个流片段过大");
-      let end: number;
-      while ((end = pending.indexOf("\n")) >= 0) {
-        const line = pending.slice(0, end).replace(/\r$/, "");
-        pending = pending.slice(end + 1);
-        if (line === "") { if (data.length) { yield data.join("\n"); data = []; } }
-        else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-      }
-      if (chunk.done) { if (pending.startsWith("data:")) data.push(pending.slice(5).trim()); if (data.length) yield data.join("\n"); break; }
-    }
-  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
-}
+export { readSSE } from "./sse";
+import { readSSE } from "./sse";
 
 export class Models {
   private terminal = new Map<string, ModelRun>();
   private starting = 0;
   private active = new Map<string, { controller: AbortController; run: ModelRun; done: Promise<void> }>();
-  constructor(private store: Store, private changed: (run: ModelRun) => void, private modelsChanged: () => void, private fetcher: typeof fetch = fetch) {}
-  list(): ModelInfo[] { return [DEMO_MODEL, ...this.store.value.models.map(config => this.info(config))]; }
+  constructor(private store: Store, private changed: (run: ModelRun) => void, private modelsChanged: () => void, private fetcher: typeof fetch = fetch, private chatgpt?: ChatGPT) {}
+  list(): ModelInfo[] { return this.store.value.models.map(config => this.info(config)); }
   private info(config: ModelConfig): ModelInfo {
     const { apiKey, ...info } = config;
-    return { ...info, kind: "openai-compatible", configured: Boolean(apiKey) || /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(config.baseURL) };
+    if (config.chatgptProfileId) return { ...info, provider: this.chatgpt?.status().profiles.find(p => p.id === config.chatgptProfileId)?.label ?? info.provider, kind: "chatgpt", hasApiKey: false, configured: this.chatgpt?.connected(config.chatgptProfileId) ?? false };
+    return { ...info, kind: config.preset ? "pi" : "openai-compatible", hasApiKey: Boolean(apiKey), configured: Boolean(apiKey) || (!config.preset && /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(config.baseURL)) };
   }
   async save(input: z.infer<typeof modelInput>): Promise<ModelInfo> {
-    const url = new URL(input.baseURL);
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("请输入不包含认证信息或查询参数的 HTTP(S) API 地址");
-    if (input.id === "demo") throw new Error("演示模型不可修改");
+    input = modelInput.parse(input);
+    const preset = input.preset ?? null;
+    const baseURL = input.baseURL.replace(/\/+$/, "");
+    if (baseURL || !preset) {
+      let url: URL;
+      try { url = new URL(baseURL); } catch { throw new Error("请输入有效的 HTTP(S) API 地址"); }
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("请输入不包含认证信息或查询参数的 HTTP(S) API 地址");
+    }
+    const options = Object.fromEntries(Object.entries(input.options ?? {}).filter(([, value]) => value));
+    const provider = preset ? validatePreset(preset, input.model, baseURL, options) : input.provider;
+    if (!preset && Object.keys(options).length) throw new Error("自定义兼容服务不支持预设服务商选项");
     const config = await this.store.update(state => {
       const existing = state.models.find(model => model.id === input.id);
+      if (existing?.chatgptProfileId) throw new Error("订阅模型与账号绑定，请删除后从 ChatGPT 连接中重新添加");
       if (input.id && !existing) throw new Error("模型不存在");
-      const config: ModelConfig = { id: existing?.id ?? crypto.randomUUID(), name: input.name, provider: input.provider, model: input.model, baseURL: input.baseURL.replace(/\/+$/, ""), apiKey: input.clearApiKey ? "" : input.apiKey?.trim() || existing?.apiKey || "" };
+      const sameConnection = existing && existing.preset === preset && existing.provider === provider && existing.baseURL === baseURL;
+      const config: ModelConfig = { id: existing?.id ?? crypto.randomUUID(), name: input.name, provider, model: input.model, baseURL, preset, options, apiKey: input.clearApiKey ? "" : input.apiKey?.trim() || (sameConnection ? existing.apiKey : "") };
       state.models = [...state.models.filter(model => model.id !== config.id), config];
       return config;
     });
     this.modelsChanged();
     return this.info(config);
   }
+  async addChatGPTModel(profileId: string, modelId: string): Promise<ModelInfo> {
+    if (!this.chatgpt?.connected(profileId)) throw new Error("请先连接 ChatGPT 并允许使用订阅");
+    const model = await this.chatgpt.model(profileId, modelId);
+    const label = this.chatgpt.status().profiles.find(p => p.id === profileId)!.label;
+    const config = await this.store.update(state => {
+      if (!this.chatgpt?.connected(profileId)) throw new Error("ChatGPT 连接已断开，请重新登录后添加模型");
+      const existing = state.models.find(m => m.chatgptProfileId === profileId && m.model === modelId);
+      if (existing) return existing;
+      const item: ModelConfig = { id: crypto.randomUUID(), name: model.name.slice(0, 100), provider: label, model: modelId, baseURL: "https://api.openai.com/v1", apiKey: "", preset: null, options: {}, chatgptProfileId: profileId };
+      state.models.push(item); return item;
+    });
+    this.modelsChanged(); return this.info(config);
+  }
   async remove(id: string) {
-    if (id === "demo") throw new Error("演示模型不可删除");
     if ([...this.active.values()].some(item => item.run.modelId === id)) throw new Error("此模型正在运行，请先停止任务");
     await this.store.update(state => { state.models = state.models.filter(model => model.id !== id); });
     this.modelsChanged();
@@ -78,10 +73,10 @@ export class Models {
   async start(pluginId: string, request: ModelRequest): Promise<ModelRun> {
     if (this.active.size + this.starting >= 8) throw new Error("最多同时运行 8 个任务");
     const config = this.store.value.models.find(model => model.id === request.modelId);
-    if (request.modelId !== "demo" && !config) throw new Error("请先在模型设置中添加模型");
+    if (!config) throw new Error("模型不存在，请先在设置 → 模型服务中添加模型");
     if (!request.prompt.trim() || request.prompt.length > 16000 || (request.system?.length ?? 0) > 16000) throw new Error("输入为空或超过 16000 字符");
     const now = Date.now();
-    const run: ModelRun = { id: crypto.randomUUID(), pluginId, modelId: request.modelId, title: (request.title ?? request.prompt.slice(0, 40)).slice(0, 100), input: request.prompt, output: "", status: "running", error: null, createdAt: now, updatedAt: now, revision: 0, demo: !config };
+    const run: ModelRun = { id: crypto.randomUUID(), pluginId, modelId: request.modelId, title: (request.title ?? request.prompt.slice(0, 40)).slice(0, 100), input: request.prompt, output: "", status: "running", error: null, createdAt: now, updatedAt: now, revision: 0, demo: false };
     this.starting++;
     try {
       await this.store.update(state => {
@@ -96,7 +91,7 @@ export class Models {
     this.changed(run);
     return structuredClone(run);
   }
-  private async perform(slot: { controller: AbortController; run: ModelRun }, request: ModelRequest, config?: ModelConfig) {
+  private async perform(slot: { controller: AbortController; run: ModelRun }, request: ModelRequest, config: ModelConfig) {
     const { run, controller } = slot;
     const timeout = setTimeout(() => controller.abort(new Error("模型响应超时，请重试")), 180000);
     let lastNotification = 0;
@@ -106,27 +101,13 @@ export class Models {
       if (Date.now() - lastNotification > 60) { this.changed(run); lastNotification = Date.now(); }
     };
     try {
-      if (config) await this.stream(config, request, controller.signal, append);
-      else {
-        const language = Object.keys(demoTranslations).find(language => request.system?.includes(`target: ${language}`)) ?? "简体中文";
-        const output = request.prompt.trim() === DEMO_TEXT
-          ? demoTranslations[language]!
-          : "这是演示模型的流式输出，用于体验插件页面与宿主 SDK。它不会翻译任意文本。请载入示例体验预置译文，或在模型设置中添加真实模型。";
-        for (const piece of output.match(/.{1,3}/gu) ?? []) {
-          controller.signal.throwIfAborted();
-          await new Promise<void>((resolve, reject) => {
-            const abort = () => { clearTimeout(timer); reject(controller.signal.reason); };
-            const timer = setTimeout(() => { controller.signal.removeEventListener("abort", abort); resolve(); }, 35);
-            controller.signal.addEventListener("abort", abort, { once: true });
-          });
-          append(piece);
-        }
-      }
+      await this.stream(config, request, controller.signal, append);
       controller.signal.throwIfAborted();
       run.status = "completed";
     } catch (error) {
       run.status = controller.signal.aborted && controller.signal.reason?.name === "AbortError" ? "cancelled" : "failed";
       run.error = run.status === "cancelled" ? null : error instanceof Error ? error.message : String(error);
+      if (run.error && config.apiKey) run.error = run.error.replaceAll(config.apiKey, "[已隐藏]");
     } finally {
       clearTimeout(timeout);
       run.updatedAt = Date.now(); run.revision++;
@@ -139,6 +120,8 @@ export class Models {
     }
   }
   private async stream(config: ModelConfig, request: ModelRequest, signal: AbortSignal, append: (text: string) => void) {
+    if (config.chatgptProfileId) { if (!this.chatgpt) throw new Error("ChatGPT 登录不可用"); return this.chatgpt.stream(config.chatgptProfileId, config.model, request, signal, append); }
+    if (config.preset) return streamPreset(config, request, signal, append, this.fetcher);
     const response = await this.fetcher(config.baseURL + "/chat/completions", {
       method: "POST", signal,
       headers: { "Content-Type": "application/json", ...(config.apiKey ? { Authorization: "Bearer " + config.apiKey } : {}) },

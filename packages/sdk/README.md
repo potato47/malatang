@@ -25,7 +25,7 @@
 }
 ```
 
-`frontend` 必需，`backend` / `styles` 可省略。入口须在包内；浏览器资源放在 `dist/`，不通过资源路由公开后端入口。`id` 是 2–64 位小写字母、数字和连字符，首位为字母；`models` / `plugins` 为宿主保留。ID 同时定义持久数据命名空间，勿随意更改。版本不兼容或重复 ID 会拒绝安装。
+`frontend` 必需，`backend` / `styles` 可省略。入口须在包内；浏览器资源放在 `dist/`，不通过资源路由公开后端入口。`id` 是 2–64 位小写字母、数字和连字符，首位为字母；`models` / `plugins` / `settings` 为宿主保留。ID 同时定义持久数据命名空间，勿随意更改。版本不兼容或重复 ID 会拒绝安装。
 
 `keepAlive` 是可选布尔值，默认 `false`。仅需要保留页面实例的插件声明为 `true`；现有未声明的插件仍在切页时卸载。该字段需要支持它的新版宿主，旧版严格 manifest 校验会拒绝含新字段的包。SDK 尚未发布，当前 schemaVersion / sdkVersion 保持 1 / 0.1。
 
@@ -44,7 +44,9 @@ export default function Page() {
 }
 ```
 
-能力：`models.list/start`、`runs.list/get/cancel/onChange`、`kv.get/set/delete`、`invoke(method,input)`、`onReconnect`。运行事件只通知变化，订阅后读取快照，重连时再次读取；UI 卸载时解除订阅。`runs.list` 返回最近 30 条摘要（输入输出最多各 300 字符），`runs.get` 返回完整状态。每个模型输出最多 64 KiB，输入/系统提示词各 16,000 字符，最长 180 秒，同时最多 8 次生成。
+能力：`models.list/start/onChange`、`runs.list/get/cancel/onChange`、`kv.get/set/delete`、`invoke(method,input)`、`onReconnect`。运行事件只通知变化，订阅后读取快照，重连时再次读取；UI 卸载时解除订阅。`runs.list` 返回最近 30 条摘要（输入输出最多各 300 字符），`runs.get` 返回完整状态。每个模型输出最多 64 KiB，输入/系统提示词各 16,000 字符，最长 180 秒，同时最多 8 次生成。
+
+模型由宿主「设置 → 模型服务」管理。`ModelInfo.kind` 为 `openai-compatible`、`pi` 或 `chatgpt`；`preset` 为 Pi provider ID 或 null，`options` 为非密钥配置，`hasApiKey` 仅指是否已保存密钥，`configured` 不代表连通性已验证。没有配置时返回空列表，不再提供模拟模型；插件应提示配置并禁用生成。`ModelRun.demo` 仅兼容旧演示历史，新运行恒为 false。API 不返回密钥。插件仍使用宿主模型 `id` 调用，无需依赖 Pi 或选择协议。`models.onChange(listener)` 返回取消订阅函数；订阅后和重连时重读 `models.list()`，避免 keepAlive 页面缓存过期列表。
 
 KV 每值最多 64 KiB。不存在的键返回 null。读写只接受 JSON，值在宿主数据目录持久化。
 
@@ -53,7 +55,7 @@ KV 每值最多 64 KiB。不存在的键返回 null。读写只接受 JSON，值
 - 所有页面均首次访问才加载。`keepAlive: false` 时切走卸载，React effect cleanup 应释放订阅、定时器及页面资源；返回时重新初始化。
 - `keepAlive: true` 时切走只隐藏页面，保留组件状态、DOM 与独立滚动位置；隐藏页面不参与布局、键盘导航和无障碍访问，effect 和事件订阅继续运行。此模式会持续占用内存，重页面应谨慎开启。
 - 插件停用、卸载、后端激活状态失效，或版本 / 前端 / 样式资源 URL / keepAlive 声明变化时释放旧实例；重新启用后首次访问再创建。普通目录刷新、短暂连接失败不清空已保留的页面。
-- 保留仅限当前窗口运行期间，无自动淘汰。刷新或重启不恢复未保存草稿，需持久化的数据继续使用 KV。翻译、随手记显式开启，应用中心与模型设置由宿主保留以避免切页丢失表单。
+- 保留仅限当前窗口运行期间，无自动淘汰。刷新或重启不恢复未保存草稿，需持久化的数据继续使用 KV。翻译、随手记显式开启，应用中心与设置面板（含各设置分类）由宿主保留以避免切页丢失表单。
 - 页面卸载不等于后端插件停用，不取消宿主模型任务，也不保证回收已导入的 JS 模块缓存或插件自行泄漏的全局对象。不要把“切页”当作任务取消信号。
 
 `plugins.list` 返回归一化的 `keepAlive` 布尔值。已经安装的旧随手记归档不会被宿主隐式修改；需要安装新版归档才会开启保留，卸载重装仍保留原有 KV。
@@ -64,8 +66,8 @@ KV 每值最多 64 KiB。不存在的键返回 null。读写只接受 JSON，值
 import { definePlugin, defineMethod, z } from "@malatang/sdk/runtime";
 export default definePlugin({
   methods: {
-    generate: defineMethod("生成文本", z.object({ text: z.string() }), (input, ctx) =>
-      ctx.models.start({ modelId: "demo", prompt: input.text }))
+    generate: defineMethod("生成文本", z.object({ text: z.string(), modelId: z.string() }), (input, ctx) =>
+      ctx.models.start({ modelId: input.modelId, prompt: input.text }))
   }
 });
 ```
@@ -84,19 +86,22 @@ export default definePlugin({
 
 ### 配色与密度基线
 
-2026-10-03 按用户要求参考 VS Code 官方 [Light Modern](https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/light_modern.json)、[Dark Modern](https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/dark_modern.json) 及 [Theme Color](https://code.visualstudio.com/api/references/theme-color)。采用中性背景、蓝色强调、细边框；状态色的背景与边框为麻辣烫适配值，并非完整复制 VS Code 的界面。
+2026-10-03 用户提供 ChatGPT 桌面客户端设置页截图，要求协调侧栏与设置配色。当前采用截图中的中性灰层次，替代之前 VS Code 风格的蓝色强调；这是一套基于用户参考图的应用配色，不是 ChatGPT 官方设计规范。浅色主题使用同一套明度关系作对应适配。
 
 | 用途 | 浅色 | 深色 |
 | --- | --- | --- |
-| 页面 `--m-bg` | `#ffffff` | `#1f1f1f` |
-| 导航 `--m-sidebar` | `#f8f8f8` | `#181818` |
-| 正文 `--m-text` | `#3b3b3b` | `#cccccc` |
-| 强调 `--m-accent` | `#005fb8` | `#0078d4` |
-| 分隔 `--m-line` | `#e5e5e5` | `#2b2b2b` |
+| 内容区 `--m-bg` | `#ffffff` | `#181818` |
+| 设置菜单 `--m-surface-muted` | `#f3f3f3` | `#1e1e1e` |
+| 卡片 `--m-surface` | `#f7f7f7` | `#232323` |
+| 外侧图标栏 `--m-sidebar` | `#ebebeb` | `#292a2a` |
+| 菜单选中 `--m-surface-hover` | `#e8e8e8` | `#303030` |
+| 正文 `--m-text` | `#303030` | `#ededed` |
+| 主操作 `--m-accent` | `#242424` | `#ededed` |
+| 分隔 `--m-line` | `#e2e2e2` | `#363636` |
 
-输入框使用 `--m-input-bg` / `--m-input-border`，焦点使用 `--m-focus`，次级按钮使用 `--m-button-secondary` / `--m-button-secondary-hover`，文本选区使用 `--m-selection`。区分这些状态，避免把强调色同时作为所有前景色。
+主按钮与图标背景若使用 `--m-accent`，前景必须配合 `--m-on-accent`，不能固定白色。选中、悬停、焦点和文本选区使用中性色，成功 / 警告 / 错误保留语义状态色。输入框使用 `--m-input-bg` / `--m-input-border`，焦点使用 `--m-focus`，次级按钮使用 `--m-button-secondary` / `--m-button-secondary-hover`。显式深色与跟随系统的深色使用相同 tokens。
 
-宿主活动栏宽 48px，36px 点击区域、20px 工具图标和 4px 项间距；活动项使用中性高亮及蓝色边缘指示。该尺寸参考 [VS Code 活动栏源码](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/activitybar/activitybarPart.ts)，是结合麻辣烫布局选择的组合。右侧仍由插件独占，不增加顶部导航或第二侧栏。插件自己的品牌图标允许保留识别色。
+保留之前参考 [VS Code 活动栏源码](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/activitybar/activitybarPart.ts) 选定的紧凑尺寸：活动栏宽 48px，36px 点击区域、20px 工具图标和 4px 项间距。活动项为中性高亮和明暗边缘指示。右侧由当前页面使用，无顶部导航；设置分类侧栏仅在设置内部出现。插件自己的品牌图标允许保留识别色。
 
 ## 独立构建与打包
 
@@ -111,3 +116,9 @@ bun pm pack
 构建器把 `src/client.tsx` 和可选的 `src/backend.ts` 编译为对应 `dist` 文件。业务 JS 依赖被打包；React 与 JSX runtime 从宿主共享，插件无需访问宿主源码。不要把服务器代码导入前端。此 MVP 构建器尚未处理原生依赖和额外资源复制。
 
 本地 `bun pm pack`、npm 发布包和 Git 仓库遵循同一个 manifest / dist 格式。Git 来源需要包含预构建 dist，宿主只获取依赖并禁用安装脚本，不替插件构建源码。页面或 CLI 安装后立即激活；前端渲染失败与后端激活失败分别显示。升级流程为卸载再安装，保留 KV 和历史；无自动升级 / 回滚。
+
+### ChatGPT 订阅模型
+
+`ModelInfo.kind` 增加 `chatgpt`，`chatgptProfileId` 是宿主账号引用；不包含邮箱、token 或授权 URL。模型固定绑定该账号，设置页切换账号不会改变已有模型。插件继续通过 `models.list/start` 调用，SDK 的 `ModelSelect` 自动显示订阅用量标识；自行绘制选择器时应同样标明使用 ChatGPT plan。宿主负责登录、实时模型目录、刷新、限额和退出，不会悄悄改用 API Key 计费。`configured: false` 表示需回设置恢复登录或订阅授权。
+
+当前订阅模型仍使用 MVP 文本请求接口；宿主以官方 public Responses HTTP/SSE 发送 `instructions` 和输入，仅显式完成事件才算成功，断流保留部分文本但标为失败。其他 Pi provider 沿用现有 API Key 适配。

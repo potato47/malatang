@@ -6,8 +6,32 @@ export interface ModelInfo {
   provider: string;
   model: string;
   baseURL: string;
-  kind: "demo" | "openai-compatible";
+  kind: "openai-compatible" | "pi" | "chatgpt";
   configured: boolean;
+  preset: string | null;
+  hasApiKey: boolean;
+  /** Stable host account reference; no identity or credentials. */
+  chatgptProfileId?: string;
+  options: Record<string, string>;
+}
+
+export interface ProviderPreset {
+  id: string;
+  name: string;
+  modelCount: number;
+  apiKeySupported: boolean;
+  keyLabel: string;
+  notice: string;
+  fields: { key: string; label: string; placeholder: string; required: boolean }[];
+}
+
+export interface PresetModel {
+  id: string;
+  name: string;
+  api: string;
+  baseURL: string;
+  contextWindow: number;
+  reasoning: boolean;
 }
 
 export interface ModelRequest {
@@ -29,6 +53,7 @@ export interface ModelRun {
   createdAt: number;
   updatedAt: number;
   revision: number;
+  /** Legacy history marker. New runs always use a configured model and return false. */
   demo: boolean;
 }
 

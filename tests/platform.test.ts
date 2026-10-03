@@ -3,7 +3,7 @@ import { mkdtemp, rm, mkdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Store } from "../backend/store";
-import { DEMO_TEXT, Models, readSSE } from "../backend/models";
+import { Models, readSSE } from "../backend/models";
 import { Plugins, containedFile, manifestSchema } from "../backend/plugins";
 const directories: string[] = [];
 const runners: Models[] = [];
@@ -15,6 +15,32 @@ async function setup(fetcher?: typeof fetch) {
   return { store, models, dir };
 }
 async function waitFor(predicate: () => boolean, ms = 5000) { const start = Date.now(); while (!predicate()) { if (Date.now() - start > ms) throw new Error("Timed out"); await Bun.sleep(15); } }
+async function streamingSetup() {
+  const fetcher = (async (_url: unknown, init: RequestInit) => {
+    init.signal!.throwIfAborted();
+    return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));
+      init.signal!.addEventListener("abort", () => controller.error(init.signal!.reason), { once: true });
+    } }));
+  }) as typeof fetch;
+  const result = await setup(fetcher);
+  const model = await result.models.save({ name: "test", provider: "test", model: "test-model", baseURL: "http://localhost:1234/v1" });
+  return { ...result, model };
+}
+test("model list starts empty and removed demo IDs cannot generate or erase legacy history", async () => {
+  const { store, models, dir } = await setup();
+  expect(models.list()).toEqual([]);
+  await expect(models.start("translate", { modelId: "demo", prompt: "hello" })).rejects.toThrow("模型不存在");
+  expect(store.value.runs).toHaveLength(0);
+  const now = Date.now();
+  await store.update(state => { state.runs.push({ id: "legacy", pluginId: "translate", modelId: "demo", title: "old", input: "old", output: "old sample", status: "completed", error: null, createdAt: now, updatedAt: now, revision: 1, demo: true }); });
+  const restored = new Store(dir); await restored.open();
+  expect(restored.value.runs[0]).toMatchObject({ id: "legacy", demo: true, output: "old sample" });
+  const model = await models.save({ name: "test", provider: "test", model: "test-model", baseURL: "http://localhost:1234/v1" });
+  expect(models.list().map(item => item.id)).toEqual([model.id]);
+  await models.remove(model.id);
+  expect(models.list()).toEqual([]);
+});
 test("KV serializes concurrent writes, isolates plugins, handles prototype keys and persists", async () => {
   const { store, dir } = await setup();
   await Promise.all([store.set("a", "note", "alpha"), store.set("b", "note", "beta"), store.set("__proto__", "constructor", { safe: true })]);
@@ -49,16 +75,16 @@ test("truncated provider stream fails rather than marking partial text complete"
   const run = await models.start("translate", { modelId: model.id, prompt: "hello" }); await waitFor(() => !models.busy());
   expect(models.get("translate", run.id).status).toBe("failed"); expect(models.get("translate", run.id).output).toBe("partial");
 });
-test("demo cancellation retains partial state and blocks other plugin access", async () => {
-  const { models } = await setup();
-  const run = await models.start("translate", { modelId: "demo", prompt: DEMO_TEXT });
+test("provider cancellation retains partial state and blocks other plugin access", async () => {
+  const { models, model } = await streamingSetup();
+  const run = await models.start("translate", { modelId: model.id, prompt: "hello" });
   await waitFor(() => models.get("translate", run.id).output.length > 0);
   const stopped = await models.cancel("translate", run.id); expect(stopped.status).toBe("cancelled"); expect(stopped.output.length).toBeGreaterThan(0);
   expect(() => models.get("other", run.id)).toThrow("不存在");
 });
 test("restart marks unfinished runs interrupted", async () => {
-  const { store, models, dir } = await setup();
-  const run = await models.start("translate", { modelId: "demo", prompt: DEMO_TEXT });
+  const { models, model, dir } = await streamingSetup();
+  const run = await models.start("translate", { modelId: model.id, prompt: "hello" });
   const restored = new Store(dir); await restored.open(); expect(restored.value.runs[0]?.status).toBe("failed");
   await models.cancel("translate", run.id);
 });
@@ -91,14 +117,27 @@ test("page retention is opt-in and is included in discovery for old and invalid 
   await plugins.stop();
 });
 test("independent built-in backend invokes SDK and gates disable while active", async () => {
-  const { store, models } = await setup(); const plugins = new Plugins(store, models, resolve("."), () => {}); await plugins.open();
+  const { store, models, model } = await streamingSetup(); const plugins = new Plugins(store, models, resolve("."), () => {}); await plugins.open();
   expect(plugins.list()[0]?.methods[0]?.name).toBe("translate");
   expect(plugins.list()[0]?.keepAlive).toBe(true);
-  const result = await plugins.invoke("translate", "translate", { text: DEMO_TEXT, target: "简体中文", modelId: "demo" }) as { id: string };
+  const result = await plugins.invoke("translate", "translate", { text: "hello", target: "简体中文", modelId: model.id }) as { id: string };
   await expect(plugins.setEnabled("translate", false)).rejects.toThrow("正在运行");
   await models.cancel("translate", result.id); expect((await plugins.setEnabled("translate", false)).status).toBe("disabled");
   await expect(plugins.invoke("translate", "translate", {})).rejects.toThrow("停用");
   expect((await plugins.setEnabled("translate", true)).status).toBe("active"); await plugins.stop();
+});
+test("plugin discovery rejects the host settings route as a plugin ID", async () => {
+  const { store, models, dir } = await setup();
+  const root = join(dir, "reserved-settings");
+  await mkdir(join(root, "dist"), { recursive: true });
+  const pkg = await Bun.file("plugins/translate/package.json").json();
+  const { backend: _backend, ...manifest } = pkg.malatang;
+  await Bun.write(join(root, "package.json"), JSON.stringify({ name: "reserved-settings", version: "0.1.0", malatang: { ...manifest, id: "settings" } }));
+  await Bun.write(join(root, "dist/client.js"), "export default function Page() {}");
+  await store.update(state => { state.plugins.push({ id: "settings", root, installation: "settings", source: "test" }); });
+  const plugins = new Plugins(store, models, resolve("."), () => {}); await plugins.open();
+  expect(plugins.list().find(item => item.id === "settings")).toMatchObject({ status: "error", enabled: false, error: "此插件 ID 为宿主保留名称" });
+  await plugins.stop();
 });
 test("local archive installs, reloads, retains KV after uninstall and reports duplicate error", async () => {
   const { store, models } = await setup(); const plugins = new Plugins(store, models, resolve("."), () => {}); await plugins.open();

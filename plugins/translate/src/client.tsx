@@ -9,8 +9,9 @@ const statusLabels = { running: "正在翻译", completed: "翻译完成", cance
 export default function Translate() {
   const [text, setText] = useState(sample);
   const [target, setTarget] = useState("简体中文");
-  const [modelId, setModelId] = useState("demo");
+  const [modelId, setModelId] = useState("");
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [runs, setRuns] = useState<ModelRun[]>([]);
   const [current, setCurrent] = useState<ModelRun | null>(null);
   const [pending, setPending] = useState(false);
@@ -24,7 +25,7 @@ export default function Translate() {
     if (!alive.current) return;
     setRuns(items);
     const restoring = !selected.current;
-    const id = selected.current ?? items[0]?.id;
+    const id = selected.current ?? items.find(item => !item.demo)?.id;
     if (id) {
       selected.current = id;
       const run = await client.runs.get(id);
@@ -34,15 +35,24 @@ export default function Translate() {
   useEffect(() => {
     alive.current = true;
     const fail = (e: unknown) => alive.current && setError(String(e));
+    let modelGeneration = 0;
+    const refreshModels = async () => {
+      const generation = ++modelGeneration;
+      try { const items = await client.models.list(); if (alive.current && generation === modelGeneration) { setModels(items); setModelsLoaded(true); } }
+      catch (e) { if (generation === modelGeneration) fail(e); }
+    };
     const off = client.runs.onChange(() => { void refresh().catch(fail); });
-    const reconnect = client.onReconnect(() => { void refresh().catch(fail); void client.models.list().then(value => alive.current && setModels(value)).catch(fail); });
-    void client.models.list().then(value => alive.current && setModels(value)).catch(fail);
+    const modelsOff = client.models.onChange(() => void refreshModels());
+    const reconnect = client.onReconnect(() => { void refresh().catch(fail); void refreshModels(); });
+    void refreshModels();
     void client.kv.get("preferences").then(value => { if (alive.current && value && typeof value === "object" && !Array.isArray(value)) { if (typeof value.target === "string") setTarget(value.target); if (typeof value.modelId === "string") setModelId(value.modelId); } }).catch(fail);
     void refresh().catch(fail);
-    return () => { alive.current = false; off(); reconnect(); };
+    return () => { alive.current = false; modelGeneration++; off(); modelsOff(); reconnect(); };
   }, []);
-  useEffect(() => { if (models.length && !models.some(model => model.id === modelId)) setModelId(models[0]!.id); }, [models, modelId]);
+  useEffect(() => { if (modelsLoaded && !models.some(model => model.id === modelId && model.configured)) setModelId(models.find(model => model.configured)?.id ?? ""); }, [models, modelsLoaded, modelId]);
+  const hasModel = models.some(model => model.id === modelId && model.configured);
   const translate = async () => {
+    if (!hasModel || busy || !text.trim()) return;
     setPending(true); setError(""); setCopied(false);
     try {
       const run = await client.invoke<ModelRun>("translate", { text, target, modelId });
@@ -59,10 +69,10 @@ export default function Translate() {
     <PageHeader eyebrow="A LITTLE LESS LOST IN TRANSLATION" title="让表达，自在抵达。" description="保留你的意思，也照顾另一种语言的语气。" actions={<Badge>译文 · 内置应用</Badge>} />
     <div className="translation-toolbar"><div className="language-flow"><span>自动识别语言</span><span className="flow-arrow">→</span><select aria-label="目标语言" value={target} disabled={busy} onChange={e => setTarget(e.target.value)}>{languages.map(language => <option key={language}>{language}</option>)}</select></div><ModelSelect aria-label="翻译模型" models={models} value={modelId} disabled={busy} onChange={e => setModelId(e.target.value)} /></div>
     <div className="translation-grid">
-      <Panel className="translation-card"><div className="panel-heading"><span><i className="tiny-dot" />原文</span><Button variant="ghost" disabled={busy} onClick={() => setText(sample)}>载入示例 ↗</Button></div><textarea aria-label="待翻译文本" placeholder="写下或粘贴想翻译的文字…" className="translation-input" value={text} maxLength={16000} disabled={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !busy && text.trim()) { e.preventDefault(); void translate(); } }} /><div className="panel-footer"><span>{text.length.toLocaleString()} / 16,000</span><span>⌘ ↵ 开始翻译</span></div></Panel>
-      <Panel className="translation-card result-card"><div className="panel-heading"><span><i className="tiny-dot accent" />译文</span>{current ? <Badge tone={current.status === "failed" ? "red" : current.status === "completed" ? "green" : "neutral"}>{statusLabels[current.status]}</Badge> : <span className="muted">等一个好表达</span>}</div><div className="translation-output" aria-live="polite" aria-label="翻译结果">{current?.output ? <p>{current.output}{current.status === "running" && <span className="typing-cursor" />}</p> : <div className="translation-empty"><div className="translation-art"><span>A</span><span>文</span><i>✦</i></div><h3>{busy ? "正在寻找合适的表达…" : "另一种语言，同样的你"}</h3><p>译文会在这里，一点点呈现。</p></div>}</div><div className="panel-footer"><span>{current?.demo ? "演示结果 · 非真实模型" : current ? `${current.output.length} 字符` : "由宿主模型能力提供支持"}</span><Button variant="ghost" disabled={!current?.output} onClick={() => void copy()}>{copied ? "✓ 已复制" : "复制译文"}</Button></div></Panel>
+      <Panel className="translation-card"><div className="panel-heading"><span><i className="tiny-dot" />原文</span><Button variant="ghost" disabled={busy} onClick={() => setText(sample)}>载入示例 ↗</Button></div><textarea aria-label="待翻译文本" placeholder="写下或粘贴想翻译的文字…" className="translation-input" value={text} maxLength={16000} disabled={busy} onChange={e => setText(e.target.value)} onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !busy && hasModel && text.trim()) { e.preventDefault(); void translate(); } }} /><div className="panel-footer"><span>{text.length.toLocaleString()} / 16,000</span><span>⌘ ↵ 开始翻译</span></div></Panel>
+      <Panel className="translation-card result-card"><div className="panel-heading"><span><i className="tiny-dot accent" />译文</span>{current ? <Badge tone={current.status === "failed" ? "red" : current.status === "completed" ? "green" : "neutral"}>{statusLabels[current.status]}</Badge> : <span className="muted">等一个好表达</span>}</div><div className="translation-output" aria-live="polite" aria-label="翻译结果">{current?.output ? <p>{current.output}{current.status === "running" && <span className="typing-cursor" />}</p> : <div className="translation-empty"><div className="translation-art"><span>A</span><span>文</span><i>✦</i></div><h3>{busy ? "正在寻找合适的表达…" : "另一种语言，同样的你"}</h3><p>译文会在这里，一点点呈现。</p></div>}</div><div className="panel-footer"><span>{current?.demo ? "历史演示记录 · 非真实模型" : current ? `${current.output.length} 字符` : "由宿主模型能力提供支持"}</span><Button variant="ghost" disabled={!current?.output} onClick={() => void copy()}>{copied ? "✓ 已复制" : "复制译文"}</Button></div></Panel>
     </div>
-    <div className="translation-actions"><p><span className="soft-spark">✦</span>{modelId === "demo" ? "当前为演示模型，仅示例文本有预置译文。真实翻译请添加模型。" : "模型由宿主管理，插件无需单独配置 API Key。"}</p>{busy ? <Button variant="secondary" disabled={pending} onClick={() => current && void client.runs.cancel(current.id).then(setCurrent).catch(e => setError(String(e)))}>停止生成</Button> : <Button disabled={!text.trim() || !models.length} onClick={() => void translate()}>开始翻译 <span>↗</span></Button>}</div>
+    <div className="translation-actions"><p><span className="soft-spark">✦</span>{!hasModel ? "请先在「设置 → 模型服务」添加并连接模型。" : "模型由宿主管理，插件无需单独配置 API Key。"}</p>{busy ? <Button variant="secondary" disabled={pending} onClick={() => current && void client.runs.cancel(current.id).then(setCurrent).catch(e => setError(String(e)))}>停止生成</Button> : <Button disabled={!text.trim() || !hasModel} onClick={() => void translate()}>开始翻译 <span>↗</span></Button>}</div>
     {(error || current?.error) && <p className="m-error" role="alert">{error || current?.error}</p>}
     <section className="history-section"><div className="section-title"><h2>最近的译文 <span>{runs.length.toString().padStart(2, "0")}</span></h2><span>保存在本机</span></div>{runs.length ? <div className="history-list">{runs.slice(0, 5).map(run => <button key={run.id} className={`history-row ${current?.id === run.id ? "selected" : ""}`} disabled={busy} onClick={() => void openRun(run.id)}><span className="history-icon">文</span><span className="history-content"><strong>{run.title}</strong><small>{run.output || statusLabels[run.status]}</small></span><span className="history-date">{new Date(run.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span><span>↗</span></button>)}</div> : <div className="history-placeholder">每一次表达，都有迹可循。完成的翻译会保留在这里。</div>}</section>
   </div>;

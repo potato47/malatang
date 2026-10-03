@@ -5,7 +5,7 @@ import { app } from "./bridge";
 import PluginPage, { pluginPageKey } from "./PluginPage";
 import PageSlot from "./PageSlot";
 import PluginManager from "./PluginManager";
-import ModelSettings from "./ModelSettings";
+import Settings from "./Settings";
 import ThemeControl from "./ThemeControl";
 import ActivityButton from "./ActivityButton";
 
@@ -36,7 +36,7 @@ export default function App() {
 
   const active = plugins.filter(plugin => plugin.enabled && plugin.status === "active");
   const selected = active.find(plugin => plugin.id === page);
-  const title = page === "plugins" ? "应用中心" : page === "models" ? "模型设置" : selected?.name ?? "工作台";
+  const title = page === "plugins" ? "应用中心" : page === "settings" ? "设置" : selected?.name ?? "工作台";
 
   return (
     <div className="app-shell">
@@ -68,13 +68,13 @@ export default function App() {
             </svg>
           </ActivityButton>
           <ActivityButton
-            label="模型设置"
-            aria-current={page === "models" ? "page" : undefined}
-            className={`activity-button ${page === "models" ? "active" : ""}`}
-            onClick={() => setPage("models")}
+            label="设置"
+            aria-current={page === "settings" ? "page" : undefined}
+            className={`activity-button ${page === "settings" ? "active" : ""}`}
+            onClick={() => setPage("settings")}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-              <path d="M5 4v16M12 4v16M19 4v16" /><path d="M2 9h6M9 16h6M16 8h6" strokeWidth="4" />
+              <path d="m9 3-.5 2-2 .9-1.8-.6-2 3.4 1.4 1.5v2.4l-1.4 1.5 2 3.4 1.8-.6 2 .9.5 2h4l.5-2 2-.9 1.8.6 2-3.4-1.4-1.5v-2.4l1.4-1.5-2-3.4-1.8.6-2-.9-.5-2Z" /><circle cx="11" cy="11.4" r="3" />
             </svg>
           </ActivityButton>
         </div>
@@ -84,13 +84,13 @@ export default function App() {
         <PageSlot visible={page === "plugins"} keepAlive label="应用中心">
           <PluginManager plugins={plugins} open={setPage} />
         </PageSlot>
-        <PageSlot visible={page === "models"} keepAlive label="模型设置">
-          <ModelSettings />
+        <PageSlot visible={page === "settings"} keepAlive label="设置">
+          <Settings />
         </PageSlot>
         {active.map(plugin => <PageSlot key={pluginPageKey(plugin)} visible={page === plugin.id} keepAlive={plugin.keepAlive} label={plugin.name}>
           <PluginPage plugin={plugin} visible={page === plugin.id} />
         </PageSlot>)}
-        {!selected && page !== "plugins" && page !== "models" && (loaded ? (
+        {!selected && page !== "plugins" && page !== "settings" && (loaded ? (
           <div className="page-scroll"><div className="m-page">
             <EmptyState title="从一个小应用开始" description="应用已停用或尚未安装，前往应用中心管理。" />
             <button className="m-button primary" onClick={() => setPage("plugins")}>打开应用中心</button>

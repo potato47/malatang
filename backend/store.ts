@@ -7,7 +7,7 @@ import type { JSONValue } from "@malatang/sdk/types";
 const stateSchema = z.object({
   version: z.literal(1),
   theme: themeMode.default("system"),
-  models: z.array(z.object({ id: z.string(), name: z.string(), provider: z.string(), model: z.string(), baseURL: z.string(), apiKey: z.string() })),
+  models: z.array(z.object({ id: z.string(), name: z.string(), provider: z.string(), model: z.string(), baseURL: z.string(), apiKey: z.string(), preset: z.string().nullable().default(null), chatgptProfileId: z.string().optional(), options: z.record(z.string(), z.string()).default({}) })),
   plugins: z.array(z.object({ id: z.string(), root: z.string(), installation: z.string(), source: z.string() })),
   disabled: z.array(z.string()),
   kv: z.record(z.string(), z.record(z.string(), z.json())),
