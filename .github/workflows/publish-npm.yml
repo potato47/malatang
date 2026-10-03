@@ -1,0 +1,98 @@
+name: Publish npm
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual runs validate and upload a package, but never publish it.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and verify package
+    runs-on: macos-26
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      dist-tag: ${{ steps.release.outputs.dist-tag }}
+    env:
+      NO_PROXY: localhost,127.0.0.1,::1
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          # Must match BUNDLED_BUN_VERSION; check-npm-release.ts enforces this.
+          bun-version: "1.4.2"
+      - name: Check release versions and tag
+        id: release
+        run: bun tools/check-npm-release.ts
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Apple Silicon runtimes
+        run: |
+          test "$(uname -m)" = arm64
+          swift --version
+          bun run runtime:build
+      - name: Run framework checks
+        run: bun run check
+      - name: Pack and verify npm archive
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir -p .temp/npm/unpacked
+          npm pack --workspace=@semicoder/fia --pack-destination .temp/npm
+          tar -xzf ".temp/npm/semicoder-fia-${RELEASE_VERSION}.tgz" -C .temp/npm/unpacked
+          bun tools/check-npm-package.ts .temp/npm/unpacked/package
+          git diff --exit-code
+      - name: Upload verified package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-package
+          path: .temp/npm/*.tgz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Publish to npm with OIDC
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'potato47/fia'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install npm with trusted publishing support
+        run: npm install --global npm@11.19.0
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: npm-package
+          path: npm-package
+      - name: Publish verified archive
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          DIST_TAG: ${{ needs.build.outputs.dist-tag }}
+        run: >-
+          npm publish "./npm-package/semicoder-fia-${RELEASE_VERSION}.tgz"
+          --access public --tag "$DIST_TAG" --ignore-scripts
+          --registry=https://registry.npmjs.org

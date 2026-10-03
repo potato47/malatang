@@ -89,6 +89,8 @@ bun run smoke
 
 `fia create playground --local` 使用当前包目录的本地依赖；修改框架 TS 后重新构建 CLI，修改 Swift 后重新运行 `runtime:build`。应用侧仍使用预编译产物。
 
-发布只需 `bun run release`，默认递增 minor 版本并将 patch 归零（例如 `0.14.0` → `0.15.0`）；也可用 `bun run release 0.16.0` 指定更高版本。命令自动同步版本、构建、检查并发布，无需单独执行 version 命令。使用 `bun run release --dry-run` 或 `bun run release 0.16.0 --dry-run` 模拟完整流程，结束后恢复版本文件；失败时也会恢复版本文件。正式发布要求开始时工作区干净，成功后保留版本变更供提交。模拟和正式发布均对 `registry.npmjs.org` 绕过代理，单次请求超时为 15 分钟，关闭自动重试，并显示 HTTP 请求日志。
+GitHub 自动发布：先执行 `bun run version:npm <version>` 同步版本，提交后推送 `v<version>` 标签；Actions 会构建 Apple Silicon 运行时、执行检查、校验 npm 归档，并用 OIDC 发布 `@semicoder/fia`。正式版本进入 `latest`，预发布版本进入 `next`；手动运行 workflow 只验证和上传归档。首次配置与完整步骤见 [npm 自动发布](docs/npm-release.md)。
+
+本地交互式发布仍可使用 `bun run release`，默认递增 minor 版本并将 patch 归零；也可指定更高版本。命令自动同步版本、构建、检查并发布。使用 `bun run release --dry-run` 模拟完整流程，结束或失败后恢复版本文件。正式发布要求开始时工作区干净，成功后保留版本变更供提交。本地命令对 `registry.npmjs.org` 绕过代理，单次请求超时为 15 分钟，关闭自动重试，并显示 HTTP 请求日志。同一版本只选择一种发布方式，不要在本地发布后再推送同版本发布标签。
 
 此仓库不再提供 Swift 应用工程、Native/Hybrid 模板或 Sparkle 更新。

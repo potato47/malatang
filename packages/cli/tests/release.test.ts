@@ -36,7 +36,16 @@ test("default release increments minor and resets patch and prerelease", () => {
 
 // Run the real release/version scripts in a disposable repository; replace only
 // subprocess execution so tests never build runtimes or contact npm.
-for (const scenario of ["publish", "explicit", "dry-run", "failed", "dirty"] as const) {
+for (const scenario of [
+  "publish",
+  "explicit",
+  "dry-run",
+  "failed",
+  "dirty",
+  "prepare",
+  "prepare-explicit",
+  "prepare-invalid",
+] as const) {
   test(`release workflow: ${scenario}`, async () => {
     const directory = await mkdtemp(resolve(tmpdir(), "fia-release-"));
     try {
@@ -48,7 +57,10 @@ for (const scenario of ["publish", "explicit", "dry-run", "failed", "dirty"] as 
         versionedPaths.map((path) => readFile(resolve(directory, path), "utf8")),
       );
       const current = JSON.parse(before[0]!).version as string;
-      const target = scenario === "explicit" ? "99.0.1" : nextMinorVersion(current);
+      const target =
+        scenario === "explicit" || scenario === "prepare-explicit"
+          ? "99.0.1"
+          : nextMinorVersion(current);
       await writeFile(
         resolve(directory, "tools/shared.ts"),
         `
@@ -67,27 +79,50 @@ export async function runInteractive(command: string[]) {
 }
 `,
       );
-      const args = scenario === "explicit" ? [target] : scenario === "dry-run" ? ["--dry-run"] : [];
-      const child = Bun.spawn([process.execPath, "tools/publish-npm.ts", ...args], {
-        cwd: directory,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const prepare = scenario.startsWith("prepare");
+      const args =
+        scenario === "prepare-invalid"
+          ? [current]
+          : scenario === "explicit" || scenario === "prepare-explicit"
+            ? [target]
+            : scenario === "dry-run"
+              ? ["--dry-run"]
+              : [];
+      const child = Bun.spawn(
+        [process.execPath, prepare ? "tools/version-npm.ts" : "tools/publish-npm.ts", ...args],
+        {
+          cwd: directory,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
       const [exitCode, stdout, stderr] = await Promise.all([
         child.exited,
         new Response(child.stdout).text(),
         new Response(child.stderr).text(),
       ]);
-      expect(exitCode, stderr).toBe(scenario === "failed" || scenario === "dirty" ? 1 : 0);
+      expect(exitCode, stderr).toBe(
+        scenario === "failed" || scenario === "dirty" || scenario === "prepare-invalid" ? 1 : 0,
+      );
       const after = await Promise.all(
         versionedPaths.map((path) => readFile(resolve(directory, path), "utf8")),
       );
+      if (scenario === "prepare-invalid") {
+        expect(after).toEqual(before);
+        expect(await Bun.file(resolve(directory, "commands.jsonl")).exists()).toBe(false);
+        return;
+      }
       const commands = (await readFile(resolve(directory, "commands.jsonl"), "utf8"))
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line) as string[]);
       const publishes = commands.filter((command) => command[0] === "npm");
-      if (scenario === "publish" || scenario === "explicit") {
+      if (prepare) {
+        for (const contents of after) expect(contents).toContain(target);
+        expect(commands).toEqual([[process.execPath, "install", "--lockfile-only"]]);
+        expect(publishes).toHaveLength(0);
+        expect(stdout).toContain(`tagging v${target}`);
+      } else if (scenario === "publish" || scenario === "explicit") {
         for (const contents of after) expect(contents).toContain(target);
         expect(publishes).toHaveLength(2);
         expect(publishes[0]).toContain("--dry-run");

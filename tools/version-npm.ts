@@ -190,3 +190,24 @@ export async function updateNPMVersion(target: string): Promise<() => Promise<vo
     throw new Error("version update failed; versioned files were rolled back", { cause: error });
   }
 }
+
+if (import.meta.main) {
+  try {
+    const args = process.argv.slice(2);
+    if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
+      console.log(
+        "Usage: bun run version:npm [version]\nDefault: increment minor version. Does not publish or create a Git tag.",
+      );
+    } else {
+      if (args.length > 1) throw new Error("at most one target version is allowed");
+      const target = args[0] ?? nextMinorVersion(cliPackage.version);
+      await updateNPMVersion(target);
+      console.log(
+        `version: updated ${cliPackage.version} → ${target}; commit the changes before tagging v${target}`,
+      );
+    }
+  } catch (error) {
+    console.error(`version: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
+}

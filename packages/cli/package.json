@@ -2,6 +2,11 @@
   "name": "@semicoder/fia",
   "version": "0.16.1",
   "description": "Build macOS applications for humans and agents with a shared API, UI and CLI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/potato47/fia.git",
+    "directory": "packages/cli"
+  },
   "bin": {
     "fia": "bin/fia"
   },
