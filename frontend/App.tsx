@@ -40,9 +40,6 @@ export default function App() {
   return (
     <div className="app-shell">
       <nav className="activity-bar" aria-label="应用导航">
-        <button className="brand-mark" title="麻辣烫" onClick={() => setPage("translate")} aria-label="麻辣烫首页">
-          <span>m</span><i />
-        </button>
         <div className="activity-apps">
           {active.map(plugin => (
             <button

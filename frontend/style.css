@@ -11,9 +11,6 @@ h1,h2,h3,p{margin:0}
 button svg{width:23px;height:23px}
 .app-shell{display:flex;height:100vh;min-height:0;overflow:hidden}
 .activity-bar{--activity-width:48px;width:var(--activity-width);flex-shrink:0;min-height:0;background:var(--m-sidebar);border-right:1px solid var(--m-line);display:flex;align-items:center;flex-direction:column;padding:8px 0;gap:8px}
-.brand-mark{flex-shrink:0;border:0;border-radius:6px;background:var(--m-accent);color:var(--m-on-accent);width:28px;height:28px;position:relative;margin:2px 0 6px}
-.brand-mark span{font:italic 700 23px Georgia;position:relative;top:-2px}
-.brand-mark i{position:absolute;width:3px;height:3px;background:currentColor;opacity:.7;right:4px;top:5px;border-radius:50%}
 .activity-apps{display:flex;flex-direction:column;gap:4px;width:100%;align-items:center;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:2px 0;scrollbar-width:thin}
 .activity-button{position:relative;flex-shrink:0;border:0;width:36px;height:36px;border-radius:5px;color:var(--m-sidebar-muted);background:transparent;display:grid;place-items:center;font-size:18px;font-weight:400}
 .activity-button svg{width:20px;height:20px}
