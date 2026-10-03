@@ -69,9 +69,31 @@ test("manifest rejects incompatible SDK and resource traversal / symlinks", asyn
   await expect(containedFile(join(dir, "package"), "escape.js")).rejects.toThrow();
   const pkg = await Bun.file("plugins/translate/package.json").json(); expect(manifestSchema.safeParse({ ...pkg.malatang, sdkVersion: "9.0" }).success).toBe(false);
 });
+test("page retention is opt-in and is included in discovery for old and invalid packages", async () => {
+  const pkg = await Bun.file("plugins/translate/package.json").json();
+  const { keepAlive: _keepAlive, backend: _backend, ...legacy } = pkg.malatang;
+  expect(manifestSchema.parse(legacy).keepAlive).toBe(false);
+  expect(manifestSchema.parse({ ...legacy, keepAlive: false }).keepAlive).toBe(false);
+  expect(manifestSchema.parse({ ...legacy, keepAlive: true }).keepAlive).toBe(true);
+  for (const value of ["true", 1, null]) expect(manifestSchema.safeParse({ ...legacy, keepAlive: value }).success).toBe(false);
+
+  const { store, models, dir } = await setup();
+  const root = join(dir, "code");
+  const plugin = join(root, "plugins/translate");
+  await mkdir(join(plugin, "dist"), { recursive: true });
+  await Bun.write(join(plugin, "package.json"), JSON.stringify({ name: "legacy-plugin", version: "0.1.0", malatang: legacy }));
+  await Bun.write(join(plugin, "dist/client.js"), "export default function Page() {}");
+  await store.update(state => { state.plugins.push({ id: "missing-package", root: join(dir, "missing"), installation: "missing", source: "test" }); });
+  const plugins = new Plugins(store, models, root, () => {});
+  await plugins.open();
+  expect(plugins.list().find(item => item.id === "translate")?.keepAlive).toBe(false);
+  expect(plugins.list().find(item => item.id === "missing-package")?.keepAlive).toBe(false);
+  await plugins.stop();
+});
 test("independent built-in backend invokes SDK and gates disable while active", async () => {
   const { store, models } = await setup(); const plugins = new Plugins(store, models, resolve("."), () => {}); await plugins.open();
   expect(plugins.list()[0]?.methods[0]?.name).toBe("translate");
+  expect(plugins.list()[0]?.keepAlive).toBe(true);
   const result = await plugins.invoke("translate", "translate", { text: DEMO_TEXT, target: "简体中文", modelId: "demo" }) as { id: string };
   await expect(plugins.setEnabled("translate", false)).rejects.toThrow("正在运行");
   await models.cancel("translate", result.id); expect((await plugins.setEnabled("translate", false)).status).toBe("disabled");
@@ -82,6 +104,7 @@ test("local archive installs, reloads, retains KV after uninstall and reports du
   const { store, models } = await setup(); const plugins = new Plugins(store, models, resolve("."), () => {}); await plugins.open();
   const job = plugins.installExample(); await waitFor(() => plugins.listJobs()[0]?.status !== "installing", 15000);
   expect(plugins.listJobs()[0]?.status).toBe("completed"); expect(plugins.list().find(item => item.id === "quick-notes")?.builtin).toBe(false);
+  expect(plugins.list().find(item => item.id === "quick-notes")?.keepAlive).toBe(true);
   await store.set("quick-notes", "note", "persist");
   plugins.installExample(); await waitFor(() => plugins.listJobs()[0]?.status !== "installing", 15000); expect(plugins.listJobs()[0]?.status).toBe("failed");
   const restored = new Plugins(store, models, resolve("."), () => {}); await restored.open(); expect(restored.list().find(item => item.id === "quick-notes")?.status).toBe("active");

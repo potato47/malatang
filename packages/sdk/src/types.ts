@@ -43,6 +43,8 @@ export interface PluginManifest {
   frontend: string;
   backend?: string;
   styles?: string;
+  /** Keep the page mounted while hidden. Defaults to false. */
+  keepAlive?: boolean;
 }
 
 export interface PluginInfo {
@@ -60,6 +62,7 @@ export interface PluginInfo {
   error: string | null;
   clientURL: string;
   styleURL: string | null;
+  keepAlive: boolean;
   methods: { name: string; description: string; inputSchema: JSONValue }[];
 }
 

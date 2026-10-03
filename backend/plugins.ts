@@ -10,6 +10,7 @@ export const manifestSchema = z.strictObject({
   schemaVersion: z.literal(1), id: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/), name: z.string().min(1).max(60),
   description: z.string().max(240), icon: z.string().min(1).max(4), color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   sdkVersion: z.literal("0.1"), frontend: z.string().min(1), backend: z.string().min(1).optional(), styles: z.string().min(1).optional(),
+  keepAlive: z.boolean().default(false),
 });
 type Loaded = { info: PluginInfo; manifest: PluginManifest; root: string; backend?: BackendPlugin; calls: number; changing: boolean };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -35,7 +36,7 @@ export class Plugins {
     for (const record of this.store.value.plugins) {
       try { await this.load(record.root, record.source, false); }
       catch (error) {
-        this.registry.set(record.id, { root: record.root, manifest: { schemaVersion: 1, id: record.id, name: record.id, description: "安装文件缺失或清单无效，请卸载后重新安装。", icon: "!", color: "#bc6452", sdkVersion: "0.1", frontend: "dist/client.js" }, calls: 0, changing: false, info: { id: record.id, name: record.id, description: "安装文件无法加载", icon: "!", color: "#bc6452", version: "unknown", packageName: record.id, source: record.source, builtin: false, enabled: false, status: "error", error: message(error), clientURL: "", styleURL: null, methods: [] } });
+        this.registry.set(record.id, { root: record.root, manifest: { schemaVersion: 1, id: record.id, name: record.id, description: "安装文件缺失或清单无效，请卸载后重新安装。", icon: "!", color: "#bc6452", sdkVersion: "0.1", frontend: "dist/client.js" }, calls: 0, changing: false, info: { id: record.id, name: record.id, description: "安装文件无法加载", icon: "!", color: "#bc6452", version: "unknown", packageName: record.id, source: record.source, builtin: false, enabled: false, status: "error", error: message(error), clientURL: "", styleURL: null, keepAlive: false, methods: [] } });
       }
     }
   }
@@ -61,7 +62,7 @@ export class Plugins {
     const enabled = !this.store.value.disabled.includes(manifest.id);
     const prefix = `/api/plugins/${manifest.id}/`;
     const revision = `?v=${Bun.hash(root + pkg.version).toString(36)}`;
-    return { root, manifest, calls: 0, changing: false, info: { id: manifest.id, name: manifest.name, description: manifest.description, icon: manifest.icon, color: manifest.color, version: pkg.version, packageName: pkg.name, source, builtin, enabled, status: "disabled", error: null, clientURL: prefix + manifest.frontend + revision, styleURL: manifest.styles ? prefix + manifest.styles + revision : null, methods: [] } };
+    return { root, manifest, calls: 0, changing: false, info: { id: manifest.id, name: manifest.name, description: manifest.description, icon: manifest.icon, color: manifest.color, version: pkg.version, packageName: pkg.name, source, builtin, enabled, status: "disabled", error: null, clientURL: prefix + manifest.frontend + revision, styleURL: manifest.styles ? prefix + manifest.styles + revision : null, keepAlive: manifest.keepAlive, methods: [] } };
   }
   private async load(root: string, source: string, builtin: boolean) {
     const plugin = await this.inspect(root, source, builtin);

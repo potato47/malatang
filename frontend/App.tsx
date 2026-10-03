@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import type { PluginInfo } from "@malatang/sdk/types";
 import { EmptyState } from "@malatang/sdk/ui";
 import { app } from "./bridge";
-import PluginPage from "./PluginPage";
+import PluginPage, { pluginPageKey } from "./PluginPage";
+import PageSlot from "./PageSlot";
 import PluginManager from "./PluginManager";
 import ModelSettings from "./ModelSettings";
 import ThemeControl from "./ThemeControl";
@@ -15,14 +16,16 @@ export default function App() {
 
   useEffect(() => {
     let live = true;
+    let generation = 0;
     const refresh = () => {
+      const request = ++generation;
       void app.call("plugins.list", {}).then(items => {
-        if (live) {
+        if (live && request === generation) {
           setPlugins(items);
           setError("");
           setLoaded(true);
         }
-      }).catch(e => live && setError(String(e)));
+      }).catch(e => live && request === generation && setError(String(e)));
     };
     const off = app.on("plugins.changed", refresh);
     const reconnect = app.onReconnect(refresh);
@@ -30,7 +33,7 @@ export default function App() {
     return () => { live = false; off(); reconnect(); };
   }, []);
 
-  const active = plugins.filter(plugin => plugin.status === "active");
+  const active = plugins.filter(plugin => plugin.enabled && plugin.status === "active");
   const selected = active.find(plugin => plugin.id === page);
   const title = page === "plugins" ? "应用中心" : page === "models" ? "模型设置" : selected?.name ?? "工作台";
 
@@ -81,23 +84,25 @@ export default function App() {
           </button>
         </div>
       </nav>
-      <main className="page-scroll" aria-label={title}>
-        {error ? (
-          <div className="m-page"><EmptyState title="暂时无法连接宿主" description={error} /></div>
-        ) : page === "plugins" ? (
+      <main className="page-area" aria-label={title}>
+        {error && <div className="connection-notice" role="alert">暂时无法连接宿主：{error}</div>}
+        <PageSlot visible={page === "plugins"} keepAlive label="应用中心">
           <PluginManager plugins={plugins} open={setPage} />
-        ) : page === "models" ? (
+        </PageSlot>
+        <PageSlot visible={page === "models"} keepAlive label="模型设置">
           <ModelSettings />
-        ) : selected ? (
-          <PluginPage key={selected.id + selected.version} plugin={selected} />
-        ) : loaded ? (
-          <div className="m-page">
+        </PageSlot>
+        {active.map(plugin => <PageSlot key={pluginPageKey(plugin)} visible={page === plugin.id} keepAlive={plugin.keepAlive} label={plugin.name}>
+          <PluginPage plugin={plugin} visible={page === plugin.id} />
+        </PageSlot>)}
+        {!selected && page !== "plugins" && page !== "models" && (loaded ? (
+          <div className="page-scroll"><div className="m-page">
             <EmptyState title="从一个小应用开始" description="应用已停用或尚未安装，前往应用中心管理。" />
             <button className="m-button primary" onClick={() => setPage("plugins")}>打开应用中心</button>
-          </div>
+          </div></div>
         ) : (
-          <div className="loading-state"><span className="loader" />正在连接工作空间…</div>
-        )}
+          <div className="loading-state">{error ? "请等待连接恢复" : <><span className="loader" />正在连接工作空间…</>}</div>
+        ))}
       </main>
     </div>
   );

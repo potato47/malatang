@@ -22,7 +22,10 @@ button svg{width:23px;height:23px}
 .activity-button.active:before{content:"";position:absolute;width:2px;height:20px;border-radius:1px;background:var(--m-accent);left:-5px}
 .activity-button:focus-visible{outline-offset:-1px}
 .activity-tools{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0}
-.page-scroll{overflow:auto;flex:1;min-width:0;min-height:0;height:100%;scrollbar-width:thin}
+.page-area{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;overflow:hidden}
+.page-scroll{overflow:auto;flex:1;min-width:0;min-height:0;scrollbar-width:thin}
+.page-scroll[hidden]{display:none!important}
+.connection-notice{flex-shrink:0;padding:8px 16px;background:var(--m-warning-bg);color:var(--m-warning);border-bottom:1px solid var(--m-warning-line);font-size:11px;overflow-wrap:anywhere}
 .translation-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:33px 0 17px}
 .language-flow{display:flex;align-items:center;gap:15px;color:var(--m-text-secondary);font-size:12px}
 .language-flow select{border:0;background:transparent;color:var(--m-text);padding:8px 22px 8px 4px;font-weight:500}
