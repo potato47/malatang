@@ -19,6 +19,7 @@ button svg{width:23px;height:23px}
 .activity-button.active:before{content:"";position:absolute;width:2px;height:20px;border-radius:1px;background:var(--m-accent);left:-5px}
 .activity-button:focus-visible{outline-offset:-1px}
 .activity-tools{display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0}
+.activity-tooltip{position:fixed;z-index:1000;width:max-content;max-width:min(280px,calc(100vw - 64px));padding:6px 10px;border:1px solid var(--m-line);border-radius:4px;background:var(--m-surface);color:var(--m-text);box-shadow:0 2px 8px var(--m-shadow);font-size:12px;line-height:1.5;white-space:normal;overflow-wrap:anywhere;user-select:none}
 .page-area{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;overflow:hidden}
 .page-scroll{overflow:auto;flex:1;min-width:0;min-height:0;scrollbar-width:thin}
 .page-scroll[hidden]{display:none!important}

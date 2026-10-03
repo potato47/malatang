@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { ThemeMode } from "../shared/api";
 import { useTheme } from "./ThemeProvider";
+import ActivityButton from "./ActivityButton";
 
 const options: { value: ThemeMode; label: string; hint: string }[] = [
   { value: "light", label: "浅色", hint: "明亮、柔和的工作空间" },
@@ -27,7 +28,7 @@ export default function ThemeControl() {
   }, [open]);
   const label = options.find(option => option.value === theme)!.label;
   return <div className="theme-control" ref={container} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); close(); } }} onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false); }}>
-    <button ref={trigger} className={`activity-button ${open ? "active" : ""}`} title={`切换主题 · ${label}`} aria-label={`切换主题：${label}`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? "theme-picker" : undefined} onClick={() => setOpen(value => !value)}><ThemeIcon mode={theme} />{error && <span className="theme-error-dot" />}</button>
+    <ActivityButton ref={trigger} className={`activity-button ${open ? "active" : ""}`} label={`切换主题：${label}`} tooltipDisabled={open} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? "theme-picker" : undefined} onClick={() => setOpen(value => !value)}><ThemeIcon mode={theme} />{error && <span className="theme-error-dot" />}</ActivityButton>
     {open && <div className="theme-popover" id="theme-picker" role="dialog" aria-label="外观主题">
       <fieldset disabled={!ready} aria-busy={pending}><legend>外观主题</legend>{options.map(option => <label className={`theme-option ${theme === option.value ? "selected" : ""}`} key={option.value}>
         <ThemeIcon mode={option.value} /><span><strong>{option.label}</strong><small>{option.hint}</small></span>

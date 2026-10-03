@@ -7,6 +7,7 @@ import PageSlot from "./PageSlot";
 import PluginManager from "./PluginManager";
 import ModelSettings from "./ModelSettings";
 import ThemeControl from "./ThemeControl";
+import ActivityButton from "./ActivityButton";
 
 export default function App() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
@@ -42,23 +43,21 @@ export default function App() {
       <nav className="activity-bar" aria-label="应用导航">
         <div className="activity-apps">
           {active.map(plugin => (
-            <button
+            <ActivityButton
               key={plugin.id}
-              title={plugin.name}
-              aria-label={plugin.name}
+              label={plugin.name}
               aria-current={page === plugin.id ? "page" : undefined}
               className={`activity-button ${page === plugin.id ? "active" : ""}`}
               onClick={() => setPage(plugin.id)}
             >
               <span>{plugin.icon}</span>
-            </button>
+            </ActivityButton>
           ))}
         </div>
         <div className="activity-tools">
           <ThemeControl />
-          <button
-            title="应用中心"
-            aria-label="应用中心"
+          <ActivityButton
+            label="应用中心"
             aria-current={page === "plugins" ? "page" : undefined}
             className={`activity-button ${page === "plugins" ? "active" : ""}`}
             onClick={() => setPage("plugins")}
@@ -67,10 +66,9 @@ export default function App() {
               <rect x="4" y="4" width="6" height="6" rx="1.4" /><rect x="14" y="4" width="6" height="6" rx="1.4" />
               <rect x="4" y="14" width="6" height="6" rx="1.4" /><path d="M17 13v8m-4-4h8" />
             </svg>
-          </button>
-          <button
-            title="模型设置"
-            aria-label="模型设置"
+          </ActivityButton>
+          <ActivityButton
+            label="模型设置"
             aria-current={page === "models" ? "page" : undefined}
             className={`activity-button ${page === "models" ? "active" : ""}`}
             onClick={() => setPage("models")}
@@ -78,7 +76,7 @@ export default function App() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
               <path d="M5 4v16M12 4v16M19 4v16" /><path d="M2 9h6M9 16h6M16 8h6" strokeWidth="4" />
             </svg>
-          </button>
+          </ActivityButton>
         </div>
       </nav>
       <main className="page-area" aria-label={title}>
