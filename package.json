@@ -1,0 +1,28 @@
+{
+  "name": "malatang",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "fia dev",
+    "agent": "fia agent",
+    "run": "fia run",
+    "build": "fia build",
+    "release": "fia release",
+    "check": "fia check",
+    "test": "fia test"
+  },
+  "dependencies": {
+    "@semicoder/fia": "0.16.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "typescript": "7.0.2",
+    "vite": "^7.1.3",
+    "@vitejs/plugin-react": "^5.0.0"
+  }
+}

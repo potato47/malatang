@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "target": "ES2023",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "types": [
+      "bun",
+      "vite/client"
+    ]
+  },
+  "include": [
+    "frontend",
+    "backend",
+    "shared",
+    "fia.config.ts",
+    "vite.config.ts"
+  ]
+}

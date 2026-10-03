@@ -1,0 +1,7 @@
+node_modules/
+.fia/
+dist/
+frontend/dist/
+.DS_Store
+.env*
+*private*.pem
