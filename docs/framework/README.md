@@ -6,11 +6,15 @@ FIA 只支持一种架构：预编译 Swift Host + 必选 Bun + WebView。Swift 
 
 Host 是 `.app` 的入口，负责 NSApplication、窗口、原生服务、Bun 进程组和代码更新。Bun 是唯一 HTTP/WebSocket 服务；开发时 Vite 代理 `/api`、`/_fia` 到 Bun，生产时 Bun 直接提供静态资源。
 
+后端启动时保留 Host 的 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`（含小写）及 `NO_PROXY` 配置；若未显式设置代理变量，则读取 macOS 手动 HTTP / HTTPS 系统代理及例外列表，供 Bun 的网络请求使用。生产进程仍不继承其他任意环境变量或凭证。两种模式都为 `NO_PROXY` 补上 localhost / 127.0.0.1 / ::1，避免本地框架通信经过代理。配置在每次后端启动时读取，系统代理变更后需重启应用；暂不转换 PAC、SOCKS 或 `<local>` 例外规则，也不读取代理应用私有配置。显式设置空代理变量可停用系统代理回退。
+
 Host 与 Bun 使用 stdio protocol 5，JSON Lines，stdout 只能输出协议；框架入口将 console 日志重定向到 stderr。初始化携带会话、进程代次、应用数据目录和代码目录。`listening` 表示 HTTP 已监听；业务 `start` 完成后才报告 `ready`。请求支持 ID、事件、取消、超时和 128 个并发上限，帧大小上限 1 MiB。进程代次隔离，退出回收整个受管进程组。
 
 前端与 Bun 的 Native SDK 使用 WebSocket protocol 1。系统 API 的实现仍在 Swift，Bun 只转发。Native WebSocket 与业务 WebSocket 共用一个 Bun 服务。`/_fia` 是保留路径，业务路由相对 `/api` 声明。HTTP/SSE 直接返回标准 Response，不缓冲完整响应。
 
 会话通过一次性 HMAC 引导票据建立 HttpOnly、SameSite=Strict Cookie；HTTP/WS 检查会话和 Origin，服务只监听 127.0.0.1。框架私有方法不能从前端 RPC 调用。截图等原生资源只在 stdio 中返回描述符，Bun 验证资源路径后流式读取受控临时文件。
+
+系统浏览器的 OAuth 重定向可通过 `http.callbacks: { "/oauth/callback": handler }` 接收，URL 使用 `start` 上下文的 `url("/api/oauth/callback")`。它复用 Bun 的实际 loopback 端口，仅接受显式完整路径上的 GET，无通配、参数路由或 WebSocket；开发期不可使用 Vite 地址。回调不要求或签发 FIA 会话，也不放开普通 `/api`、`/_fia` 路由。**应用必须自行校验有期限、单次使用的随机 state 和 PKCE 等协议参数**。框架强制 no-store / no-referrer、禁止脚本及 iframe 的 CSP，并移除 Set-Cookie；回调应返回不含凭证的简短完成页。登录开始、状态、取消等业务仍声明在共享 API 中；不要另起 HTTP 服务。
 
 ## 共享 API 与 agent
 
@@ -41,6 +45,8 @@ exec 支持 --file FILE、-e CODE 或 stdin，注入 app SDK 和 help。独立 B
 WebView 默认关闭页面视口横向、纵向的边缘拉伸回弹，保留正常内容滚动和嵌套滚动区域。该默认行为由宿主在每次文档加载时设置，覆盖加载页、页面跳转和子框架，不要求业务添加 CSS。
 
 后端重启期间窗口显示宿主内置加载页并禁用标题栏按钮；恢复后加载新页面。后端 start 应幂等地绑定监听器和声明控件。普通关窗不退出应用，Dock 点击恢复 main。
+
+后端启动就绪默认等待 15 秒；等待原生请求（如钥匙串授权）时暂停，所有请求返回或取消后重新计时，避免系统交互误触发后端重启。`native.keychain.get/set/delete` 默认不设调用超时，允许用户完成系统确认；调用方仍可传 `timeoutMs` 或 `signal`。钥匙串操作在后台执行，不阻塞主线程；取消不会撤销已发生的钥匙串写入，也不自动关闭系统授权窗口。
 
 ## 构建与代码更新
 

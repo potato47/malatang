@@ -1,5 +1,52 @@
 import { expect, test } from "bun:test";
-import { hasProcessExited } from "../src/application.ts";
+import { hasProcessExited, isDevelopmentServerReady } from "../src/application.ts";
+
+test("development readiness bypasses proxy environment and checks HTTP status", async () => {
+  let status = 200;
+  let proxyRequests = 0;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response("ready", { status }),
+  });
+  const proxy = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => {
+      proxyRequests++;
+      return new Response(null, { status: 502 });
+    },
+  });
+  try {
+    const source = new URL("../src/application.ts", import.meta.url).href;
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `import {isDevelopmentServerReady} from ${JSON.stringify(source)}; console.log(await isDevelopmentServerReady(${server.port}));`,
+      ],
+      {
+        env: {
+          ...process.env,
+          HTTP_PROXY: `http://127.0.0.1:${proxy.port}`,
+          http_proxy: `http://127.0.0.1:${proxy.port}`,
+          NO_PROXY: "",
+          no_proxy: "",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expect((await new Response(child.stdout).text()).trim()).toBe("true");
+    expect(await child.exited).toBe(0);
+    expect(proxyRequests).toBe(0);
+    status = 503;
+    expect(await isDevelopmentServerReady(server.port!)).toBe(false);
+  } finally {
+    await server.stop(true);
+    await proxy.stop(true);
+  }
+});
 
 test("development detects both normal and signal-terminated child processes", async () => {
   const normal = Bun.spawn([process.execPath, "-e", "process.exit(0)"]);

@@ -65,6 +65,10 @@ export interface BackendHTTPDefinition<
 > {
   /** Routes are relative to /api: "/stream" is served at /api/stream. Not exposed by the application CLI. */
   readonly routes?: Readonly<{ [Path in RoutePaths]: BackendRoute<WebSocketData, Path, C> }>;
+  /** Exact GET paths relative to /api for external browser redirects (e.g. OAuth).
+   * No FIA session is required. Handlers MUST validate their own one-use state.
+   * Not available through the CLI; wildcard routes and WebSocket upgrades are rejected. */
+  readonly callbacks?: Readonly<Record<string, BackendRouteHandler<WebSocketData, string, C>>>;
   /** Fallback receives paths with the /api prefix removed. */
   readonly fetch?: BackendRouteHandler<WebSocketData, string, C>;
   /** Bun server-level options also affect FIA native sockets. Callbacks only receive business sockets. */

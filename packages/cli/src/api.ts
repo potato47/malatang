@@ -140,13 +140,14 @@ export function createNativeAPI(transport: NativeTransport) {
     },
     keychain: {
       get: (input: BuiltinKeyInput, options?: NativeCallOptions): Promise<string | null> =>
-        transport.call("keychain.get", input, options),
+        transport.call("keychain.get", input, { timeoutMs: 0, ...options }),
       set: (
         input: BuiltinKeyValueInput,
         options?: NativeCallOptions,
-      ): Promise<Record<string, never>> => transport.call("keychain.set", input, options),
+      ): Promise<Record<string, never>> =>
+        transport.call("keychain.set", input, { timeoutMs: 0, ...options }),
       delete: (input: BuiltinKeyInput, options?: NativeCallOptions): Promise<boolean> =>
-        transport.call("keychain.delete", input, options),
+        transport.call("keychain.delete", input, { timeoutMs: 0, ...options }),
     },
     notifications: {
       requestAuthorization: (options?: NativeCallOptions): Promise<boolean> =>

@@ -40,6 +40,11 @@ export function createGateway<Data, Paths extends string>(
   const cookieName = "fia_" + init.sessionSecret.slice(0, 12);
   const usedTickets = new Set<string>();
   const nativeSockets = new Map<Socket, Map<number, AbortController>>();
+  const callbacks = new Map(Object.entries(definition.http.callbacks ?? {}));
+  for (const path of callbacks.keys()) {
+    if (!/^\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(path) || path.startsWith("/_fia"))
+      throw new Error("Callback routes require an exact path: " + path);
+  }
   const rules = Object.entries(definition.http.routes ?? {}).map(([path, handler]) => {
     if (!path.startsWith("/") || path.startsWith("/_fia"))
       throw new Error("Invalid backend route: " + path);
@@ -151,6 +156,35 @@ export function createGateway<Data, Paths extends string>(
             "cache-control": "no-store",
             "referrer-policy": "no-referrer",
           },
+        });
+      }
+      const callback = path.startsWith("/api/") ? callbacks.get(path.slice(4)) : undefined;
+      if (callback) {
+        // Only the actual loopback authority, never the Vite proxy or a forged Host.
+        if (url.origin !== "http://127.0.0.1:" + server.port)
+          return response("Invalid callback host", 403);
+        if (request.method !== "GET") return response("Method Not Allowed", 405);
+        if (request.headers.has("upgrade")) return response("Invalid callback request", 400);
+        const target = new URL(url);
+        target.pathname = path.slice(4);
+        const forwarded = request as Bun.BunRequest;
+        Object.defineProperty(forwarded, "url", { value: target.href, configurable: true });
+        Object.defineProperty(forwarded, "params", { value: {}, configurable: true });
+        const result = await callback(forwarded, server, context);
+        if (!result) return response("Empty callback response", 500);
+        const headers = new Headers(result.headers);
+        headers.delete("set-cookie");
+        headers.set("cache-control", "no-store");
+        headers.set("referrer-policy", "no-referrer");
+        headers.set("x-content-type-options", "nosniff");
+        headers.set(
+          "content-security-policy",
+          "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+        );
+        return new Response(result.body, {
+          status: result.status,
+          statusText: result.statusText,
+          headers,
         });
       }
       if (path.startsWith("/_fia") || path === "/api" || path.startsWith("/api/")) {
@@ -326,7 +360,10 @@ export function createGateway<Data, Paths extends string>(
             throw new Error("Private native method");
           const result = await context.native.call(frame.method, frame.params ?? {}, {
             signal: controller.signal,
-            timeoutMs: frame.method.startsWith("updates.") ? 0 : 30_000,
+            timeoutMs:
+              frame.method.startsWith("updates.") || frame.method.startsWith("keychain.")
+                ? 0
+                : 30_000,
           });
           if (nativeSockets.has(socket))
             socket.send(JSON.stringify({ v: 1, type: "response", id: frame.id, result }));

@@ -2,6 +2,7 @@ import { agentFetch, connectAgent } from "./agent-cli.ts";
 import { readResult } from "./api-client.ts";
 import { generateAgentArtifacts } from "./agent-artifacts.ts";
 import { watch } from "node:fs";
+import { get } from "node:http";
 import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import {
@@ -360,6 +361,21 @@ export function hasProcessExited(child: Pick<Bun.Subprocess, "exitCode" | "signa
   // Bun leaves exitCode null when a process exits because of a signal.
   return child.exitCode !== null || child.signalCode !== null;
 }
+export function isDevelopmentServerReady(port: number): Promise<boolean> {
+  // This probe is always local. Unlike Bun 1.4.2 fetch, node:http ignores proxy env.
+  return new Promise((resolve) => {
+    const request = get({ hostname: "127.0.0.1", port, path: "/", timeout: 1000 }, (response) => {
+      response.resume();
+      resolve(
+        response.statusCode !== undefined &&
+          response.statusCode >= 200 &&
+          response.statusCode < 300,
+      );
+    });
+    request.on("error", () => resolve(false));
+    request.on("timeout", () => request.destroy(new Error("Local readiness probe timed out")));
+  });
+}
 export async function runDevelopment(
   initial: ResolvedFIAConfig,
   output: (message: string) => void = console.log,
@@ -465,7 +481,7 @@ export async function runDevelopment(
           async () => {
             if (hasProcessExited(vite!)) throw new Error("Vite failed to start");
             try {
-              return (await fetch("http://127.0.0.1:" + vitePort)).ok ? true : undefined;
+              return (await isDevelopmentServerReady(vitePort!)) ? true : undefined;
             } catch {
               return undefined;
             }

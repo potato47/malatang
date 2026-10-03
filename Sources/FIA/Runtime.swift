@@ -488,18 +488,18 @@ public final class FIARuntime {
     native.register(
       "keychain.get", input: KeyInput.self, output: Optional<String>.self, permission: "keychain"
     ) { [keychain] input in
-      try keychain.value(for: input.key)
+      try await Task.detached { try keychain.value(for: input.key) }.value
     }
     native.register(
       "keychain.set", input: KeyValueInput.self, output: FIAEmpty.self, permission: "keychain"
     ) { [keychain] input in
-      try keychain.set(input.value, for: input.key)
+      try await Task.detached { try keychain.set(input.value, for: input.key) }.value
       return FIAEmpty()
     }
     native.register(
       "keychain.delete", input: KeyInput.self, output: Bool.self, permission: "keychain"
     ) { [keychain] input in
-      try keychain.delete(input.key)
+      try await Task.detached { try keychain.delete(input.key) }.value
     }
     native.register(
       "notifications.requestAuthorization", input: FIAEmpty.self, output: Bool.self,

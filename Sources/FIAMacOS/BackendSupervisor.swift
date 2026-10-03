@@ -71,6 +71,8 @@ public final class BackendSupervisor {
     private var requestTasks: [Int: Task<Void, Never>] = [:]
     private var stopping = false
     private var startupTask: Task<Void, Never>?
+    private var awaitingReady = false
+    var readinessTimeout: Duration = .seconds(15)
     private var retryTask: Task<Void, Never>?
     private var stableTask: Task<Void, Never>?
     private var shutdownTask: Task<Void, Error>?
@@ -168,6 +170,7 @@ public final class BackendSupervisor {
         requestTasks.removeAll()
         generation = UUID()
         let currentGeneration = generation
+        awaitingReady = true
         stdoutDecoder.reset()
         onState(retryAttempt == 0 ? .starting : .restarting(attempt: retryAttempt))
         let process = ManagedProcess(
@@ -175,8 +178,7 @@ public final class BackendSupervisor {
             arguments: configuration.arguments,
             workingDirectory: configuration.development
                 ? URL(fileURLWithPath: FileManager.default.currentDirectoryPath) : workingDirectoryURL,
-            environment: configuration.development ? ProcessInfo.processInfo.environment
-                : ["PATH": "/usr/bin:/bin", "TMPDIR": FileManager.default.temporaryDirectory.path]
+            environment: BackendEnvironment.make(development: configuration.development)
         )
         process.onExit = { [weak self, weak process] status in
             guard let self, let process, self.generation == currentGeneration else { return }
@@ -222,12 +224,21 @@ public final class BackendSupervisor {
             failCurrent("Could not initialize Backend")
             return
         }
+        armReadinessTimeout()
+    }
+
+    private func armReadinessTimeout() {
         startupTask?.cancel()
+        // Native requests may be waiting for a person to approve a system dialog.
+        // Give backend initialization its own timeout once that work has returned.
+        guard awaitingReady, requestTasks.isEmpty, !stopping, let process else { return }
+        let currentGeneration = generation
+        let timeout = readinessTimeout
         startupTask = Task { @MainActor [weak self, weak process] in
-            try? await Task.sleep(for: .seconds(15))
+            try? await Task.sleep(for: timeout)
             guard !Task.isCancelled,
                   let self, let process, process.isRunning,
-                  self.generation == currentGeneration else { return }
+                  self.generation == currentGeneration, self.awaitingReady else { return }
             self.diagnostic("Backend readiness timed out for pid \(process.processIdentifier)")
             self.failCurrent("Backend readiness timed out")
         }
@@ -256,6 +267,7 @@ public final class BackendSupervisor {
                   frame["origin"] as? String == "http://127.0.0.1:\(port)"
             else { throw BackendProtocolError.invalidFrame }
             diagnostic("Backend ready on port \(port)")
+            awaitingReady = false
             startupTask?.cancel()
             preferredPort = port
             onState(.ready(port: port))
@@ -274,6 +286,7 @@ public final class BackendSupervisor {
                   requestTasks.count < FIAMaximumPendingRequests
             else { throw BackendProtocolError.invalidFrame }
             let requestGeneration = generation
+            startupTask?.cancel()
             requestTasks[id] = Task { @MainActor [weak self] in
                 guard let self else { return }
                 do {
@@ -310,6 +323,7 @@ public final class BackendSupervisor {
     private func cancelRequest(_ id: Int) {
         guard let task = requestTasks.removeValue(forKey: id) else { return }
         task.cancel()
+        armReadinessTimeout()
         try? write([
             "v": FIAStdioProtocolVersion,
             "type": "response",
@@ -326,6 +340,7 @@ public final class BackendSupervisor {
 
     private func finishRequest(id: Int, generation: UUID, result: Any?) {
         guard self.generation == generation, requestTasks.removeValue(forKey: id) != nil else { return }
+        armReadinessTimeout()
         do {
             try write(["v": FIAStdioProtocolVersion, "type": "response", "id": id, "result": result ?? NSNull()])
         } catch {
@@ -346,6 +361,7 @@ public final class BackendSupervisor {
 
     private func finishRequest(id: Int, generation: UUID, error: FIAErrorCode, message: String) {
         guard self.generation == generation, requestTasks.removeValue(forKey: id) != nil else { return }
+        armReadinessTimeout()
         try? write([
             "v": FIAStdioProtocolVersion,
             "type": "response",
@@ -362,6 +378,7 @@ public final class BackendSupervisor {
 
     private func finishRequest(id: Int, generation: UUID, error: FIAError) {
         guard self.generation == generation, requestTasks.removeValue(forKey: id) != nil else { return }
+        armReadinessTimeout()
         let details: Any = error.details.flatMap { value in
             guard let data = try? JSONEncoder().encode(value) else { return nil }
             return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
@@ -434,6 +451,7 @@ public final class BackendSupervisor {
     }
 
     private func cleanup(process: ManagedProcess? = nil) {
+        awaitingReady = false
         requestTasks.values.forEach { $0.cancel() }
         requestTasks.removeAll()
         if let process { process.onOutput = nil; process.onExit = nil; process.onInputError = nil }

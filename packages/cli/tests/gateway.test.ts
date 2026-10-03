@@ -33,10 +33,16 @@ async function fixture(development = false) {
   };
   const listeners = new Map<string, (value: unknown) => void>();
   const calls: string[] = [];
+  const timeouts: (number | undefined)[] = [];
   let aborted = false;
   const native = {
-    call: async (method: string, params: unknown, options?: { signal?: AbortSignal }) => {
+    call: async (
+      method: string,
+      params: unknown,
+      options?: { signal?: AbortSignal; timeoutMs?: number },
+    ) => {
       calls.push(method);
+      timeouts.push(options?.timeoutMs);
       if (method === "resources.resolve")
         return {
           path: resolve(directory, "resources/12345678-1234-1234-1234-123456789abc"),
@@ -58,6 +64,13 @@ async function fixture(development = false) {
   } as unknown as BackendNativeClient;
   const backend = defineBackend({
     http: {
+      callbacks: {
+        "/oauth/callback": (req) =>
+          new Response(
+            new URL(req.url).searchParams.get("state") === "expected" ? "accepted" : "invalid",
+            { status: new URL(req.url).searchParams.get("state") === "expected" ? 200 : 400 },
+          ),
+      },
       routes: { "/hello/:name": (req) => Response.json({ name: req.params.name }) },
       fetch: (req, server) => {
         if (
@@ -124,6 +137,7 @@ async function fixture(development = false) {
     directory,
     listeners,
     calls,
+    timeouts,
     aborted: () => aborted,
   };
 }
@@ -141,6 +155,26 @@ function next(ws: WebSocket): Promise<string> {
     ws.onerror = reject;
   });
 }
+
+test("native gateway lets keychain dialogs wait without removing ordinary request deadlines", async () => {
+  const f = await fixture();
+  const ws = await socket(f.origin.replace("http:", "ws:") + "/_fia/native", f.headers);
+  try {
+    for (const [id, method] of [
+      "keychain.get",
+      "keychain.set",
+      "keychain.delete",
+      "clipboard.readText",
+    ].entries()) {
+      const response = next(ws);
+      ws.send(JSON.stringify({ v: 1, type: "request", id: id + 1, method, params: {} }));
+      await response;
+    }
+    expect(f.timeouts).toEqual([0, 0, 0, 30_000]);
+  } finally {
+    ws.close();
+  }
+});
 
 test("one-time bootstrap, scoped authentication and real HTTP routes", async () => {
   const f = await fixture();
@@ -169,6 +203,63 @@ test("one-time bootstrap, scoped authentication and real HTTP routes", async () 
       })
     ).status,
   ).toBe(401);
+});
+
+test("external callbacks are exact GET routes without granting an application session", async () => {
+  const f = await fixture();
+  const url = f.origin + "/api/oauth/callback?state=expected";
+  const accepted = await fetch(url, { headers: { "sec-fetch-site": "cross-site" } });
+  expect(accepted.status).toBe(200);
+  expect(await accepted.text()).toBe("accepted");
+  expect(accepted.headers.get("set-cookie")).toBeNull();
+  expect(accepted.headers.get("cache-control")).toBe("no-store");
+  expect(accepted.headers.get("referrer-policy")).toBe("no-referrer");
+  expect(accepted.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+  expect((await fetch(f.origin + "/api/oauth/callback?state=wrong")).status).toBe(400);
+  expect((await fetch(url, { method: "POST" })).status).toBe(405);
+  expect(
+    (await f.gateway.fetch(new Request(url, { headers: { upgrade: "websocket" } }), f.server))
+      ?.status,
+  ).toBe(400);
+  expect((await fetch(f.origin + "/api/oauth/callback/extra")).status).toBe(401);
+  expect((await fetch(f.origin + "/api/hello/FIA")).status).toBe(401);
+  expect((await fetch(f.origin + "/_fia/health")).status).toBe(401);
+  expect(
+    (
+      await f.gateway.fetch(
+        new Request(
+          "http://attacker.example:" + f.server.port + "/api/oauth/callback?state=expected",
+        ),
+        f.server,
+      )
+    )?.status,
+  ).toBe(403);
+  expect(
+    (
+      await f.gateway.fetch(
+        new Request("http://127.0.0.1:5173/api/oauth/callback?state=expected"),
+        f.server,
+      )
+    )?.status,
+  ).toBe(403);
+  for (const path of [
+    "/oauth/*",
+    "/oauth/:id",
+    "/_fia/token",
+    "/oauth/../callback",
+    "/oauth?state=x",
+  ]) {
+    expect(() =>
+      createGateway(
+        defineBackend({ http: { callbacks: { [path]: () => new Response("no") } } }),
+        {
+          native: { on: () => () => {} } as unknown as BackendNativeClient,
+          app: { ...f.init.app, dataDirectory: f.directory, codeDirectory: f.directory },
+        },
+        f.init,
+      ),
+    ).toThrow("exact path");
+  }
 });
 
 test("native and business WebSockets coexist, support cancellation and native events", async () => {

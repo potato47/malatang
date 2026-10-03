@@ -1,5 +1,28 @@
 import { expect, test } from "bun:test";
-import { NativeClient } from "../src/client.ts";
+import { NativeClient, type NativeCallOptions } from "../src/client.ts";
+import { createNativeAPI } from "../src/api.ts";
+
+test("keychain interactions have no default deadline but honor explicit cancellation and timeout options", async () => {
+  const calls: { method: string; options?: NativeCallOptions }[] = [];
+  const api = createNativeAPI({
+    on: () => () => {},
+    async call<Result>(
+      method: string,
+      _params: unknown,
+      options?: NativeCallOptions,
+    ): Promise<Result> {
+      calls.push({ method, options });
+      return null as Result;
+    },
+  });
+  await api.keychain.get({ key: "test" });
+  await api.keychain.set({ key: "test", value: "fixture" });
+  await api.keychain.delete({ key: "test" });
+  expect(calls.map((call) => call.options?.timeoutMs)).toEqual([0, 0, 0]);
+  const controller = new AbortController();
+  await api.keychain.get({ key: "test" }, { timeoutMs: 50, signal: controller.signal });
+  expect(calls.at(-1)?.options).toEqual({ timeoutMs: 50, signal: controller.signal });
+});
 
 test("late socket events cannot settle requests from a replacement connection", async () => {
   const originalSocket = globalThis.WebSocket;

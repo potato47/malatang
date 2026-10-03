@@ -6,6 +6,61 @@ import Testing
 @MainActor
 @Suite("Backend supervisor")
 struct BackendSupervisorTests {
+    @Test(arguments: [false, true]) func startupWaitsForNativeInteractionThenReceivesReady(denied: Bool) async throws {
+        let configuration = FIABunConfiguration(
+            development: true, appName: "Interaction", appIdentifier: "com.example.interaction.\(UUID().uuidString)",
+            executable: "/bin/sh",
+            arguments: ["-c", #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"request","id":1,"method":"keychain.get","params":{}}'; IFS= read -r response; printf '%s\n' '{"v":5,"type":"ready","port":45683,"origin":"http://127.0.0.1:45683"}'; IFS= read -r shutdown"#],
+            sha256: String(repeating: "0", count: 64), sessionSecret: String(repeating: "n", count: 64),
+            webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1, automaticallyRestart: false
+        )
+        var states: [BackendSupervisor.State] = []
+        let supervisor = try BackendSupervisor(
+            configuration: configuration, applicationSupportDirectory: FileManager.default.temporaryDirectory,
+            onRequest: { _, _ in
+                try await Task.sleep(for: .milliseconds(400))
+                if denied { throw FIAError(code: .nativeFailure, component: "keychain", message: "Denied") }
+                return nil
+            }, onState: { states.append($0) }
+        )
+        supervisor.readinessTimeout = .milliseconds(150)
+        supervisor.start()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !states.contains(.ready(port: 45_683)), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(states.contains(.ready(port: 45_683)))
+        #expect(!states.contains(where: { if case .failed = $0 { true } else { false } }))
+        try await supervisor.stop()
+    }
+
+    @Test(arguments: [false, true]) func startupTimeoutResumesAfterNativeReturnOrCancellation(cancelled: Bool) async throws {
+        let script = cancelled
+            ? #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"request","id":1,"method":"keychain.get","params":{}}'; sleep 0.3; printf '%s\n' '{"v":5,"type":"cancel","id":1}'; IFS= read -r response; IFS= read -r shutdown"#
+            : #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"request","id":1,"method":"keychain.get","params":{}}'; IFS= read -r response; IFS= read -r shutdown"#
+        let configuration = FIABunConfiguration(
+            development: true, appName: "Stalled", appIdentifier: "com.example.stalled.\(UUID().uuidString)",
+            executable: "/bin/sh", arguments: ["-c", script],
+            sha256: String(repeating: "0", count: 64), sessionSecret: String(repeating: "n", count: 64),
+            webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1, automaticallyRestart: false
+        )
+        var failed = false
+        var finishedNative = false
+        let supervisor = try BackendSupervisor(
+            configuration: configuration, applicationSupportDirectory: FileManager.default.temporaryDirectory,
+            onRequest: { _, _ in
+                defer { finishedNative = true }
+                try await Task.sleep(for: cancelled ? .seconds(30) : .milliseconds(400))
+                return nil
+            }, onState: { if case .failed = $0 { failed = true } }
+        )
+        supervisor.readinessTimeout = .milliseconds(150)
+        supervisor.start()
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !failed, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(finishedNative)
+        #expect(failed)
+        try await supervisor.stop()
+    }
+
     @Test func initializesBackendWithNativeResourceTransportCredentials() async throws {
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("fia-initialize-\(UUID().uuidString).json")

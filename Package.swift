@@ -8,7 +8,7 @@ let package = Package(
         .target(name: "FIACore", linkerSettings: [.linkedFramework("Security")]),
         .target(name: "FIAProcessSupport", publicHeadersPath: "include"),
         .target(name: "FIAMacOS", dependencies: ["FIACore", "FIAProcessSupport"], linkerSettings: [
-            .linkedFramework("AppKit"), .linkedFramework("Carbon"), .linkedFramework("Security")]),
+            .linkedFramework("AppKit"), .linkedFramework("Carbon"), .linkedFramework("CFNetwork"), .linkedFramework("Security")]),
         .target(name: "FIA", dependencies: ["FIACore", "FIAMacOS"], linkerSettings: [
             .linkedFramework("AppKit"), .linkedFramework("WebKit"), .linkedFramework("ScreenCaptureKit"),
             .linkedFramework("UserNotifications"), .linkedFramework("CoreText")]),
