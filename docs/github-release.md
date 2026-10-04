@@ -1,6 +1,6 @@
 # GitHub 构建、正式发布与自动更新
 
-目标仓库：`potato47/malatang`。更新地址固定为 `https://potato47.github.io/malatang/updates/latest.json`；完整 `.dmg` 安装包在 GitHub Releases。支持 macOS 14+ / Apple Silicon。用户打开 DMG，将 `Malatang.app` 拖到 Applications 后启动。
+目标仓库：`potato47/malatang`。更新地址固定为 `https://nobug.space/malatang/updates/latest.json`；完整 `.dmg` 安装包在 GitHub Releases。支持 macOS 14+ / Apple Silicon。用户打开 DMG，将 `Malatang.app` 拖到 Applications 后启动。
 
 ## 工作流
 
@@ -15,7 +15,7 @@
 
 1. 创建仓库并推送源码。公开仓库可使用免费 GitHub Pages；私有仓库需要支持 Pages 的计划，更新文件仍需能被未登录客户端访问。更新产物包含业务代码，不应包含任何用户数据或凭证。
 2. 上传下述固定 FIA 包，之后再运行 CI。
-3. Settings → Pages → Source 选择 **GitHub Actions**。不设置自定义域名；改变域名 / 路径需要更换应用内固定地址并重新发安装包。
+3. Settings → Pages → Source 选择 **GitHub Actions**。项目继承账号已有 `nobug.space` 域名，不另设项目自定义域名。`potato47.github.io` 会重定向到该域名，而 FIA 更新下载拒绝跨域重定向，因此必须直接使用实际 HTTPS 地址；改变域名 / 路径需要更换应用内固定地址并重新发安装包。
 4. 创建 `release` 和 `github-pages` Environments。发布代码的 `v*` 标签必须被允许；手动验收所用分支也需允许。保护发布分支及标签，发布凭据仅供可信源码使用。`gh-pages` 是生成数据分支，不将它合回 `main`。
 5. 在 `release` 环境中配置以下 Secrets，内容不要提交到 Git：
 
