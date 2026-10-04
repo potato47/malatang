@@ -1,0 +1,9 @@
+{
+  "name": "@semicoder/malatang-plugin-translate", "version": "0.1.0", "type": "module", "private": true,
+  "files": ["dist"],
+  "devDependencies": { "@semicoder/malatang-sdk": "workspace:*" },
+  "malatang": {
+    "schemaVersion": 1, "id": "translate", "name": "译文", "description": "让意思抵达，让表达自然。一个轻巧的 AI 翻译工作台。",
+    "icon": "文", "color": "#cf633c", "sdkVersion": "0.1", "frontend": "dist/client.js", "backend": "dist/backend.js", "keepAlive": true
+  }
+}
