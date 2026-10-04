@@ -87,7 +87,7 @@ Secrets 保存后不会显示原值，这是正常现象。配置完告诉协作
 
 ## 7. 开启 Pages 并验收
 
-1. 打开 [Pages 设置](https://github.com/potato47/malatang/settings/pages)，在 Build and deployment 的 Source 选择 **GitHub Actions**。保留默认 `potato47.github.io/malatang` 地址。
+1. 打开 [Pages 设置](https://github.com/potato47/malatang/settings/pages)，在 Build and deployment 的 Source 选择 **GitHub Actions**。本项目继承账号已有域名，实际地址为 `https://nobug.space/malatang/`，无需另设 Custom domain；`potato47.github.io/malatang` 会跨域跳转，不能用作客户端固定更新地址。
 2. 发布 workflow 必须已合入 GitHub 默认分支，才会出现手动入口。打开 **Actions → Release Malatang → Run workflow**，选择待验收分支。
 3. 这次手动运行会完成构建、签名、公证、应用启动退出检查和更新签名，但**不会公开新版本或部署更新源**。
 4. 全部通过后，在运行详情底部下载 `malatang-release` artifact（GitHub 会将 artifact 包成 ZIP），解压后取得 `Malatang-版本-构建号-mac-arm64.dmg`。最终用户直接从 Releases 下载该 DMG。

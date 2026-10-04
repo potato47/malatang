@@ -12,7 +12,7 @@ export function validateConfig() {
   assert(/^\d+\.\d+\.\d+$/.test(pkg.version), "Only stable x.y.z versions can enter the stable update feed");
   assert(Number.isSafeInteger(config.build) && config.build > 0, "Release build must be a positive integer");
   assert(/^[A-Za-z0-9+/]{43}=$/.test(config.publicKey), "Configure a permanent Ed25519 update public key");
-  assert(config.updatesURL === "https://potato47.github.io/malatang/updates/latest.json", "Unexpected Pages update URL");
+  assert(config.updatesURL === "https://nobug.space/malatang/updates/latest.json", "Unexpected Pages update URL");
   assert(config.downloadURL === `https://github.com/${config.repository}/releases/latest`, "Use a stable installer URL");
 }
 export type Manifest = { schema: number; identifier: string; version: string; build: number; runtimeId: string; baseURL: string; downloadURL?: string; files: { path: string; size: number; sha256: string }[] };
