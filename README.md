@@ -69,7 +69,7 @@ my-app open
 
 应用自带 Bun，不依赖系统 Node/Bun。CLI 冷启动不弹窗、不抢焦点，tray 可显示或退出应用。`windows.create` 声明窗口，`open/focus` 显示；后端重启保留窗口状态。脚本是可信本机代码，独立进程提供取消与超时，不是安全沙箱。长期任务由应用 API 管理。
 
-`fia build` 生成本机 `.app`。`fia release` 使用 Developer ID 签名和公证生成安装包；`fia release --update` 生成 Ed25519 签名的前后端代码更新，上传普通 HTTPS 静态托管即可。代码更新须用户确认；失败回退上一版代码，用户数据不随代码回退。
+`fia build` 生成本机 `.app`；`fia build --dmg` 另生成包含应用和 Applications 快捷方式的测试 DMG，并挂载验证启动和退出。`fia release` 使用 Developer ID Application 签名应用及 DMG，对 DMG 公证、staple、验证 Gatekeeper 并检查镜像内应用，输出 `.dmg`、SHA-256 和检查报告；不需要 Developer ID Installer。`fia release --update` 生成 Ed25519 签名的前后端代码更新，上传普通 HTTPS 静态托管即可。代码更新须用户确认；失败回退上一版代码，用户数据不随代码回退。
 
 详见 [框架契约](docs/framework/README.md)、[CLI 与发布](packages/cli/README.md)、[从 FIA 3 迁移](docs/framework/migration-v4.md)。
 

@@ -54,7 +54,9 @@ WebView 默认关闭页面视口横向、纵向的边缘拉伸回弹，保留正
 
 需要按路径读取的业务资源可在 `backend.assets` 声明项目相对路径；`context.app.codeDirectory` 在开发时指向项目根目录，生产时指向包含这些资源的代码目录，保持相同相对路径。例如配置 `assets: ["assets/model.wasm"]` 后，使用 `Bun.file(context.app.codeDirectory + "/assets/model.wasm")`。普通模块依赖由 Bun bundler 打包。
 
-完整安装包经 codesign、Developer ID、公证、staple 和 Gatekeeper 验证。代码更新不改动已签名 `.app`。应用运行不依赖系统安装的 Bun。
+`fia release` 输出 `.dmg`、`.dmg.sha256` 和 `.dmg.report.json`。DMG 包含应用与指向 `/Applications` 的快捷方式，用户打开后拖入安装。应用和镜像均使用 Developer ID Application 签名，仅提交最外层 DMG 公证并 staple，随后验证 Gatekeeper、挂载镜像并检查其中应用的启动和正常退出；任何一步失败都停止发布。`fia build --dmg` 使用相同镜像布局和挂载检查生成测试包，跳过正式签名公证，不用于公开分发。`fia build` 仍只生成 `.app`。代码更新不改动已签名 `.app`。应用运行不依赖系统安装的 Bun。
+
+打包依据：[Apple Mac 软件分发](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution)。DMG 使用 Developer ID Application；Developer ID Installer 用于 `.pkg`。
 
 更新清单是 `{payload, signature}`：payload 为原始 JSON 字节的 Base64，signature 为 Ed25519 签名的 Base64。payload 包含 schema=1、identifier、version、build、runtimeId、HTTPS baseURL、可选 downloadURL 和 files（path、size、sha256）。公钥固定在安装包，私钥只用于发布。清单及文件限制由宿主校验，禁止路径穿越、符号链接、大小越界和原生可执行文件。
 

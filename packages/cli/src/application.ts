@@ -3,7 +3,18 @@ import { readResult } from "./api-client.ts";
 import { generateAgentArtifacts } from "./agent-artifacts.ts";
 import { watch } from "node:fs";
 import { get } from "node:http";
-import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import {
   assetDirectory,
@@ -276,6 +287,122 @@ export async function buildApplication(
     await rm(temporary, { recursive: true, force: true });
   }
 }
+export async function packageDiskImage(
+  config: ResolvedFIAConfig,
+  app: string,
+  options: {
+    distribution?: boolean;
+    runner?: ApplicationProcessRunner;
+    smoke?: typeof smokeApplication;
+  } = {},
+) {
+  const identity = config.signing?.releaseIdentity;
+  const profile = config.signing?.notarizationProfile;
+  if (options.distribution && (!identity?.startsWith("Developer ID Application:") || !profile))
+    throw new Error("A Developer ID Application identity and notarizationProfile are required");
+  const root = config.projectRoot;
+  const runner = options.runner ?? defaultRunner;
+  const run = (command: string[]) => checked(runner, command, root);
+  const parent = resolve(root, "dist");
+  await mkdir(parent, { recursive: true });
+  const temporary = await mkdtemp(resolve(parent, ".dmg-"));
+  const payload = resolve(temporary, "payload");
+  const image = resolve(temporary, "installer.dmg");
+  const mount = resolve(temporary, "mounted");
+  let mounted = false;
+  try {
+    await mkdir(payload);
+    await run(["/usr/bin/ditto", app, resolve(payload, config.app.name + ".app")]);
+    await symlink("/Applications", resolve(payload, "Applications"));
+    await run([
+      "/usr/bin/hdiutil",
+      "create",
+      "-volname",
+      config.app.name,
+      "-srcfolder",
+      payload,
+      "-fs",
+      "HFS+",
+      "-format",
+      "UDZO",
+      image,
+    ]);
+    if (options.distribution) {
+      await run([
+        "/usr/bin/codesign",
+        "--force",
+        "--sign",
+        identity!,
+        "--timestamp",
+        "--identifier",
+        config.app.identifier + ".dmg",
+        image,
+      ]);
+      // Sign nested code first; notarize and staple only the outermost container.
+      await run([
+        "/usr/bin/xcrun",
+        "notarytool",
+        "submit",
+        image,
+        "--keychain-profile",
+        profile!,
+        "--wait",
+      ]);
+      await run(["/usr/bin/xcrun", "stapler", "staple", image]);
+      await run(["/usr/bin/xcrun", "stapler", "validate", image]);
+      await run(["/usr/bin/codesign", "--verify", "--strict", image]);
+      await run([
+        "/usr/sbin/spctl",
+        "--assess",
+        "--type",
+        "open",
+        "--context",
+        "context:primary-signature",
+        "--verbose=4",
+        image,
+      ]);
+    }
+    await mkdir(mount);
+    await run([
+      "/usr/bin/hdiutil",
+      "attach",
+      "-readonly",
+      "-nobrowse",
+      "-mountpoint",
+      mount,
+      image,
+    ]);
+    mounted = true;
+    const mountedApp = resolve(mount, config.app.name + ".app");
+    if ((await readlink(resolve(mount, "Applications"))) !== "/Applications")
+      throw new Error("Disk image is missing the Applications install shortcut");
+    await run(["/usr/bin/codesign", "--verify", "--deep", "--strict", mountedApp]);
+    if (options.distribution)
+      await run(["/usr/sbin/spctl", "--assess", "--type", "execute", "--verbose=4", mountedApp]);
+    const report = await (options.smoke ?? smokeApplication)(config, mountedApp);
+    if (!report.ok) throw new Error("Disk image application smoke check failed");
+    await run(["/usr/bin/hdiutil", "detach", mount]);
+    mounted = false;
+    const dmg = resolve(
+      parent,
+      `${config.app.name}-${config.app.version}-${config.app.build}-mac-arm64.dmg`,
+    );
+    // Keep any previous artifact intact until the final container passes every check.
+    await rename(image, dmg);
+    await writeFile(dmg + ".sha256", (await sha256(dmg)) + "  " + basename(dmg) + "\n");
+    await writeFile(dmg + ".report.json", JSON.stringify(report, null, 2) + "\n");
+    return { app, dmg, report };
+  } finally {
+    if (mounted) {
+      try {
+        await run(["/usr/bin/hdiutil", "detach", mount]);
+      } catch {
+        await run(["/usr/bin/hdiutil", "detach", "-force", mount]);
+      }
+    }
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
 export async function releaseApplication(config: ResolvedFIAConfig, update = false) {
   if (update) {
     if (!config.updates)
@@ -304,48 +431,7 @@ export async function releaseApplication(config: ResolvedFIAConfig, update = fal
   )
     throw new Error("A Developer ID Application identity and notarizationProfile are required");
   const output = await buildApplication(config, { distribution: true });
-  const zip = resolve(
-    config.projectRoot,
-    "dist",
-    config.app.name + "-" + config.app.version + "-" + config.app.build + "-mac-arm64.zip",
-  );
-  const archive = async () => {
-    await rm(zip, { force: true });
-    await checked(
-      defaultRunner,
-      ["/usr/bin/ditto", "-c", "-k", "--keepParent", output.app, zip],
-      config.projectRoot,
-    );
-  };
-  await archive();
-  await checked(
-    defaultRunner,
-    [
-      "/usr/bin/xcrun",
-      "notarytool",
-      "submit",
-      zip,
-      "--keychain-profile",
-      config.signing.notarizationProfile,
-      "--wait",
-    ],
-    config.projectRoot,
-  );
-  await checked(
-    defaultRunner,
-    ["/usr/bin/xcrun", "stapler", "staple", output.app],
-    config.projectRoot,
-  );
-  await checked(
-    defaultRunner,
-    ["/usr/bin/spctl", "--assess", "--type", "execute", "--verbose=4", output.app],
-    config.projectRoot,
-  );
-  await archive();
-  await writeFile(zip + ".sha256", (await sha256(zip)) + "  " + basename(zip) + "\n");
-  const report = await smokeApplication(config, output.app);
-  await writeFile(zip + ".report.json", JSON.stringify(report, null, 2));
-  return { app: output.app, zip, report };
+  return packageDiskImage(config, output.app, { distribution: true });
 }
 export async function runApplication(config: ResolvedFIAConfig) {
   const built = await buildApplication(config);

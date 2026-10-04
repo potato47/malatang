@@ -6,6 +6,7 @@ import { parseCreateOptions } from "./create-options.ts";
 import { loadProjectConfig } from "./project-config.ts";
 import {
   buildApplication,
+  packageDiskImage,
   releaseApplication,
   runApplication,
   runDevelopment,
@@ -26,7 +27,7 @@ fia create [name] [--yes] [--git|--no-git] [--install|--no-install] [--local]
 fia agent <args>         Call this project's running development application
 fia dev [--open-browser] Vite HMR and supervised Bun restart
 fia run                  Build and run a production .app
-fia build                Assemble an application using precompiled runtimes
+fia build [--dmg]        Assemble an application; optionally package and test a DMG
 fia release [--update]   Notarized installer or signed frontend/backend update
 fia check | test         Validate configuration and TypeScript; run Bun tests
 fia doctor [--target dev|release] [--json]
@@ -136,6 +137,7 @@ export async function runCLI(args: readonly string[], cwd = process.cwd()): Prom
       rest.some(
         (arg) =>
           !(command === "release" && arg === "--update") &&
+          !(command === "build" && arg === "--dmg") &&
           !(command === "smoke" && arg === "--json") &&
           !(command === "dev" && arg === "--open-browser"),
       )
@@ -148,9 +150,11 @@ export async function runCLI(args: readonly string[], cwd = process.cwd()): Prom
         break;
       case "run":
         return await runApplication(config);
-      case "build":
-        emit(await buildApplication(config));
+      case "build": {
+        const built = await buildApplication(config);
+        emit(rest.includes("--dmg") ? await packageDiskImage(config, built.app) : built);
         break;
+      }
       case "release":
         emit(await releaseApplication(config, rest.includes("--update")));
         break;
