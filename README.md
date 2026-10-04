@@ -2,9 +2,15 @@
 
 基于 FIA 的本地插件应用平台。宿主提供模型、存储和统一界面组件，独立插件组合这些能力，拥有自己的应用页面。
 
-## 运行
+## 下载与安装
 
-需要 macOS 14+ / Apple Silicon 与 Bun（当前验证版本 1.4.2）。[官网](https://semicoder.dev/malatang) 提供使用文档；只构建公开应用源码可按 [固定运行时安装指南](https://semicoder.dev/malatang/docs/installation) 操作，无需编译 Swift。
+官网统一位于 [Semicoder · 麻辣烫](https://semicoder.dev/malatang)，[下载与安装](https://semicoder.dev/malatang/docs/installation) 页面提供正式 DMG 下载、发行状态与安装指引。具体版本和校验信息以该页及 [GitHub Releases](https://github.com/potato47/malatang/releases) 为准；`fia-runtime-*` 预发布仅供构建，不是麻辣烫安装包。
+
+应用支持 macOS 14+ / Apple Silicon，安装后的应用自带运行时，无需另装 Bun。当前可按官网安装页使用公开应用源码与固定 FIA 归档构建，无需编译 Swift。
+
+## 开发运行
+
+开发需要 Bun（当前验证版本 1.4.2）。
 
 以下是 FIA 与麻辣烫的联合开发路径：通过 `file:../fia/packages/cli` 使用相邻 FIA 源码的构建产物，以接入原生外观切换和系统浏览器登录回调；首次需先构建框架（需要 Swift 工具链）。
 
@@ -30,7 +36,7 @@ bun run agent open --browser --url
 
 ## 先体验
 
-GitHub 构建、正式签名公证发布与应用自动更新配置见 [发布说明](docs/github-release.md)。普通 CI 生成测试包；推送稳定版标签发布安装包和签名更新。设置中可手动检查更新。
+GitHub 构建、正式签名公证发布与应用自动更新配置见 [发布说明](docs/github-release.md)。普通 CI 生成测试包；稳定版发布流程生成正式安装包和签名更新，完成公开发布后由官网安装页提供下载入口。设置中可手动检查更新。
 
 1. 打开侧栏最下方「设置 → 模型服务」。有 ChatGPT 订阅时点击 **Continue with ChatGPT**，在系统浏览器授权，返回后选择账号可用模型并添加；也可选择 Pi 预设填写 API Key，或配置自定义 OpenAI-compatible 服务。
 2. 打开「译文」，选择已配置模型，输入文本开始翻译。宿主不提供模拟模型；没有可用模型时提示先配置，不能发起生成。旧演示历史仍可查看并明确标注，不会自动恢复为当前结果。

@@ -1,6 +1,8 @@
 # GitHub 构建、正式发布与自动更新
 
-目标仓库：`potato47/malatang`。更新地址固定为 `https://nobug.space/malatang/updates/latest.json`；完整 `.dmg` 安装包在 GitHub Releases。支持 macOS 14+ / Apple Silicon。用户打开 DMG，将 `Malatang.app` 拖到 Applications 后启动。
+目标仓库：`potato47/malatang`。官网为 [Semicoder · 麻辣烫](https://semicoder.dev/malatang)，用户安装入口固定为 [下载与安装](https://semicoder.dev/malatang/docs/installation)。正式发行的完整 `.dmg` 托管在 GitHub Releases；具体版本和下载以官网安装页及 Release 为准，`fia-runtime-*` 预发布只是框架依赖。
+
+自动更新地址继续固定为 `https://nobug.space/malatang/updates/latest.json`，更新数据不随官网迁移。发布脚本仅将该站点首页跳转至 Semicoder，保留 `updates/` 下的清单和不可变历史文件。应用支持 macOS 14+ / Apple Silicon；正式包安装时打开 DMG，将 `Malatang.app` 拖到 Applications 后启动，无需另外安装 Bun。
 
 ## 工作流
 
@@ -77,6 +79,12 @@ git push origin v0.1.1
 ```
 
 只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。应用版本不等于 SDK 或插件版本，不自动修改后者。
+
+Release 与更新源发布完成后，核对正式 DMG 附件、SHA-256、签名公证报告及匿名下载，再同步 Semicoder 安装页与 `docs/project-sources.md`。网站主干推送会独立触发部署，不属于应用发布的自动步骤。新 Release notes 包含官网与安装页链接，已公开版本不回写。
+
+新安装包与签名更新的 `downloadURL` 指向官网安装页。发布校验只允许该地址及旧版 `https://github.com/potato47/malatang/releases/latest`，以便读取不可改写的历史签名清单；不得因此放宽更新文件的固定来源、签名或内容校验。改官网入口不改 `updatesURL`、历史清单或已有 Release 附件。
+
+FIA 的 `runtimeId` 包含 `updates.downloadURL`，因此此次入口修改会改变新安装包的 runtime ID。已有旧入口验收包应完整安装正式 DMG；未来更高 build 的更新发现 runtime ID 不同也会要求完整安装，不能只用代码更新替换该配置。历史清单可读不表示旧安装包与新运行时兼容。
 
 自动更新会在启动时 / 每 24 小时检查并下载；用户确认后生效。设置 → 应用更新可手动操作。模型、插件或登录任务进行时 `beforeUpdate` 阻止切换；安装会重新加载页面，未保存草稿不会跨更新恢复。启动 / 观察失败回退代码，业务数据不回滚，持久化格式更改必须兼容旧代码。独立安装插件不随宿主自动升级。
 

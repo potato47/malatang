@@ -1,6 +1,6 @@
 import { cp, mkdir, rename, lstat, writeFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { assert, config, readManifest } from "./config";
+import { assert, config, readManifest, websiteURL } from "./config";
 import { verifyRelease, verifyDirectory, checksum } from "./verify";
 
 export async function stageSite(updateDirectory: string, site: string) {
@@ -32,7 +32,7 @@ export async function stageSite(updateDirectory: string, site: string) {
   assert(total < 900_000_000, "Update site approaches the GitHub Pages size limit; migrate hosting before publishing");
   await cp(join(updateDirectory, "latest.json"), latest + ".tmp"); await rename(latest + ".tmp", latest);
   await writeFile(join(site, ".nojekyll"), "");
-  await writeFile(join(site, "index.html"), `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>麻辣烫下载</title><style>body{font:16px system-ui;max-width:640px;margin:12vh auto;padding:24px;line-height:1.8}a{color:inherit}</style><h1>麻辣烫 · Malatang</h1><p>本地插件应用平台</p><p>当前版本 ${next.version} · macOS 14 及以上 · Apple Silicon</p><p><a href="${config.downloadURL}">下载最新版本</a></p><p>应用会自动检查和下载更新，确认后安装。请在更新前保存草稿。</p></html>\n`);
+  await writeFile(join(site, "index.html"), `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${websiteURL}"><link rel="canonical" href="${websiteURL}"><title>麻辣烫官网 · Semicoder</title><h1>麻辣烫 · Malatang</h1><p>官网与使用文档已迁至 <a href="${websiteURL}">Semicoder</a>。</p><p><a href="${config.downloadURL}">下载与安装</a></p></html>\n`);
   console.log(`Staged immutable build ${next.build}; manifest SHA256 ${await checksum(latest)}`);
 }
 if (import.meta.main) {

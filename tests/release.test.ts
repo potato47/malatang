@@ -28,6 +28,9 @@ describe("signed release validation", () => {
     const signed = envelope(manifest()); const changed = JSON.parse(signed); changed.payload = Buffer.from(JSON.stringify({ ...manifest(), build: 2 })).toString("base64");
     expect(() => readManifest(JSON.stringify(changed))).toThrow("signature");
     expect(() => readManifest(envelope({ ...manifest(), baseURL: "https://evil.example/" }))).toThrow("origin");
+    for (const downloadURL of ["https://evil.example/download", "https://semicoder.dev/malatang", `${config.downloadURL}?redirect=https://evil.example`, undefined]) {
+      expect(() => readManifest(envelope({ ...manifest(), downloadURL }))).toThrow("installer URL");
+    }
     expect(() => readManifest(envelope({ ...manifest(), files: [{ path: "../escape", size: 0, sha256: hash("") }] }))).toThrow("Unsafe");
     expect(readManifest(signed).build).toBe(1);
   });
@@ -56,5 +59,23 @@ describe("signed release validation", () => {
     await mkdir(resources, { recursive: true });
     await writeFile(join(resources, "fia.runtime.json"), JSON.stringify({ runtimeId: "b".repeat(64), app: { version: "0.3.0", build: 3 }, updates: { url: config.updatesURL, publicKey: config.publicKey } }));
     await expect(verifyRelease(f.directory, app)).rejects.toThrow("different runtimes");
+  });
+  test("migrates the installer page without rejecting signed history or moving update files", async () => {
+    const previous = await fixture(1, "-legacy-installer"), next = await fixture(2, "-official-installer"), site = join(temporary, "installer-migration");
+    const legacy = { ...manifest(1), downloadURL: "https://github.com/potato47/malatang/releases/latest" };
+    const previousText = envelope(legacy);
+    await writeFile(join(previous.directory, "latest.json"), previousText);
+    config.build = 1; pkg.version = "0.1.0"; await stageSite(previous.directory, site);
+    expect(await readFile(join(site, "updates/latest.json"), "utf8")).toBe(previousText);
+    config.build = 2; pkg.version = "0.2.0"; await stageSite(next.directory, site);
+    const current = readManifest(await readFile(join(site, "updates/latest.json"), "utf8"));
+    expect(current.downloadURL).toBe("https://semicoder.dev/malatang/docs/installation");
+    expect(current.baseURL).toBe("https://nobug.space/malatang/updates/releases/2/");
+    await verifyDirectory(join(site, "updates/releases/1"), legacy);
+    await verifyDirectory(join(site, "updates/releases/2"), current);
+    expect(await readFile(join(previous.directory, "latest.json"), "utf8")).toBe(previousText);
+    const landing = await readFile(join(site, "index.html"), "utf8");
+    expect(landing).toContain('http-equiv="refresh" content="0;url=https://semicoder.dev/malatang"');
+    expect(landing).toContain('href="https://semicoder.dev/malatang/docs/installation"');
   });
 });

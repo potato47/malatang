@@ -87,12 +87,12 @@ Secrets 保存后不会显示原值，这是正常现象。配置完告诉协作
 
 ## 7. 开启 Pages 并验收
 
-1. 打开 [Pages 设置](https://github.com/potato47/malatang/settings/pages)，在 Build and deployment 的 Source 选择 **GitHub Actions**。本项目继承账号已有域名，实际地址为 `https://nobug.space/malatang/`，无需另设 Custom domain；`potato47.github.io/malatang` 会跨域跳转，不能用作客户端固定更新地址。
+1. 打开 [Pages 设置](https://github.com/potato47/malatang/settings/pages)，在 Build and deployment 的 Source 选择 **GitHub Actions**。这里仅托管应用更新数据，固定清单地址为 `https://nobug.space/malatang/updates/latest.json`，无需另设 Custom domain；`potato47.github.io/malatang` 会跨域跳转，不能用作客户端固定更新地址。[官网](https://semicoder.dev/malatang) 与 [安装入口](https://semicoder.dev/malatang/docs/installation) 由 Semicoder 承载，Pages 首页在应用发布后跳转官网，`updates/` 路径保持。
 2. 发布 workflow 必须已合入 GitHub 默认分支，才会出现手动入口。打开 **Actions → Release Malatang → Run workflow**，选择待验收分支。
 3. 这次手动运行会完成构建、签名、公证、应用启动退出检查和更新签名，但**不会公开新版本或部署更新源**。
-4. 全部通过后，在运行详情底部下载 `malatang-release` artifact（GitHub 会将 artifact 包成 ZIP），解压后取得 `Malatang-版本-构建号-mac-arm64.dmg`。最终用户直接从 Releases 下载该 DMG。
+4. 全部通过后，在运行详情底部下载 `malatang-release` artifact（GitHub 会将 artifact 包成 ZIP），解压后取得 `Malatang-版本-构建号-mac-arm64.dmg`。正式公开后，最终用户通过官网安装页的链接下载 Releases 上的该 DMG。
 5. 双击 DMG，将 `Malatang.app` 拖到窗口中的 **Applications / 应用程序**，完成后推出磁盘映像，从“应用程序”启动麻辣烫，检查“设置 → 应用更新”。首次正式标签发布前更新源还没有清单，检查失败是预期；完成下一步后再验证。
-6. 按 [发布说明](github-release.md) 推送 `v0.1.0` 标签（首次）或更高版本标签。等待 Release 和 Pages 发布成功。
+6. 按 [发布说明](github-release.md) 推送 `v0.1.0` 标签（首次）或更高版本标签。等待 Release 和 Pages 发布成功，验证 DMG 附件与匿名下载后同步 Semicoder 安装页；应用发布不自动部署官网。
 7. 完整更新验收需保留上一版，再发布较高 build：旧版检查 → 下载 → 确认 → 页面重新加载 → 版本号提升。无需真实模型请求。失败回退另用隔离测试包验证，不要故意向公开稳定源发布坏包。
 
 ## 常见问题
