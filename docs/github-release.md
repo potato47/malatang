@@ -4,6 +4,8 @@
 
 自动更新地址继续固定为 `https://nobug.space/malatang/updates/latest.json`，更新数据不随官网迁移。发布脚本仅将该站点首页跳转至 Semicoder，保留 `updates/` 下的清单和不可变历史文件。应用支持 macOS 14+ / Apple Silicon；正式包安装时打开 DMG，将 `Malatang.app` 拖到 Applications 后启动，无需另外安装 Bun。
 
+2026-10-04 已发布 [v0.1.0 / build 1](https://github.com/potato47/malatang/releases/tag/v0.1.0)，标签指向 `f1b1c7fc60120c9af1c41dd14b1c35b532fc6bc8`。[正式发布工作流](https://github.com/potato47/malatang/actions/runs/37214205671/attempts/2) 已通过签名、公证、镜像运行和更新校验，Release 附件已公开。独立验收确认公网 Pages 清单 HTTP 200、Ed25519 签名与 13 个在线文件的大小 / SHA-256 均正确；匿名下载 DMG 的 SHA-256、`hdiutil verify`、stapler、DMG / 应用 Gatekeeper 及应用 codesign 检查通过，安装包与更新逐文件一致。跨版本客户端升级尚未实测。以下配置步骤用于环境重建；后续发行必须增加版本和 build，不能重建或移动已发布标签。
+
 ## 工作流
 
 - `Build Malatang`：`main` 提交、PR 或手动触发。执行 check、测试、`build --dmg`（含挂载镜像、签名完整性和应用启动退出检查），上传测试 DMG、校验文件和报告。应用仅 ad-hoc 签名、关闭更新，DMG 不签名公证；不使用发布密钥。
@@ -19,7 +21,7 @@
 1. 创建仓库并推送源码。公开仓库可使用免费 GitHub Pages；私有仓库需要支持 Pages 的计划，更新文件仍需能被未登录客户端访问。更新产物包含业务代码，不应包含任何用户数据或凭证。
 2. 上传下述固定 FIA 包，之后再运行 CI。
 3. Settings → Pages → Source 选择 **GitHub Actions**。项目继承账号已有 `nobug.space` 域名，不另设项目自定义域名。`potato47.github.io` 会重定向到该域名，而 FIA 更新下载拒绝跨域重定向，因此必须直接使用实际 HTTPS 地址；改变域名 / 路径需要更换应用内固定地址并重新发安装包。
-4. 创建 `release` 和 `github-pages` Environments。发布代码的 `v*` 标签必须被允许；手动验收所用分支也需允许。保护发布分支及标签，发布凭据仅供可信源码使用。`gh-pages` 是生成数据分支，不将它合回 `main`。
+4. 创建 `release` 和 `github-pages` Environments，核对待发布标签及手动验收分支的部署许可。首发时 `github-pages` 原先仅允许 `main`，本次保留其他保护、仅新增精确 `v0.1.0` 标签规则。以后每次发布前检查对应标签的 allowlist，按该次发布授权增加必要规则，不改为允许全部分支或标签。保护发布分支及标签，发布凭据仅供可信源码使用。`gh-pages` 是生成数据分支，不将它合回 `main`。
 5. 在 `release` 环境中配置以下 Secrets，内容不要提交到 Git：
 
 | Secret | 内容 |
@@ -52,20 +54,13 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 当前 workspace 依赖包含尚未发布到 npm 的 FIA 修复。因此 CI 从本仓库专用 Release 下载已验证的框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
 
-本次支持 DMG 的归档为 `artifacts/runtime/dmg/semicoder-fia-0.16.1.tgz`；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传；更换框架时使用新标签，首次上传命令如下：
-
-```sh
-gh release create fia-runtime-8650f80f4a11 artifacts/runtime/dmg/semicoder-fia-0.16.1.tgz \
-  --repo potato47/malatang --target main --prerelease --latest=false \
-  --title 'FIA runtime 8650f80f4a11' \
-  --notes 'Pinned FIA package for Malatang CI. SHA-256 and source commit are recorded in release/runtime-lock.json. Do not replace this asset.'
-```
+本次支持 DMG 的归档为 `artifacts/runtime/dmg/semicoder-fia-0.16.1.tgz`；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传至 [fia-runtime-8650f80f4a11](https://github.com/potato47/malatang/releases/tag/fia-runtime-8650f80f4a11)，不要重复创建该标签或覆盖附件。更换框架时，使用新的源码提交、归档和专用标签，以预发布且非 latest 的 Release 保存，并在说明中记录 SHA-256。
 
 上传前核对归档 SHA-256。不要重新打包后覆盖同一附件；即使源码没变，打包 / 编译工具链也可能改变二进制哈希。更新 FIA 时发布新的固定归档和 lock（或迁移到包含修复的固定 npm 版本），再发完整安装包。旧归档保留，确保旧标签可重现。
 
 ## 发布版本
 
-`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。首次可发布当前 `v0.1.0` / build 1；后续在应用仓库执行：
+`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前正式版本为 `v0.1.0` / build 1；下一版例如 `0.1.1` / build 2，在应用仓库执行：
 
 ```sh
 bun run version:app 0.1.1
@@ -78,7 +73,7 @@ git tag -a v0.1.1 -m 'Malatang 0.1.1'
 git push origin v0.1.1
 ```
 
-只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。应用版本不等于 SDK 或插件版本，不自动修改后者。
+`version:app` 同时递增 build；推送标签前复核 `release` / `github-pages` 环境允许该精确标签。只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。应用版本不等于 SDK 或插件版本，不自动修改后者。
 
 Release 与更新源发布完成后，核对正式 DMG 附件、SHA-256、签名公证报告及匿名下载，再同步 Semicoder 安装页与 `docs/project-sources.md`。网站主干推送会独立触发部署，不属于应用发布的自动步骤。新 Release notes 包含官网与安装页链接，已公开版本不回写。
 
@@ -98,6 +93,6 @@ FIA 的 `runtimeId` 包含 `updates.downloadURL`，因此此次入口修改会�
 - Release 已公开但 Pages 失败：重跑失败 job；不覆盖已公开安装包。相同清单可重试。
 - 重跑完整 workflow 得到与已发布版本不同的代码文件：拒绝覆盖，升版本 / build 后再发布。
 - 已发版本业务出错：提交修复并提高版本 / build，不通过覆盖 `latest.json` 或旧标签强制远程降级。
-- 本地可用 `bun scripts/release/verify.ts dist/updates dist/Malatang.app` 验证更新签名、每个文件及安装包一致性；真实云端部署、Apple 凭据和网络更新仍须首次上线验收。
+- 本地可用 `bun scripts/release/verify.ts dist/updates dist/Malatang.app` 验证更新签名、每个文件及安装包一致性；首发公网清单与文件已独立验收，跨版本客户端升级尚未实测，网站部署另行核实。
 
 依据：[GitHub Pages 工作流](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)、[GitHub macOS 签名证书](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)、[FIA 构建与代码更新](../node_modules/@semicoder/fia/docs/framework/README.md)。
