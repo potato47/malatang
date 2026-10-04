@@ -20,7 +20,7 @@
 ## 3. 创建 Developer ID Application 证书
 
 1. 打开 [Certificates](https://developer.apple.com/account/resources/certificates/list)，点击 **＋**。
-2. 在 Software 区域选择 **Developer ID Application**。麻辣烫分发的是 `.app` 的 ZIP，不需要 Developer ID Installer（后者用于 `.pkg`）。
+2. 在 Software 区域选择 **Developer ID Application**。麻辣烫分发的是包含 `.app` 的 **`.dmg` 磁盘映像**，应用和 DMG 都使用这类证书签名；不需要 Developer ID Installer（后者用于 `.pkg`）。[Apple 打包说明](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution)
 3. 若页面要求选择中间证书，按 Apple 当前页面为现代 Xcode 推荐的选项继续。
 4. 上传刚才的 `.certSigningRequest`，继续并下载 `.cer`。
 5. 双击 `.cer` 安装到钥匙串。进入“登录”钥匙串 → **我的证书**，找到 `Developer ID Application: 姓名或团队 (TEAMID)`。
@@ -90,8 +90,8 @@ Secrets 保存后不会显示原值，这是正常现象。配置完告诉协作
 1. 打开 [Pages 设置](https://github.com/potato47/malatang/settings/pages)，在 Build and deployment 的 Source 选择 **GitHub Actions**。保留默认 `potato47.github.io/malatang` 地址。
 2. 发布 workflow 必须已合入 GitHub 默认分支，才会出现手动入口。打开 **Actions → Release Malatang → Run workflow**，选择待验收分支。
 3. 这次手动运行会完成构建、签名、公证、应用启动退出检查和更新签名，但**不会公开新版本或部署更新源**。
-4. 全部通过后，在运行详情底部下载 `malatang-release` artifact，解压后取得 `Malatang-版本-构建号-mac-arm64.zip`。
-5. 将应用安装并启动，检查“设置 → 应用更新”。首次正式标签发布前更新源还没有清单，检查失败是预期；完成下一步后再验证。
+4. 全部通过后，在运行详情底部下载 `malatang-release` artifact（GitHub 会将 artifact 包成 ZIP），解压后取得 `Malatang-版本-构建号-mac-arm64.dmg`。最终用户直接从 Releases 下载该 DMG。
+5. 双击 DMG，将 `Malatang.app` 拖到窗口中的 **Applications / 应用程序**，完成后推出磁盘映像，从“应用程序”启动麻辣烫，检查“设置 → 应用更新”。首次正式标签发布前更新源还没有清单，检查失败是预期；完成下一步后再验证。
 6. 按 [发布说明](github-release.md) 推送 `v0.1.0` 标签（首次）或更高版本标签。等待 Release 和 Pages 发布成功。
 7. 完整更新验收需保留上一版，再发布较高 build：旧版检查 → 下载 → 确认 → 页面重新加载 → 版本号提升。无需真实模型请求。失败回退另用隔离测试包验证，不要故意向公开稳定源发布坏包。
 

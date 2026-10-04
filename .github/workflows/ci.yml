@@ -30,15 +30,16 @@ jobs:
           bun-version: "1.4.2"
       - run: bun scripts/release/prepare-runtime.ts
       - run: bun install --frozen-lockfile --ignore-scripts
-      - run: bun run check && bun test tests && bun run build
-      - name: Verify packaged application
-        run: bun node_modules/@semicoder/fia/bin/fia smoke --json
-      - name: Archive test application
-        run: ditto -c -k --keepParent dist/Malatang.app dist/Malatang-test-mac-arm64.zip
+      - run: bun run check && bun test tests
+      - name: Build and verify test disk image
+        run: bun run build --dmg
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Malatang-test-mac-arm64
-          path: malatang/dist/Malatang-test-mac-arm64.zip
+          path: |
+            malatang/dist/*.dmg
+            malatang/dist/*.dmg.sha256
+            malatang/dist/*.dmg.report.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

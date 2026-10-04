@@ -37,12 +37,12 @@ try {
   await stageSite(updateDirectory, site); // Monotonic feed / immutable build checks run BEFORE any release mutation.
   const releases = JSON.parse(await gh("api", "--paginate", "--slurp", `repos/${config.repository}/releases?per_page=100`)).flat() as { id: number; tag_name: string; draft: boolean; assets: { name: string }[] }[];
   let release = releases.find(r => r.tag_name === tag);
-  const zip = `Malatang-${pkg.version}-${config.build}-mac-arm64.zip`;
-  const names = [zip, zip + ".sha256", zip + ".report.json", "updates.tar.gz", "latest.json"];
+  const dmg = `Malatang-${pkg.version}-${config.build}-mac-arm64.dmg`;
+  const names = [dmg, dmg + ".sha256", dmg + ".report.json", "updates.tar.gz", "latest.json"];
   await cp(join(updateDirectory, "latest.json"), join(bundle, "latest.json"));
-  const expectedZIP = (await Bun.file(join(bundle, zip + ".sha256")).text()).split(/\s/)[0];
-  assert(await checksum(join(bundle, zip)) === expectedZIP, "Installer ZIP checksum mismatch");
-  const report = await Bun.file(join(bundle, zip + ".report.json")).json();
+  const expectedDMG = (await Bun.file(join(bundle, dmg + ".sha256")).text()).split(/\s/)[0];
+  assert(await checksum(join(bundle, dmg)) === expectedDMG, "Installer DMG checksum mismatch");
+  const report = await Bun.file(join(bundle, dmg + ".report.json")).json();
   assert(report.ok === true, "Installer smoke check did not pass");
   if (release && !release.draft) {
     // Retry a failed Pages deployment using its existing immutable release payload, never overwrite assets.
@@ -52,7 +52,7 @@ try {
     for (const name of names) assert(release.assets.some(a => a.name === name), "Published release is incomplete: " + name);
   } else {
     if (!release) {
-      const notes = `macOS 14+ / Apple Silicon。安装包已使用 Developer ID 签名并通过 Apple 公证。\n\n应用启动时和每 24 小时检查更新，确认后安装。原生运行时变更时请下载完整安装包。\n\nBuild ${config.build}`;
+      const notes = `macOS 14+ / Apple Silicon。应用和 DMG 已使用 Developer ID 签名，DMG 已通过 Apple 公证并附带公证票据。\n\n下载并打开 .dmg，将 Malatang.app 拖入 Applications，然后从“应用程序”启动。\n\n应用启动时和每 24 小时检查更新，确认后安装。原生运行时变更时请下载完整 DMG 安装包。\n\nBuild ${config.build}`;
       const notesPath = join(temporary, "notes.txt"); await Bun.write(notesPath, notes);
       await gh("release", "create", tag, "--repo", config.repository, "--verify-tag", "--draft", "--title", `Malatang ${pkg.version}`, "--notes-file", notesPath);
     }

@@ -1,12 +1,12 @@
 # GitHub 构建、正式发布与自动更新
 
-目标仓库：`potato47/malatang`。更新地址固定为 `https://potato47.github.io/malatang/updates/latest.json`；完整安装包在 GitHub Releases。支持 macOS 14+ / Apple Silicon。
+目标仓库：`potato47/malatang`。更新地址固定为 `https://potato47.github.io/malatang/updates/latest.json`；完整 `.dmg` 安装包在 GitHub Releases。支持 macOS 14+ / Apple Silicon。用户打开 DMG，将 `Malatang.app` 拖到 Applications 后启动。
 
 ## 工作流
 
-- `Build Malatang`：`main` 提交、PR 或手动触发。执行 check、测试、build、生产 smoke，上传 ad-hoc 签名测试 ZIP，关闭更新；不使用发布密钥。
+- `Build Malatang`：`main` 提交、PR 或手动触发。执行 check、测试、`build --dmg`（含挂载镜像、签名完整性和应用启动退出检查），上传测试 DMG、校验文件和报告。应用仅 ad-hoc 签名、关闭更新，DMG 不签名公证；不使用发布密钥。
 - `Release Malatang`：`v*` 标签触发正式发布。手动运行也会签名、公证并上传验收产物，但不发布 Release 或 Pages。
-- 正式流程：版本校验 → 固定 FIA 包 → 测试 → 临时钥匙串 → Developer ID 签名 → Apple 公证 / staple / Gatekeeper / smoke → 签名代码更新 → 安装包与更新逐文件比对 → GitHub Release → 保存更新历史到 `gh-pages` → Pages 部署。
+- 正式流程：版本校验 → 固定 FIA 包 → 测试 → 临时钥匙串 → Developer ID Application 签名应用与 DMG → 对 DMG 公证 / staple / Gatekeeper 验证 → 挂载后验证应用签名、Gatekeeper 和启动退出 → 签名代码更新 → 安装包与更新逐文件比对 → GitHub Release → 保存更新历史到 `gh-pages` → Pages 部署。
 - 发布按仓库串行运行。已公开 Release 的附件不覆盖；同一 build 的更新内容不可改写；旧标签重跑不得倒退更新源。Pages 部署失败可以重跑发布 job，沿用已发布内容。
 
 ## 首次配置
@@ -49,12 +49,12 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 当前 workspace 依赖包含尚未发布到 npm 的 FIA 修复。因此 CI 从本仓库专用 Release 下载已验证的框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
 
-本次准备的归档为 `artifacts/runtime/semicoder-fia-0.16.1.tgz`；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。首次推送代码后执行：
+本次支持 DMG 的归档为 `artifacts/runtime/dmg/semicoder-fia-0.16.1.tgz`；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传；更换框架时使用新标签，首次上传命令如下：
 
 ```sh
-gh release create fia-runtime-3fbb80f2ff75 artifacts/runtime/semicoder-fia-0.16.1.tgz \
+gh release create fia-runtime-8650f80f4a11 artifacts/runtime/dmg/semicoder-fia-0.16.1.tgz \
   --repo potato47/malatang --target main --prerelease --latest=false \
-  --title 'FIA runtime 3fbb80f2ff75' \
+  --title 'FIA runtime 8650f80f4a11' \
   --notes 'Pinned FIA package for Malatang CI. SHA-256 and source commit are recorded in release/runtime-lock.json. Do not replace this asset.'
 ```
 

@@ -56,7 +56,7 @@ jobs:
         with:
           name: malatang-release
           path: |
-            malatang/dist/*.zip
+            malatang/dist/*.dmg
             malatang/dist/*.sha256
             malatang/dist/*.report.json
             malatang/dist/updates.tar.gz
