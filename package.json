@@ -22,7 +22,7 @@
     "plugins:build": "bun scripts/build-plugins.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-ai": "1.0.2",
     "@malatang/sdk": "workspace:*",
     "@semicoder/fia": "file:../fia/packages/cli",
     "jose": "^6",

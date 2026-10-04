@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "@semicoder/fia/api";
 import { run, themeMode } from "../shared/api";
 import type { JSONValue } from "@malatang/sdk/types";
+import { migratePresetModel } from "./model-migrations";
 
 const stateSchema = z.object({
   version: z.literal(1),
@@ -27,6 +28,7 @@ export class Store {
     const file = Bun.file(join(this.directory, "platform.json"));
     if (await file.exists()) this.state = stateSchema.parse(await file.json());
     await this.update(state => {
+      for (const model of state.models) migratePresetModel(model);
       for (const item of state.runs) if (item.status === "running") {
         item.status = "failed";
         item.error = "应用已重新启动，此次运行已中断。可以重新发起。";

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { listProviders, listPresetModels, validatePreset } from "../backend/providers";
 import { Models } from "../backend/models";
-import { Store } from "../backend/store";
+import { Store, type ModelConfig } from "../backend/store";
 
 const resources: { dir: string; models: Models }[] = [];
 afterEach(async () => { for (const { dir, models } of resources.splice(0)) { await models.stop(); await rm(dir, { recursive: true, force: true }); } });
@@ -59,6 +59,87 @@ test("legacy configurations migrate without losing keys or custom endpoints", as
   const reopened = new Store(dir); await reopened.open();
   expect(reopened.value.models[0]).toMatchObject({ preset: null, options: {}, apiKey: "legacy-secret", baseURL: "https://example.test/v1" });
   expect(reopened.get("translate", "preferences")).toEqual({ modelId: model.id });
+});
+
+test("Pi 1.0.2 migrates only known provider aliases and preserves saved identity, credentials and history", async () => {
+  const { dir, store } = await setup();
+  const cloudflare = ["claude-fable-5.1", "claude-haiku-4.5", "claude-opus-4.5", "claude-opus-4.6", "claude-opus-4.7", "claude-opus-4.8", "claude-opus-5.5", "claude-sonnet-4.5", "claude-sonnet-4.6"];
+  const renamed = [...cloudflare.map(model => ({ preset: "cloudflare-ai-gateway", model, next: model.replaceAll(".", "-") })), { preset: "together", model: "deepseek-ai/DeepSeek-V4-Pro", next: "deepseek-ai/DeepSeek-V4-Pro-0813" }];
+  await store.update(state => {
+    state.models = renamed.map<ModelConfig>(({ preset, model }, index) => {
+      const options: Record<string, string> = {};
+      if (preset === "cloudflare-ai-gateway") { options.accountId = "account-test"; options.gatewayId = "gateway-test"; }
+      return { id: `saved-${index}`, name: `My model ${index}`, provider: listProviders().find(p => p.id === preset)!.name, preset, model, baseURL: "https://proxy.example.test/v1", apiKey: "saved-secret", options };
+    });
+    const original = state.models[0]!;
+    state.models.push(
+      { ...original, id: "custom", preset: null },
+      { ...original, id: "other-provider", preset: "anthropic" },
+      { ...original, id: "subscription", chatgptProfileId: "account" },
+      { ...original, id: "unknown-dot-id", model: "claude-unknown-9.9" },
+    );
+    state.kv = { translate: { preferences: { modelId: "saved-0", target: "English" } } };
+    state.runs = [{ id: "history", pluginId: "translate", modelId: "saved-0", input: "old input", output: "old output", title: "history", status: "completed", error: null, createdAt: 1, updatedAt: 2, revision: 1, demo: false }];
+  });
+  const expected = structuredClone(store.value);
+  renamed.forEach((item, index) => {
+    expect(listPresetModels(item.preset).some(model => model.id === item.next)).toBe(true);
+    expected.models[index]!.model = item.next;
+  });
+  const reopened = new Store(dir); await reopened.open();
+  expect(reopened.value).toEqual(expected);
+  expect(await Bun.file(join(dir, "platform.json")).json()).toEqual(expected);
+  await reopened.open();
+  expect(reopened.value).toEqual(expected);
+  expect(await Bun.file(join(dir, "platform.json")).json()).toEqual(expected);
+});
+
+for (const [preset, oldModel, nextModel, payload] of [
+  ["cloudflare-ai-gateway", "claude-opus-5.5", "claude-opus-5-5", anthropic],
+  ["together", "deepseek-ai/DeepSeek-V4-Pro", "deepseek-ai/DeepSeek-V4-Pro-0813", completion],
+] as const) test(`restored ${preset} alias sends the new upstream model ID`, async () => {
+  let request: Request | undefined;
+  const fake = (async (url: string | Request, init?: RequestInit) => { request = new Request(url, init); return new Response(payload(), { headers: { "content-type": "text/event-stream" } }); }) as typeof fetch;
+  const { dir, store } = await setup();
+  await store.update(state => { state.models.push({ ...input(preset), id: "saved", model: oldModel, options: preset === "cloudflare-ai-gateway" ? { accountId: "account-test", gatewayId: "gateway-test" } : {} }); });
+  const reopened = new Store(dir); await reopened.open();
+  const models = new Models(reopened, () => {}, () => {}, fake); resources.push({ dir, models });
+  expect(models.list()[0]).toMatchObject({ id: "saved", model: nextModel, configured: true });
+  expect(JSON.stringify(models.list())).not.toContain("test-secret");
+  const run = await models.start("translate", { modelId: "saved", prompt: "hello" }); await waitFor(() => !models.busy());
+  expect(models.get("translate", run.id)).toMatchObject({ status: "completed", output: "你好", error: null });
+  expect((await request!.json()).model).toBe(nextModel);
+  if (preset === "cloudflare-ai-gateway") {
+    expect(request!.url).toContain("/account-test/gateway-test/anthropic/v1/messages");
+    expect(request!.headers.get("cf-aig-authorization")).toBe("Bearer test-secret");
+  } else expect(request!.headers.get("authorization")).toBe("Bearer test-secret");
+});
+
+test("removed catalog entries remain saved, reject generation without a request and can be repaired in place", async () => {
+  let fetchCalled = false;
+  const { dir, store } = await setup();
+  const removed = ["google/gemma-4-31B-it", "openai/gpt-oss-20b"];
+  await store.update(state => {
+    state.models = removed.map(model => ({ ...input("together"), provider: listProviders().find(p => p.id === "together")!.name, id: model, model }));
+    state.models.push({ ...state.models[0]!, id: "missing-key", apiKey: "" }, { ...state.models[0]!, id: "missing-provider", preset: "removed-provider" });
+  });
+  await store.set("translate", "preferences", { modelId: removed[0]! });
+  const before = structuredClone(store.value);
+  const reopened = new Store(dir); await reopened.open();
+  expect(reopened.value).toEqual(before);
+  const models = new Models(reopened, () => {}, () => {}, (async () => { fetchCalled = true; throw new Error("Unexpected request"); }) as unknown as typeof fetch);
+  for (const model of models.list()) {
+    expect(model.configured).toBe(false);
+    expect(model.hasApiKey).toBe(model.id !== "missing-key");
+    await expect(models.start("translate", { modelId: model.id, prompt: "hello" })).rejects.toThrow("重新选择模型");
+  }
+  expect(fetchCalled).toBe(false); expect(reopened.value.runs).toEqual([]);
+  const prior = reopened.value.models[0]!;
+  const repaired = await models.save({ ...prior, model: "deepseek-ai/DeepSeek-V4-Pro-0813", apiKey: "" });
+  expect(repaired).toMatchObject({ id: prior.id, configured: true, hasApiKey: true, model: "deepseek-ai/DeepSeek-V4-Pro-0813" });
+  expect(reopened.value.models.find(model => model.id === prior.id)!.apiKey).toBe("test-secret");
+  expect(reopened.get("translate", "preferences")).toEqual({ modelId: prior.id });
+  expect(reopened.value.models.find(model => model.id === removed[1])).toEqual(before.models[1]);
 });
 
 test("edits retain keys only for the same provider/endpoint and allow explicit clearing", async () => {

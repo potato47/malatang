@@ -59,6 +59,17 @@ async function run() {
   await publish([]);
   assert(select().value === "" && button().disabled, "Removing the last model must clear selection");
   results.push("PASS account disconnection and removal of the last model");
+
+  const removed: ModelInfo = { ...model, id: "removed-preset", kind: "pi", provider: "Together", preset: "together", model: "google/gemma-4-31B-it", configured: false, hasApiKey: true };
+  await publish([removed]);
+  assert(select().disabled && button().disabled, "A removed Pi model must stay disabled even with saved credentials");
+  assert([...select().options].find(option => option.value === removed.id)?.disabled, "The removed model option must not be selectable");
+  const previousCalls = calls.length;
+  await act(async () => { document.querySelector("textarea")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })); });
+  assert(calls.length === previousCalls, "Keyboard shortcut must not generate with a removed catalog entry");
+  await publish([{ ...removed, model: "deepseek-ai/DeepSeek-V4-Pro-0813", configured: true }]);
+  assert(select().value === removed.id && !button().disabled, "Repairing a preset must restore selection using the same host ID");
+  results.push("PASS removed Pi preset, keyboard guard and repaired configuration");
   await act(async () => { root.unmount(); });
   document.getElementById("results")!.textContent = results.join("\n");
   document.documentElement.dataset.result = "pass";

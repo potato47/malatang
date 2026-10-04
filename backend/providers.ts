@@ -42,6 +42,11 @@ export function listPresetModels(id: string): PresetModel[] {
   return getProvider(id).getModels().map(model => ({ id: model.id, name: model.name, api: model.api, baseURL: model.baseUrl, contextWindow: model.contextWindow, reasoning: model.reasoning }));
 }
 
+export function isPresetModelAvailable(id: string, modelId: string): boolean {
+  const provider = providers.get(id);
+  return Boolean(provider?.auth.apiKey && provider.getModels().some(model => model.id === modelId));
+}
+
 export function validatePreset(id: string, modelId: string, baseURL: string, options: Record<string, string>) {
   const provider = getProvider(id);
   if (!provider.auth.apiKey) throw new Error("此服务商需要订阅登录，当前版本尚未支持");

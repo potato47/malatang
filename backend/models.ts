@@ -3,7 +3,7 @@ import type { ModelInfo, ModelRequest, ModelRun } from "@malatang/sdk/types";
 import { modelInput } from "../shared/api";
 import { Store, type ModelConfig } from "./store";
 import type { ChatGPT } from "./chatgpt";
-import { streamPreset, validatePreset } from "./providers";
+import { isPresetModelAvailable, streamPreset, validatePreset } from "./providers";
 
 export { readSSE } from "./sse";
 import { readSSE } from "./sse";
@@ -17,7 +17,7 @@ export class Models {
   private info(config: ModelConfig): ModelInfo {
     const { apiKey, ...info } = config;
     if (config.chatgptProfileId) return { ...info, provider: this.chatgpt?.status().profiles.find(p => p.id === config.chatgptProfileId)?.label ?? info.provider, kind: "chatgpt", hasApiKey: false, configured: this.chatgpt?.connected(config.chatgptProfileId) ?? false };
-    return { ...info, kind: config.preset ? "pi" : "openai-compatible", hasApiKey: Boolean(apiKey), configured: Boolean(apiKey) || (!config.preset && /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(config.baseURL)) };
+    return { ...info, kind: config.preset ? "pi" : "openai-compatible", hasApiKey: Boolean(apiKey), configured: config.preset ? Boolean(apiKey) && isPresetModelAvailable(config.preset, config.model) : Boolean(apiKey) || /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(config.baseURL) };
   }
   async save(input: z.infer<typeof modelInput>): Promise<ModelInfo> {
     input = modelInput.parse(input);
@@ -74,6 +74,7 @@ export class Models {
     if (this.active.size + this.starting >= 8) throw new Error("最多同时运行 8 个任务");
     const config = this.store.value.models.find(model => model.id === request.modelId);
     if (!config) throw new Error("模型不存在，请先在设置 → 模型服务中添加模型");
+    if (config.preset && !config.chatgptProfileId && !isPresetModelAvailable(config.preset, config.model)) throw new Error("预设模型已不在当前目录中，请在设置 → 模型服务中重新选择模型");
     if (!request.prompt.trim() || request.prompt.length > 16000 || (request.system?.length ?? 0) > 16000) throw new Error("输入为空或超过 16000 字符");
     const now = Date.now();
     const run: ModelRun = { id: crypto.randomUUID(), pluginId, modelId: request.modelId, title: (request.title ?? request.prompt.slice(0, 40)).slice(0, 100), input: request.prompt, output: "", status: "running", error: null, createdAt: now, updatedAt: now, revision: 0, demo: false };

@@ -11,6 +11,7 @@ export default function ModelSettings() {
   const [providers, setProviders] = useState<ProviderPreset[]>([]);
   const [catalog, setCatalog] = useState<PresetModel[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [form, setForm] = useState(blank);
   const [editing, setEditing] = useState<ModelInfo | null>(null);
   const [editor, setEditor] = useState(false);
@@ -42,15 +43,17 @@ export default function ModelSettings() {
   useEffect(() => {
     let live = true;
     setCatalog([]);
+    setCatalogLoaded(false);
     if (!editor || !form.preset) { setCatalogLoading(false); return; }
     setCatalogLoading(true);
-    void app.call("models.catalog", { providerId: form.preset }).then(items => { if (live) setCatalog(items); })
+    void app.call("models.catalog", { providerId: form.preset }).then(items => { if (live) { setCatalog(items); setCatalogLoaded(true); } })
       .catch(e => { if (live) setError(String(e)); }).finally(() => { if (live) setCatalogLoading(false); });
     return () => { live = false; };
   }, [form.preset, editor]);
 
   const provider = providers.find(item => item.id === form.preset);
   const selected = catalog.find(item => item.id === form.model);
+  const missingModel = Boolean(form.preset && form.model && catalogLoaded && !selected);
   const supported = !form.preset || Boolean(provider?.apiKeySupported && provider.modelCount);
   const sameConnection = editing && (editing.preset ?? "") === form.preset && editing.baseURL === form.baseURL.trim().replace(/\/+$/, "") && (form.preset || editing.provider === form.provider);
   const keptKey = Boolean(editing?.hasApiKey && sameConnection && !form.clearApiKey);
@@ -88,8 +91,9 @@ export default function ModelSettings() {
           {form.preset ? <>
             <Field label="查找预设模型"><input type="search" aria-label="查找预设模型" placeholder="搜索模型名称或 ID" value={modelSearch} onChange={e => setModelSearch(e.target.value)} /></Field>
             <Field label="模型" hint={catalogLoading ? "正在加载模型目录…" : `${catalog.length} 个 Pi 预设文本模型`}><select aria-label="预设模型" required value={form.model} disabled={catalogLoading || !supported} onChange={e => setForm({ ...form, model: e.target.value })}>
-              <option value="">{catalogLoading ? "正在加载…" : "选择一个模型"}</option>{filteredCatalog.map(item => <option value={item.id} key={item.id}>{item.name} · {item.id}</option>)}
+              <option value="">{catalogLoading ? "正在加载…" : "选择一个模型"}</option>{missingModel && <option value={form.model} disabled>{form.model} · 已不在目录中</option>}{filteredCatalog.map(item => <option value={item.id} key={item.id}>{item.name} · {item.id}</option>)}
             </select></Field>
+            {missingModel && <p className="provider-notice" role="status">此模型已不在当前服务商目录中。原配置已保留，请重新选择模型后保存。</p>}
             {selected && <div className="model-capabilities"><Badge>{Intl.NumberFormat("en", { notation: "compact" }).format(selected.contextWindow)} 上下文</Badge>{selected.reasoning && <Badge>支持推理</Badge>}<span>{selected.id}</span></div>}
           </> : <div className="form-columns"><Field label="服务商名称"><input aria-label="自定义服务商名称" required maxLength={100} value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })} /></Field><Field label="模型 ID"><input aria-label="模型 ID" required maxLength={200} placeholder="服务商提供的 model ID" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} /></Field></div>}
           <Field label="显示名称" hint="可选，留空使用模型名称。"><input aria-label="显示名称" maxLength={100} placeholder={selected?.name || "例如：日常写作"} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
@@ -113,7 +117,7 @@ export default function ModelSettings() {
       <div className="model-list-toolbar"><h2>已添加的模型 <span>{models.length}</span></h2><input type="search" aria-label="搜索已添加模型" placeholder="搜索模型或服务商" value={search} onChange={e => setSearch(e.target.value)} /></div>
       <div className="configured-models">{models.filter(model => `${model.name} ${model.provider} ${model.model}`.toLowerCase().includes(search.toLowerCase())).map(model => <div className="configured-model" key={model.id}>
         <span className="provider-avatar" aria-hidden="true">{model.provider.slice(0, 1).toUpperCase()}</span>
-        <div className="configured-model-info"><strong>{model.name}</strong><span>{model.provider} · {model.model}</span></div><Badge tone={model.configured ? "green" : "amber"}>{model.configured ? (model.kind === "chatgpt" ? "ChatGPT 订阅" : "已配置") : model.kind === "chatgpt" ? "需登录授权" : "待配置密钥"}</Badge>
+        <div className="configured-model-info"><strong>{model.name}</strong><span>{model.provider} · {model.model}</span></div><Badge tone={model.configured ? "green" : "amber"}>{model.configured ? (model.kind === "chatgpt" ? "ChatGPT 订阅" : "已配置") : model.kind === "chatgpt" ? "需登录授权" : model.kind === "pi" && model.hasApiKey ? "需重新选择模型" : "待配置密钥"}</Badge>
         <div className="configured-model-actions">{removeId === model.id ? <><Button variant="danger" disabled={busy} onClick={() => void remove(model.id)}>确认删除</Button><Button variant="ghost" disabled={busy} onClick={() => setRemoveId(null)}>取消</Button></> : <>{model.kind !== "chatgpt" && <Button variant="ghost" aria-label={`编辑 ${model.name}`} onClick={() => edit(model)}>编辑</Button>}<Button variant="ghost" aria-label={`删除 ${model.name}`} onClick={() => setRemoveId(model.id)}>删除</Button></>}</div>
       </div>)}</div>
       {!loaded && !error && <p className="settings-note">正在读取配置…</p>}
