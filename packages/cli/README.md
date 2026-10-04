@@ -19,7 +19,8 @@ There is one project template. `create` accepts `--yes`, `--git/--no-git`, `--in
 | `dev [--open-browser]`                | Native window, Vite HMR and supervised Bun restart         |
 | `run`                                 | Build and launch a production layout                       |
 | `build`                               | Assemble and sign a local `.app` without Swift compilation |
-| `release`                             | Developer ID signing, notarization, stapling and ZIP       |
+| `build --dmg`                         | Create and mount-check a local test DMG                    |
+| `release`                             | Developer ID signing, notarization, stapling and DMG       |
 | `release --update`                    | Signed frontend/backend code release                       |
 | `check` / `test`                      | Validate config and TypeScript / run application Bun tests |
 | `doctor --target dev\|release --json` | Check runtime assets, OS and publishing tools              |
