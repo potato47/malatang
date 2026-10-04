@@ -1,0 +1,44 @@
+name: Build Malatang
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: malatang-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: malatang
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MALATANG_DISABLE_UPDATES: "1"
+      NO_PROXY: localhost,127.0.0.1,::1
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: malatang
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun scripts/release/prepare-runtime.ts
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run check && bun test tests && bun run build
+      - name: Verify packaged application
+        run: bun node_modules/@semicoder/fia/bin/fia smoke --json
+      - name: Archive test application
+        run: ditto -c -k --keepParent dist/Malatang.app dist/Malatang-test-mac-arm64.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Malatang-test-mac-arm64
+          path: malatang/dist/Malatang-test-mac-arm64.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

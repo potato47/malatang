@@ -1,0 +1,102 @@
+name: Release Malatang
+on:
+  push:
+    tags: ["v*"]
+  # Manual runs sign, notarize and validate artifacts, but do not publish.
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: malatang-release
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.repository == 'potato47/malatang'
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: release
+    defaults:
+      run:
+        working-directory: malatang
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MALATANG_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+      NO_PROXY: localhost,127.0.0.1,::1
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: malatang
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+      - name: Check release source
+        run: bun run release:check
+      - run: bun scripts/release/prepare-runtime.ts
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run check && bun test tests
+      - name: Prepare signing credentials
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          FIA_UPDATE_PRIVATE_KEY: ${{ secrets.FIA_UPDATE_PRIVATE_KEY }}
+        run: bun scripts/release/signing.ts
+      - name: Sign, notarize and smoke-test installer
+        run: bun scripts/release/check.ts --signed && bun run release
+      - name: Sign and verify matching code update
+        run: |
+          bun run release:update
+          bun scripts/release/verify.ts dist/updates dist/Malatang.app
+          tar -czf dist/updates.tar.gz -C dist/updates .
+          git diff --exit-code
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: malatang-release
+          path: |
+            malatang/dist/*.zip
+            malatang/dist/*.sha256
+            malatang/dist/*.report.json
+            malatang/dist/updates.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Remove signing credentials
+        if: always()
+        run: bun scripts/release/signing.ts cleanup
+  publish:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'potato47/malatang'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: malatang-release
+          path: release-bundle
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Publish installer and retain immutable update history
+        run: bun scripts/release/publish.ts release-bundle published-site
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: published-site
+      - name: Deploy update feed
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
