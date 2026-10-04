@@ -1,4 +1,4 @@
-import { definePlugin, defineMethod, z } from "@malatang/sdk/runtime";
+import { definePlugin, defineMethod, z } from "@semicoder/malatang-sdk/runtime";
 export default definePlugin({
   methods: {
     translate: defineMethod("Translate text using a host model", z.strictObject({ text: z.string().trim().min(1).max(16000), target: z.enum(["简体中文", "English", "日本語", "한국어", "Français"]), modelId: z.string() }), async (input, context) => {

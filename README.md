@@ -86,7 +86,7 @@ GitHub 构建、正式签名公证发布与应用自动更新配置见 [发布�
 - `plugins/translate/`：内置前后端插件，仅经 SDK 调用模型及存储。
 - `examples/quick-notes/`：独立前端插件，打包安装后使用 KV。
 
-当前 SDK 为 workspace 包，尚未发布 npm。构建脚本把插件业务依赖打入产物，并通过宿主共享 React 避免重复运行时。
+SDK 包名为 `@semicoder/malatang-sdk`，当前通过 workspace 使用，尚未发布 npm。[SDK npm 发布流程](docs/npm-release.md) 使用独立的 `sdk-v*` 标签；应用 `v*` 标签继续发布 DMG 和更新源。构建脚本把插件业务依赖打入产物，并通过宿主共享 React 避免重复运行时。
 
 ## CLI
 

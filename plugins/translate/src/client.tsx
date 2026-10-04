@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { createPluginClient } from "@malatang/sdk/client";
-import type { ModelInfo, ModelRun } from "@malatang/sdk/types";
-import { Badge, Button, ModelSelect, PageHeader, Panel } from "@malatang/sdk/ui";
+import { createPluginClient } from "@semicoder/malatang-sdk/client";
+import type { ModelInfo, ModelRun } from "@semicoder/malatang-sdk/types";
+import { Badge, Button, ModelSelect, PageHeader, Panel } from "@semicoder/malatang-sdk/ui";
 const client = createPluginClient("translate");
 const sample = "Good tools disappear into the work. They give ideas room to grow, and make the complicated feel simple.";
 const languages = ["简体中文", "English", "日本語", "한국어", "Français"];

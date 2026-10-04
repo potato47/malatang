@@ -1,6 +1,6 @@
 import { createModels, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
-import type { ProviderPreset, PresetModel, ModelRequest } from "@malatang/sdk/types";
+import type { ProviderPreset, PresetModel, ModelRequest } from "@semicoder/malatang-sdk/types";
 import type { ModelConfig } from "./store";
 
 const providers = new Map(builtinProviders().map(provider => [provider.id, provider]));

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Badge, Button, Field } from "@malatang/sdk/ui";
+import { Badge, Button, Field } from "@semicoder/malatang-sdk/ui";
 import { chatGPTLoginProfile, type ChatGPTStatus, type ChatGPTModel } from "../shared/chatgpt";
 import { app } from "./bridge";
 import ChatGPTAccounts from "./ChatGPTAccounts";

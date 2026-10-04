@@ -2,7 +2,7 @@ import { mkdir, realpath, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "@semicoder/fia/api";
-import type { BackendPlugin, InstallJob, JSONValue, PluginContext, PluginInfo, PluginManifest } from "@malatang/sdk/types";
+import type { BackendPlugin, InstallJob, JSONValue, PluginContext, PluginInfo, PluginManifest } from "@semicoder/malatang-sdk/types";
 import { Store } from "./store";
 import { Models } from "./models";
 

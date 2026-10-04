@@ -2,7 +2,7 @@ import { mkdir, rename, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "@semicoder/fia/api";
 import { run, themeMode } from "../shared/api";
-import type { JSONValue } from "@malatang/sdk/types";
+import type { JSONValue } from "@semicoder/malatang-sdk/types";
 import { migratePresetModel } from "./model-migrations";
 
 const stateSchema = z.object({

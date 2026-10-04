@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { createPluginClient } from "@malatang/sdk/client";
-import { Badge, Button, PageHeader, Panel } from "@malatang/sdk/ui";
+import { createPluginClient } from "@semicoder/malatang-sdk/client";
+import { Badge, Button, PageHeader, Panel } from "@semicoder/malatang-sdk/ui";
 const client = createPluginClient("quick-notes");
 export default function QuickNotes() {
   const [text, setText] = useState("");

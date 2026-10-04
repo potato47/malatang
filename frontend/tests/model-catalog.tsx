@@ -1,7 +1,7 @@
 // Run on FIA's development server; configuration and credentials are fixtures.
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { ModelInfo, PresetModel, ProviderPreset } from "@malatang/sdk/types";
+import type { ModelInfo, PresetModel, ProviderPreset } from "@semicoder/malatang-sdk/types";
 import ModelSettings from "../ModelSettings";
 import { app } from "../bridge";
 import "../style.css";

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import type { PluginInfo } from "@malatang/sdk/types";
-import { EmptyState } from "@malatang/sdk/ui";
+import type { PluginInfo } from "@semicoder/malatang-sdk/types";
+import { EmptyState } from "@semicoder/malatang-sdk/ui";
 import { app } from "./bridge";
 import PluginPage, { pluginPageKey } from "./PluginPage";
 import PageSlot from "./PageSlot";

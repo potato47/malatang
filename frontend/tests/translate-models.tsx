@@ -1,7 +1,7 @@
 // Runs only on FIA's development server, with no real account or model calls.
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { HostBridge, ModelInfo, ModelRun } from "@malatang/sdk/types";
+import type { HostBridge, ModelInfo, ModelRun } from "@semicoder/malatang-sdk/types";
 import "../style.css";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

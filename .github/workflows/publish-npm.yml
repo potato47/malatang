@@ -1,0 +1,86 @@
+name: Publish Malatang SDK
+
+on:
+  push:
+    tags: ["sdk-v*"]
+  # Manual runs validate and upload the archive, but never publish.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: malatang-sdk-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'potato47/malatang'
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: malatang
+    outputs:
+      filename: ${{ steps.release.outputs.filename }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NO_PROXY: localhost,127.0.0.1,::1
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: malatang
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+      - name: Check SDK metadata and release tag
+        id: release
+        run: bun run npm:check --release
+      - run: bun scripts/release/prepare-runtime.ts
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run check && bun test tests
+      - name: Pack and verify SDK in a standalone consumer
+        run: |
+          npm install --global npm@11.19.0
+          bun run npm:pack
+          git diff --exit-code
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: malatang-sdk-npm
+          path: malatang/artifacts/npm/${{ steps.release.outputs.filename }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/sdk-v') && github.repository == 'potato47/malatang'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: malatang-sdk-npm
+          path: npm-package
+      - name: Publish verified SDK archive with OIDC
+        env:
+          PACKAGE_FILE: ${{ needs.build.outputs.filename }}
+        run: >-
+          npm publish "./npm-package/$PACKAGE_FILE"
+          --access public --tag latest --ignore-scripts
+          --registry=https://registry.npmjs.org

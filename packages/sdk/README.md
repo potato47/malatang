@@ -1,6 +1,6 @@
-# @malatang/sdk · 0.1
+# @semicoder/malatang-sdk · 0.1
 
-首版 SDK，当前由本地 workspace 提供，尚未发布 npm。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。
+首版 SDK，包名为 `@semicoder/malatang-sdk`，当前由本地 workspace 提供，尚未发布 npm。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。包内为 TypeScript / TSX 源码，使用 Bun 1.4.2 及以上构建插件，React 19 为 peer dependency。发布流程见 [SDK npm 发布说明](https://github.com/potato47/malatang/blob/main/docs/npm-release.md)。
 
 ## 一个插件包
 
@@ -34,8 +34,8 @@
 `src/client.tsx` 默认导出 React 组件：
 
 ```tsx
-import { createPluginClient } from "@malatang/sdk/client";
-import { PageHeader, Button, Panel } from "@malatang/sdk/ui";
+import { createPluginClient } from "@semicoder/malatang-sdk/client";
+import { PageHeader, Button, Panel } from "@semicoder/malatang-sdk/ui";
 const host = createPluginClient("my-plugin");
 export default function Page() {
   return <Panel><PageHeader title="我的应用" />
@@ -63,7 +63,7 @@ KV 每值最多 64 KiB。不存在的键返回 null。读写只接受 JSON，值
 ## 可选后端
 
 ```ts
-import { definePlugin, defineMethod, z } from "@malatang/sdk/runtime";
+import { definePlugin, defineMethod, z } from "@semicoder/malatang-sdk/runtime";
 export default definePlugin({
   methods: {
     generate: defineMethod("生成文本", z.object({ text: z.string(), modelId: z.string() }), (input, ctx) =>
@@ -105,12 +105,19 @@ export default definePlugin({
 
 ## 独立构建与打包
 
-在麻辣烫仓库下创建插件目录，开发依赖引用 workspace SDK（外部项目可先使用本地路径依赖）。
+在麻辣烫仓库下创建插件目录，开发依赖引用 `"@semicoder/malatang-sdk": "workspace:*"`。外部项目可先安装本地 SDK 路径或经 `bun run npm:pack` 验收的 `.tgz`；实际发布后再使用对应 npm 版本。
 
 ```sh
 bun packages/sdk/build.ts /absolute/path/my-plugin
 cd /absolute/path/my-plugin
 bun pm pack
+```
+
+外部项目可通过 SDK 的 build 入口编写 `build.ts`，再执行 `bun run build.ts`：
+
+```ts
+import { buildPlugin } from "@semicoder/malatang-sdk/build";
+await buildPlugin(".");
 ```
 
 构建器把 `src/client.tsx` 和可选的 `src/backend.ts` 编译为对应 `dist` 文件。业务 JS 依赖被打包；React 与 JSX runtime 从宿主共享，插件无需访问宿主源码。不要把服务器代码导入前端。此 MVP 构建器尚未处理原生依赖和额外资源复制。

@@ -2,7 +2,7 @@ import * as React from "react";
 import * as JSX from "react/jsx-runtime";
 import { createClient } from "@semicoder/fia/client";
 import type api from "../shared/api";
-import type { HostBridge } from "@malatang/sdk/types";
+import type { HostBridge } from "@semicoder/malatang-sdk/types";
 export const app = createClient<typeof api>();
 // The host owns a single React runtime. Plugin builds use these explicit shared modules.
 const bridge: HostBridge = {

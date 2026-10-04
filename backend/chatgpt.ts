@@ -3,7 +3,7 @@ import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
 import { z } from "@semicoder/fia/api";
 import type { ChatGPTModel, ChatGPTStatus } from "../shared/chatgpt";
 import { chatGPTLabel } from "../shared/chatgpt";
-import type { ModelRequest } from "@malatang/sdk/types";
+import type { ModelRequest } from "@semicoder/malatang-sdk/types";
 import { readSSE } from "./sse";
 
 const ISSUER = "https://auth.openai.com";

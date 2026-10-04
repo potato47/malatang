@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Badge, Button, PageHeader, Panel } from "@malatang/sdk/ui";
-import type { InstallJob, PluginInfo } from "@malatang/sdk/types";
+import { Badge, Button, PageHeader, Panel } from "@semicoder/malatang-sdk/ui";
+import type { InstallJob, PluginInfo } from "@semicoder/malatang-sdk/types";
 import { app } from "./bridge";
 import { native } from "@semicoder/fia/client";
 export default function PluginManager({ plugins, open }: { plugins: PluginInfo[]; open: (id: string) => void }) {

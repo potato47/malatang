@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Badge, Button, Field } from "@malatang/sdk/ui";
-import type { ModelInfo, ProviderPreset, PresetModel } from "@malatang/sdk/types";
+import { Badge, Button, Field } from "@semicoder/malatang-sdk/ui";
+import type { ModelInfo, ProviderPreset, PresetModel } from "@semicoder/malatang-sdk/types";
 import ChatGPTConnection from "./ChatGPTConnection";
 import { app } from "./bridge";
 

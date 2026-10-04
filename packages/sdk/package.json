@@ -1,7 +1,20 @@
 {
-  "name": "@malatang/sdk",
+  "name": "@semicoder/malatang-sdk",
   "version": "0.1.0",
+  "description": "Model, storage, UI and plugin build SDK for Malatang",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/potato47/malatang.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/potato47/malatang/tree/main/packages/sdk#readme",
+  "bugs": { "url": "https://github.com/potato47/malatang/issues" },
+  "engines": { "bun": ">=1.4.2" },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "files": [
     "src",
     "build.ts",

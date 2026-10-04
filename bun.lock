@@ -6,8 +6,8 @@
       "name": "malatang",
       "dependencies": {
         "@earendil-works/pi-ai": "1.0.2",
-        "@malatang/sdk": "workspace:*",
         "@semicoder/fia": "file:../fia/packages/cli",
+        "@semicoder/malatang-sdk": "workspace:*",
         "jose": "^6",
         "react": "^19.2.7",
         "react-dom": "^19.2.7",
@@ -22,14 +22,14 @@
       },
     },
     "examples/quick-notes": {
-      "name": "@malatang/example-quick-notes",
+      "name": "@semicoder/malatang-example-quick-notes",
       "version": "0.1.0",
       "devDependencies": {
-        "@malatang/sdk": "workspace:*",
+        "@semicoder/malatang-sdk": "workspace:*",
       },
     },
     "packages/sdk": {
-      "name": "@malatang/sdk",
+      "name": "@semicoder/malatang-sdk",
       "version": "0.1.0",
       "dependencies": {
         "zod": "4.6.5",
@@ -39,10 +39,10 @@
       },
     },
     "plugins/translate": {
-      "name": "@malatang/plugin-translate",
+      "name": "@semicoder/malatang-plugin-translate",
       "version": "0.1.0",
       "devDependencies": {
-        "@malatang/sdk": "workspace:*",
+        "@semicoder/malatang-sdk": "workspace:*",
       },
     },
   },
@@ -203,12 +203,6 @@
 
     "@jsdevtools/ono": ["@jsdevtools/ono@7.1.3", "", {}, "sha512-4JQNk+3mVzK3xh2rqd6RB4J46qUR19azEHBneZyTZM+c456qOrbbM/5xcR8huNCCcbVt7+UmizG6GuUvPvKUYg=="],
 
-    "@malatang/example-quick-notes": ["@malatang/example-quick-notes@workspace:examples/quick-notes"],
-
-    "@malatang/plugin-translate": ["@malatang/plugin-translate@workspace:plugins/translate"],
-
-    "@malatang/sdk": ["@malatang/sdk@workspace:packages/sdk"],
-
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ=="],
@@ -282,6 +276,12 @@
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.64.0", "", { "os": "win32", "cpu": "x64" }, "sha512-nl+CTWIgOGszQmUz/kanfgrfFZ4qiwxKIfT/ryl3N3Ewk5tqizmYtNXiqb7Bu/fDtNgu1kyxdFiAUJNur3iysg=="],
 
     "@semicoder/fia": ["@semicoder/fia@file:../fia/packages/cli", { "dependencies": { "@clack/prompts": "^1.7.0", "json-schema-to-typescript": "^15.0.0", "zod": "^4.0.0" }, "devDependencies": { "@types/react": "19.2.17", "@types/react-dom": "19.2.3", "@vitejs/plugin-react": "^5.0.0", "react": "19.2.7", "react-dom": "19.2.7", "vite": "^7.1.3" }, "bin": { "fia": "bin/fia" } }],
+
+    "@semicoder/malatang-example-quick-notes": ["@semicoder/malatang-example-quick-notes@workspace:examples/quick-notes"],
+
+    "@semicoder/malatang-plugin-translate": ["@semicoder/malatang-plugin-translate@workspace:plugins/translate"],
+
+    "@semicoder/malatang-sdk": ["@semicoder/malatang-sdk@workspace:packages/sdk"],
 
     "@smithy/core": ["@smithy/core@3.35.1", "", { "dependencies": { "@smithy/types": "^4.19.0", "tslib": "^2.6.2" } }, "sha512-i4YPS4B6ts7bjn7UwLnGjiZdprOvHvgGobFZsYK3GIY3E5hIqtj0rReU69BcTpGp+fvtraSNXeG1l+jtJvF55w=="],
 

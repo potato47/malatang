@@ -16,6 +16,9 @@
     "release": "bun run plugins:build && fia release",
     "release:update": "fia release --update",
     "version:app": "bun scripts/release/version.ts",
+    "version:sdk": "bun scripts/npm/version.ts",
+    "npm:check": "bun scripts/npm/check.ts",
+    "npm:pack": "bun scripts/npm/pack.ts",
     "release:check": "bun scripts/release/check.ts",
     "check": "bun run plugins:build && fia check",
     "test": "bun test tests",
@@ -23,7 +26,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.0.2",
-    "@malatang/sdk": "workspace:*",
+    "@semicoder/malatang-sdk": "workspace:*",
     "@semicoder/fia": "file:../fia/packages/cli",
     "jose": "^6",
     "react": "^19.2.7",

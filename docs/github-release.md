@@ -6,6 +6,7 @@
 
 - `Build Malatang`：`main` 提交、PR 或手动触发。执行 check、测试、`build --dmg`（含挂载镜像、签名完整性和应用启动退出检查），上传测试 DMG、校验文件和报告。应用仅 ad-hoc 签名、关闭更新，DMG 不签名公证；不使用发布密钥。
 - `Release Malatang`：`v*` 标签触发正式发布。手动运行也会签名、公证并上传验收产物，但不发布 Release 或 Pages。
+- `Publish Malatang SDK`：独立 `sdk-v*` 标签通过 OIDC 发布 `@semicoder/malatang-sdk`；手动运行只验收归档。普通 CI 同时验证 SDK 的 npm 打包和独立插件构建。首次 npm 账号 / Trusted Publisher 配置见 [SDK 发布说明](npm-release.md)。
 - 正式流程：版本校验 → 固定 FIA 包 → 测试 → 临时钥匙串 → Developer ID Application 签名应用与 DMG → 对 DMG 公证 / staple / Gatekeeper 验证 → 挂载后验证应用签名、Gatekeeper 和启动退出 → 签名代码更新 → 安装包与更新逐文件比对 → GitHub Release → 保存更新历史到 `gh-pages` → Pages 部署。
 - 发布按仓库串行运行。已公开 Release 的附件不覆盖；同一 build 的更新内容不可改写；旧标签重跑不得倒退更新源。Pages 部署失败可以重跑发布 job，沿用已发布内容。
 

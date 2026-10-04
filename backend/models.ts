@@ -1,5 +1,5 @@
 import { z } from "@semicoder/fia/api";
-import type { ModelInfo, ModelRequest, ModelRun } from "@malatang/sdk/types";
+import type { ModelInfo, ModelRequest, ModelRun } from "@semicoder/malatang-sdk/types";
 import { modelInput } from "../shared/api";
 import { Store, type ModelConfig } from "./store";
 import type { ChatGPT } from "./chatgpt";
