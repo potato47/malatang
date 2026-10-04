@@ -3,6 +3,7 @@ import type { ThemeMode } from "../shared/api";
 import { useTheme } from "./ThemeProvider";
 import ModelSettings from "./ModelSettings";
 import PageSlot from "./PageSlot";
+import UpdateSettings from "./UpdateSettings";
 
 function AppearanceSettings() {
   const { theme, choose, ready, pending, error } = useTheme();
@@ -25,7 +26,8 @@ export default function Settings() {
     <nav className="settings-nav" aria-label="设置分类"><h1>设置</h1><p>管理你的工作空间</p>
       <button className={section === "models" ? "selected" : ""} aria-current={section === "models" ? "page" : undefined} onClick={() => setSection("models")}><span aria-hidden="true">◈</span>模型服务</button>
       <button className={section === "appearance" ? "selected" : ""} aria-current={section === "appearance" ? "page" : undefined} onClick={() => setSection("appearance")}><span aria-hidden="true">◐</span>外观</button>
+      <button className={section === "updates" ? "selected" : ""} aria-current={section === "updates" ? "page" : undefined} onClick={() => setSection("updates")}><span aria-hidden="true">↻</span>应用更新</button>
     </nav>
-    <div className="settings-main"><PageSlot visible={section === "models"} keepAlive label="模型服务"><ModelSettings /></PageSlot><PageSlot visible={section === "appearance"} keepAlive label="外观"><AppearanceSettings /></PageSlot></div>
+    <div className="settings-main"><PageSlot visible={section === "models"} keepAlive label="模型服务"><ModelSettings /></PageSlot><PageSlot visible={section === "appearance"} keepAlive label="外观"><AppearanceSettings /></PageSlot><PageSlot visible={section === "updates"} keepAlive={false} label="应用更新"><UpdateSettings /></PageSlot></div>
   </div>;
 }
