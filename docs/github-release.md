@@ -54,26 +54,26 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 当前 workspace 依赖包含尚未发布到 npm 的 FIA 修复。因此 CI 从本仓库专用 Release 下载已验证的框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
 
-本次支持 DMG 的归档为 `artifacts/runtime/dmg/semicoder-fia-0.16.1.tgz`；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传至 [fia-runtime-8650f80f4a11](https://github.com/potato47/malatang/releases/tag/fia-runtime-8650f80f4a11)，不要重复创建该标签或覆盖附件。更换框架时，使用新的源码提交、归档和专用标签，以预发布且非 latest 的 Release 保存，并在说明中记录 SHA-256。
+0.2.0 所用归档来自 FIA dd430c851192，包含应用子命令和启动等待修复；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传至 [fia-runtime-dd430c851192](https://github.com/potato47/malatang/releases/tag/fia-runtime-dd430c851192)，不要重复创建该标签或覆盖附件。更换框架时，使用新的源码提交、归档和专用标签，以预发布且非 latest 的 Release 保存，并在说明中记录 SHA-256。
 
 上传前核对归档 SHA-256。不要重新打包后覆盖同一附件；即使源码没变，打包 / 编译工具链也可能改变二进制哈希。更新 FIA 时发布新的固定归档和 lock（或迁移到包含修复的固定 npm 版本），再发完整安装包。旧归档保留，确保旧标签可重现。
 
 ## 发布版本
 
-`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前正式版本为 `v0.1.0` / build 1；下一版例如 `0.1.1` / build 2，在应用仓库执行：
+`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。本次发布版本为 `v0.2.0` / build 2；版本准备示例，在应用仓库执行：
 
 ```sh
-bun run version:app 0.1.1
+bun run version:app 0.2.0
 bun run check
 bun test tests
 bun run build
 # 审阅并提交版本和代码，将版本提交合入 main 后：
 git push origin main
-git tag -a v0.1.1 -m 'Malatang 0.1.1'
-git push origin v0.1.1
+git tag -a v0.2.0 -m 'Malatang 0.2.0'
+git push origin v0.2.0
 ```
 
-`version:app` 同时递增 build；推送标签前复核 `release` / `github-pages` 环境允许该精确标签。只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。应用版本不等于 SDK 或插件版本，不自动修改后者。
+`version:app` 同时递增 build；推送标签前复核 `release` / `github-pages` 环境允许该精确标签。只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。`release/notes/<version>.md` 会追加到对应正式 Release 说明，用于记录用户可见变化和迁移步骤。应用版本不等于 SDK 或插件版本，不自动修改后者。
 
 Release 与更新源发布完成后，核对正式 DMG 附件、SHA-256、签名公证报告及匿名下载，再同步 Semicoder 安装页与 `docs/project-sources.md`。网站主干推送会独立触发部署，不属于应用发布的自动步骤。新 Release notes 包含官网与安装页链接，已公开版本不回写。
 

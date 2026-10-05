@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, cp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { assert, config, pkg, validateConfig, readManifest, websiteURL } from "./config";
+import { assert, config, pkg, validateConfig, readManifest, websiteURL, root } from "./config";
 import { checksum, verifyRelease } from "./verify";
 import { stageSite } from "./site";
 
@@ -53,7 +53,8 @@ try {
   } else {
     if (!release) {
       const notes = `macOS 14+ / Apple Silicon。应用和 DMG 已使用 Developer ID 签名，DMG 已通过 Apple 公证并附带公证票据。\n\n[麻辣烫官网](${websiteURL}) · [下载与安装](${config.downloadURL})\n\n下载并打开 .dmg，将 Malatang.app 拖入 Applications，然后从“应用程序”启动。\n\n应用启动时和每 24 小时检查更新，确认后安装。原生运行时变更时请下载完整 DMG 安装包。\n\nBuild ${config.build}`;
-      const notesPath = join(temporary, "notes.txt"); await Bun.write(notesPath, notes);
+      const changes = Bun.file(join(root, "release/notes", `${pkg.version}.md`));
+      const notesPath = join(temporary, "notes.txt"); await Bun.write(notesPath, notes + ((await changes.exists()) ? "\n\n" + await changes.text() : ""));
       await gh("release", "create", tag, "--repo", config.repository, "--verify-tag", "--draft", "--title", `Malatang ${pkg.version}`, "--notes-file", notesPath);
     }
     // Draft assets are replaceable until the release becomes visible.

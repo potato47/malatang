@@ -1,6 +1,6 @@
 # @semicoder/malatang-sdk · 0.2
 
-未发布的破坏性更新（包版本 0.2.0、manifest sdkVersion 0.2），需要本轮开发宿主；正式应用 v0.1.0 不支持。包名为 `@semicoder/malatang-sdk`，当前由本地 workspace 提供，尚未发布 npm。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。包内为 TypeScript / TSX 源码，使用 Bun 1.4.2 及以上构建插件，React 19 与 ReactDOM 19 为 peer dependency，开发依赖须精确同版本。发布流程见 [SDK npm 发布说明](https://github.com/potato47/malatang/blob/main/docs/npm-release.md)。
+SDK 0.2 是破坏性更新（包版本 0.2.0、manifest sdkVersion 0.2），需要麻辣烫 0.2.0 宿主；v0.1.0 不支持。包名为 `@semicoder/malatang-sdk`，由应用 CLI 内置归档提供，npm 发布状态独立核验，模板不依赖 registry 可安装性。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。包内为 TypeScript / TSX 源码，使用 Bun 1.4.2 及以上构建插件，React 19 与 ReactDOM 19 为 peer dependency，开发依赖须精确同版本。发布流程见 [SDK npm 发布说明](https://github.com/potato47/malatang/blob/main/docs/npm-release.md)。
 
 [麻辣烫官网](https://semicoder.dev/malatang) · [插件开发指南](https://semicoder.dev/malatang/docs/plugin-development) · [下载与安装](https://semicoder.dev/malatang/docs/installation)
 
