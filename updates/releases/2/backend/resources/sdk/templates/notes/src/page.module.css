@@ -1,0 +1,3 @@
+.heading{display:flex;align-items:center;gap:var(--m-space-2)}
+.logo{width:20px;height:20px;background:url("./assets/notebook.svg") center/contain no-repeat}
+.editor{min-height:280px}
