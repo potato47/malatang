@@ -4,7 +4,9 @@
 
 自动更新地址继续固定为 `https://nobug.space/malatang/updates/latest.json`，更新数据不随官网迁移。发布脚本仅将该站点首页跳转至 Semicoder，保留 `updates/` 下的清单和不可变历史文件。应用支持 macOS 14+ / Apple Silicon；正式包安装时打开 DMG，将 `Malatang.app` 拖到 Applications 后启动，无需另外安装 Bun。
 
-2026-10-04 已发布 [v0.1.0 / build 1](https://github.com/potato47/malatang/releases/tag/v0.1.0)，标签指向 `f1b1c7fc60120c9af1c41dd14b1c35b532fc6bc8`。[正式发布工作流](https://github.com/potato47/malatang/actions/runs/37214205671/attempts/2) 已通过签名、公证、镜像运行和更新校验，Release 附件已公开。独立验收确认公网 Pages 清单 HTTP 200、Ed25519 签名与 13 个在线文件的大小 / SHA-256 均正确；匿名下载 DMG 的 SHA-256、`hdiutil verify`、stapler、DMG / 应用 Gatekeeper 及应用 codesign 检查通过，安装包与更新逐文件一致。跨版本客户端升级尚未实测。以下配置步骤用于环境重建；后续发行必须增加版本和 build，不能重建或移动已发布标签。
+2026-10-05 已发布 [v0.2.0 / build 2](https://github.com/potato47/malatang/releases/tag/v0.2.0)，标签固定于 `c82d6adebf0f1dfe81ded21ce15ef4b7c15040be`。[正式发布工作流](https://github.com/potato47/malatang/actions/runs/37289643139) 全部成功，五项附件已匿名下载验证。DMG SHA-256 为 `5d8171ab67748b5203f1abf8a3af9938edf474acf12e4441a3370899d34c03b5`；镜像完整性、公证、Gatekeeper、应用签名及安装包与更新逐文件一致性通过。公网清单 Ed25519 签名与 33 个在线文件的 size / SHA-256 校验通过。
+
+0.2.0 使用新的 FIA runtime ID，0.1.0 用户需完整 DMG 升级；旧 SDK 插件需迁移重建，账号、模型配置、KV 和历史保留。SDK 0.2.0 已独立发布 npm，具体方式与 OIDC 验收边界见 [SDK 发布说明](npm-release.md)。跨版本代码更新仍未实测。以下配置步骤用于环境重建；后续发行必须增加版本和 build，不能重建或移动已发布标签。
 
 ## 工作流
 
@@ -21,7 +23,7 @@
 1. 创建仓库并推送源码。公开仓库可使用免费 GitHub Pages；私有仓库需要支持 Pages 的计划，更新文件仍需能被未登录客户端访问。更新产物包含业务代码，不应包含任何用户数据或凭证。
 2. 上传下述固定 FIA 包，之后再运行 CI。
 3. Settings → Pages → Source 选择 **GitHub Actions**。项目继承账号已有 `nobug.space` 域名，不另设项目自定义域名。`potato47.github.io` 会重定向到该域名，而 FIA 更新下载拒绝跨域重定向，因此必须直接使用实际 HTTPS 地址；改变域名 / 路径需要更换应用内固定地址并重新发安装包。
-4. 创建 `release` 和 `github-pages` Environments，核对待发布标签及手动验收分支的部署许可。首发时 `github-pages` 原先仅允许 `main`，本次保留其他保护、仅新增精确 `v0.1.0` 标签规则。以后每次发布前检查对应标签的 allowlist，按该次发布授权增加必要规则，不改为允许全部分支或标签。保护发布分支及标签，发布凭据仅供可信源码使用。`gh-pages` 是生成数据分支，不将它合回 `main`。
+4. 创建 `release` 和 `github-pages` Environments，核对待发布标签及手动验收分支的部署许可。首发时 `github-pages` 原先仅允许 `main`，本次保留其他保护、仅新增精确 `v0.1.0` 标签规则。0.2.0 发布经用户明确许可追加精确 `v0.2.0` 规则，其余保护不变。以后每次发布前检查对应标签的 allowlist，按该次发布授权增加必要规则，不改为允许全部分支或标签。保护发布分支及标签，发布凭据仅供可信源码使用。`gh-pages` 是生成数据分支，不将它合回 `main`。
 5. 在 `release` 环境中配置以下 Secrets，内容不要提交到 Git：
 
 | Secret | 内容 |
@@ -60,17 +62,17 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 ## 发布版本
 
-`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。本次发布版本为 `v0.2.0` / build 2；版本准备示例，在应用仓库执行：
+`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前已发布版本为 `v0.2.0` / build 2；下一版本准备示例，在应用仓库执行：
 
 ```sh
-bun run version:app 0.2.0
+bun run version:app 0.2.1
 bun run check
 bun test tests
 bun run build
 # 审阅并提交版本和代码，将版本提交合入 main 后：
 git push origin main
-git tag -a v0.2.0 -m 'Malatang 0.2.0'
-git push origin v0.2.0
+git tag -a v0.2.1 -m 'Malatang 0.2.1'
+git push origin v0.2.1
 ```
 
 `version:app` 同时递增 build；推送标签前复核 `release` / `github-pages` 环境允许该精确标签。只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。`release/notes/<version>.md` 会追加到对应正式 Release 说明，用于记录用户可见变化和迁移步骤。应用版本不等于 SDK 或插件版本，不自动修改后者。

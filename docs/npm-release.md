@@ -14,6 +14,12 @@ SDK 0.2.0 是随麻辣烫 0.2.0 提供的破坏性更新：manifest `sdkVersion`
 
 SDK 版本独立于应用版本，当前源码 SDK 和应用版本均为 0.2.0；应用发行不代表 SDK 已发布 npm。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
 
+## 当前发布状态
+
+2026-10-05，`@semicoder/malatang-sdk@0.2.0` 已通过维护者 npm 登录首次正式发布。发布的是 `npm:pack` 验证后的归档；registry latest 为 0.2.0，公开 tarball 与本地逐字节一致，SHA-1 为 `32d14881d97c71ffcef14cd3358305d6b7209bb5`。在 workspace 外通过 registry 安装后，模板 check/build/pack 全部通过。应用标签 `v0.2.0` 固定源码提交 `c82d6adebf0f1dfe81ded21ce15ef4b7c15040be`。
+
+此次使用本机 npm 认证，未执行远端 OIDC 发布验收；Trusted Publisher 设置仍需后续核对。不再推送 `sdk-v0.2.0` 触发重复发布；未来独立标签必须使用新版本。下面首次配置步骤用于重建发布流程，不应重复发布已有版本。
+
 ## 首次配置
 
 1. 将本次源码和 `.github/workflows/publish-npm.yml` 合入 GitHub 默认分支。工作流名为 **Publish Malatang SDK**，手动运行始终只验收并上传 `.tgz`，不会发布。
@@ -56,7 +62,7 @@ bun run npm:pack
 
 ## 后续发布
 
-以下仅为未来发布操作示例；本轮不发布 SDK：
+以下为下一 SDK 版本的操作示例：
 
 ```sh
 bun run version:sdk 0.2.1
