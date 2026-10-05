@@ -1,6 +1,6 @@
 # SDK npm 自动发布
 
-仓库 `potato47/malatang`；发布包 `@semicoder/malatang-sdk`，源码在 `packages/sdk`。SDK 以 TypeScript / TSX 源码供 Bun 插件工具链使用，包含 types、client、runtime、UI、build 和 theme.css 入口，不依赖 FIA 源码或应用目录。
+仓库 `potato47/malatang`；发布包 `@semicoder/malatang-sdk`，源码在 `packages/sdk`。SDK 以 TypeScript / TSX 源码供 Bun 插件工具链使用，包含 types、client、runtime、manifest、UI、主题/组件 CSS、构建/检查工具与 notes/model 模板，不依赖 FIA 源码或应用目录。
 
 ## 包名与版本
 
@@ -10,9 +10,9 @@
 | `@semicoder/malatang-plugin-translate` | 内置翻译 | 保持 `private: true`，随应用分发 |
 | `@semicoder/malatang-example-quick-notes` | 随手记示例 | 构建为本地 `.tgz`，随应用分发；本流程不发布它 |
 
-原 `@malatang/*` 包名统一迁移到上表。依赖、导入和锁文件同步更新；插件 manifest 的 `id`（`translate` / `quick-notes`）、`sdkVersion: "0.1"`、宿主标识与 KV 命名空间不变。已安装的旧插件按原 ID 继续读取数据，源代码开发者需要更新 SDK 导入。
+SDK 0.2.0 是尚未发布的破坏性更新：manifest `sdkVersion` 为 `"0.2"`，要求 CSS Modules 和宿主共享 UI。SDK 0.1 插件须迁移并重新构建，不能直接安装或启用；原 ID、宿主标识及 KV 命名空间不变，用户数据保留。历史包名迁移与此次兼容版本升级是两次不同变更。
 
-SDK 版本独立于应用版本，当前均为 0.1.0 只是初始值相同。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
+SDK 版本独立于应用版本，当前源码 SDK 为 0.2.0，已发行应用仍为 v0.1.0。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
 
 ## 首次配置
 
@@ -22,7 +22,7 @@ SDK 版本独立于应用版本，当前均为 0.1.0 只是初始值相同。应
 
    ```sh
    npm login
-   npm publish ./artifacts/npm/semicoder-malatang-sdk-0.1.0.tgz --access public --ignore-scripts --registry=https://registry.npmjs.org
+   npm publish ./artifacts/npm/semicoder-malatang-sdk-0.2.0.tgz --access public --ignore-scripts --registry=https://registry.npmjs.org
    ```
 
    首次发布是实际公开操作，只有准备发布时才执行；不能用 empty placeholder 代替 SDK。已发布版本不能覆盖，也不要再推送相同版本标签尝试重复发布。
@@ -50,20 +50,20 @@ bun run npm:check
 bun run npm:pack
 ```
 
-`npm:pack` 使用 `npm pack --ignore-scripts` 生成 `artifacts/npm/semicoder-malatang-sdk-<version>.tgz`，检查包名、版本、仓库、发布目标、入口与文件范围，再在临时目录安装该归档和 React。临时消费者验证 runtime schema、SDK 导入、主题文件，并以包内构建器编译翻译与随手记，确认共享宿主 React 和自包含的前后端产物。临时目录最终清理；消费验收需要联网下载公开依赖。
+`npm:pack` 使用 `npm pack --ignore-scripts` 生成 `artifacts/npm/semicoder-malatang-sdk-<version>.tgz`，检查包名、版本、仓库、发布目标、入口与文件范围，再在临时目录安装该归档和精确同版本的 React / ReactDOM。临时消费者验证 runtime schema、SDK 导入、主题文件，并以包内构建器编译翻译与随手记，确认共享宿主 React / JSX / ReactDOM / UI 和完整 JS / CSS / 资源产物。临时目录最终清理；消费验收需要联网下载公开依赖。
 
 普通 `Build Malatang` CI 也执行 SDK 验收。发布工作流在 macOS 完成相同检查、打包和测试，检查未改动受跟踪文件，再上传唯一版本归档；Linux publish job 下载同一归档并发布，不重新构建。
 
 ## 后续发布
 
-例如首次发布 0.1.0 之后：
+以下仅为未来发布操作示例；本轮不发布 SDK：
 
 ```sh
-bun run version:sdk 0.1.1
+bun run version:sdk 0.2.1
 git diff -- packages/sdk/package.json bun.lock
 # 检查、提交并合入 main 后，在该提交创建标签：
-git tag -a sdk-v0.1.1 -m "Malatang SDK 0.1.1"
-git push origin sdk-v0.1.1
+git tag -a sdk-v0.2.1 -m "Malatang SDK 0.2.1"
+git push origin sdk-v0.2.1
 ```
 
 `version:sdk` 更新 SDK 的 package.json 和 Bun 锁文件，拒绝同版本、降级及非法版本，不改变应用、插件或 manifest 兼容版本，不自动提交或创建标签。跨兼容版本时仍需单独调整宿主的 SDK 兼容契约。

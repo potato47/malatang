@@ -1,15 +1,15 @@
 import React, { Component, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PluginInfo } from "@semicoder/malatang-sdk/types";
-import { EmptyState } from "@semicoder/malatang-sdk/ui";
+import { EmptyState, Loading, Page } from "@semicoder/malatang-sdk/ui";
 class Boundary extends Component<{ children: React.ReactNode }, { error: string }> {
   state = { error: "" };
   static getDerivedStateFromError(error: Error) { return { error: error.message }; }
-  render() { return this.state.error ? <div className="m-page"><EmptyState title="插件页面暂时无法显示" description={this.state.error} /></div> : this.props.children; }
+  render() { return this.state.error ? <Page><EmptyState title="插件页面暂时无法显示" description={this.state.error} /></Page> : this.props.children; }
 }
 export const pluginPageKey = (plugin: PluginInfo) => JSON.stringify([plugin.id, plugin.version, plugin.clientURL, plugin.styleURL, plugin.keepAlive]);
 
 export default function PluginPage({ plugin, visible }: { plugin: PluginInfo; visible: boolean }) {
-  const [Page, setPage] = useState<React.ComponentType | null>(null);
+  const [PluginComponent, setPage] = useState<React.ComponentType | null>(null);
   const [error, setError] = useState("");
   const stylesheet = useRef<HTMLLinkElement | null>(null);
   useLayoutEffect(() => {
@@ -33,5 +33,5 @@ export default function PluginPage({ plugin, visible }: { plugin: PluginInfo; vi
     }).catch(e => live && setError(String(e)));
     return () => { live = false; };
   }, [plugin.clientURL]);
-  return <Boundary>{error ? <div className="m-page"><EmptyState title="插件页面加载失败" description={error} /></div> : Page ? <Page /> : <div className="loading-state"><span className="loader" />正在打开 {plugin.name}…</div>}</Boundary>;
+  return <Boundary>{error ? <Page><EmptyState title="插件页面加载失败" description={error} /></Page> : PluginComponent ? <PluginComponent /> : <div className="loading-state"><Loading />正在打开 {plugin.name}…</div>}</Boundary>;
 }

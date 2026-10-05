@@ -16,7 +16,7 @@ assert.throws(() => method.execute({ text: 1 }, {} as never));
 for (const directory of ["translate", "quick-notes"]) {
   await buildPlugin(directory);
   const client = await Bun.file(`${directory}/dist/client.js`).text();
-  assert(client.includes("__MALATANG_REACT__"), "Plugin must use the host React runtime");
+  assert(client.includes("__MALATANG_MODULES__"), "Plugin must use the host React runtime");
   const imports = new Bun.Transpiler({ loader: "js" }).scanImports(client);
   assert.equal(imports.length, 0, "Plugin dependencies must be bundled or supplied by the host");
 }

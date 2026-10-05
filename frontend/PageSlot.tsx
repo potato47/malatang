@@ -1,3 +1,4 @@
+import { UIProvider } from "@semicoder/malatang-sdk/ui";
 import React, { Component, createRef } from "react";
 
 type Props = { visible: boolean; keepAlive: boolean; label: string; children: React.ReactNode };
@@ -32,6 +33,6 @@ export default class PageSlot extends Component<Props, { visited: boolean }> {
     const { visible, keepAlive, label, children } = this.props;
     if (!visible && (!keepAlive || !this.state.visited)) return null;
     return <section ref={this.container} className="page-scroll" aria-label={label}
-      hidden={!visible} inert={!visible} aria-hidden={!visible || undefined}>{children}</section>;
+      hidden={!visible} inert={!visible} aria-hidden={!visible || undefined}><UIProvider visible={visible}>{children}</UIProvider></section>;
   }
 }

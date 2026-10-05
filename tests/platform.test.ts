@@ -95,7 +95,7 @@ test("manifest rejects incompatible SDK and resource traversal / symlinks", asyn
   await expect(containedFile(join(dir, "package"), "escape.js")).rejects.toThrow();
   const pkg = await Bun.file("plugins/translate/package.json").json(); expect(manifestSchema.safeParse({ ...pkg.malatang, sdkVersion: "9.0" }).success).toBe(false);
 });
-test("page retention is opt-in and is included in discovery for old and invalid packages", async () => {
+test("page retention is opt-in and is included in discovery for current and invalid packages", async () => {
   const pkg = await Bun.file("plugins/translate/package.json").json();
   const { keepAlive: _keepAlive, backend: _backend, ...legacy } = pkg.malatang;
   expect(manifestSchema.parse(legacy).keepAlive).toBe(false);
@@ -109,6 +109,7 @@ test("page retention is opt-in and is included in discovery for old and invalid 
   await mkdir(join(plugin, "dist"), { recursive: true });
   await Bun.write(join(plugin, "package.json"), JSON.stringify({ name: "legacy-plugin", version: "0.1.0", malatang: legacy }));
   await Bun.write(join(plugin, "dist/client.js"), "export default function Page() {}");
+  await Bun.write(join(plugin, "dist/client.css"), "");
   await store.update(state => { state.plugins.push({ id: "missing-package", root: join(dir, "missing"), installation: "missing", source: "test" }); });
   const plugins = new Plugins(store, models, root, () => {});
   await plugins.open();
@@ -177,4 +178,18 @@ test("theme changes serialize native application and persistence; native failure
   const failing = new Appearance(store, async () => { throw new Error("Native unavailable"); }, () => { throw new Error("Must not emit"); });
   await expect(failing.set("dark")).rejects.toThrow("Native unavailable");
   expect(store.value.theme).toBe("light");
+});
+
+
+test("SDK 0.1 plugins stay rejected on enable and retain stored data", async () => {
+  const { store, models, dir } = await setup(); const root = join(dir, "old-plugin");
+  await mkdir(root); const pkg = await Bun.file("examples/quick-notes/package.json").json();
+  await Bun.write(join(root, "package.json"), JSON.stringify({ ...pkg, malatang: { ...pkg.malatang, id: "old-plugin", sdkVersion: "0.1" } }));
+  await store.set("old-plugin", "note", "preserved");
+  await store.update(state => { state.plugins.push({ id: "old-plugin", root, installation: root, source: "test" }); });
+  const plugins = new Plugins(store, models, resolve("."), () => {}); await plugins.open();
+  expect(plugins.get("old-plugin").info.error).toContain("重新构建");
+  await expect(plugins.setEnabled("old-plugin", true)).rejects.toThrow("重新构建");
+  expect(plugins.get("old-plugin").info.status).toBe("error"); expect(store.get("old-plugin", "note")).toBe("preserved");
+  await plugins.stop();
 });

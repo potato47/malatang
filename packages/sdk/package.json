@@ -1,6 +1,6 @@
 {
   "name": "@semicoder/malatang-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Model, storage, UI and plugin build SDK for Malatang",
   "type": "module",
   "repository": {
@@ -9,8 +9,12 @@
     "directory": "packages/sdk"
   },
   "homepage": "https://semicoder.dev/malatang",
-  "bugs": { "url": "https://github.com/potato47/malatang/issues" },
-  "engines": { "bun": ">=1.4.2" },
+  "bugs": {
+    "url": "https://github.com/potato47/malatang/issues"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
+  },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org"
@@ -18,7 +22,9 @@
   "files": [
     "src",
     "build.ts",
-    "README.md"
+    "README.md",
+    "plugin.ts",
+    "templates"
   ],
   "exports": {
     "./types": "./src/types.ts",
@@ -26,12 +32,19 @@
     "./ui": "./src/ui.tsx",
     "./runtime": "./src/runtime.ts",
     "./build": "./build.ts",
-    "./theme.css": "./src/theme.css"
+    "./theme.css": "./src/theme.css",
+    "./ui.css": "./src/ui.css",
+    "./plugin": "./plugin.ts",
+    "./manifest": "./src/manifest.ts"
   },
   "dependencies": {
+    "postcss": "^8.5.28",
+    "postcss-selector-parser": "^7.1.6",
+    "radix-ui": "^1.6.7",
     "zod": "4.6.5"
   },
   "peerDependencies": {
-    "react": ">=19 <20"
+    "react": ">=19 <20",
+    "react-dom": ">=19 <20"
   }
 }

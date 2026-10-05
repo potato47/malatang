@@ -64,10 +64,10 @@ export interface PluginManifest {
   description: string;
   icon: string;
   color: string;
-  sdkVersion: "0.1";
+  sdkVersion: "0.2";
   frontend: string;
   backend?: string;
-  styles?: string;
+  styles: string;
   /** Keep the page mounted while hidden. Defaults to false. */
   keepAlive?: boolean;
 }

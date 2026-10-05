@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import { Alert, Field, Popover, Select } from "@semicoder/malatang-sdk/ui";
+import React, { useState } from "react";
 import type { ThemeMode } from "../shared/api";
 import { useTheme } from "./ThemeProvider";
 import ActivityButton from "./ActivityButton";
@@ -16,26 +17,8 @@ function ThemeIcon({ mode }: { mode: ThemeMode }) {
 export default function ThemeControl() {
   const { theme, ready, pending, error, choose } = useTheme();
   const [open, setOpen] = useState(false);
-  const container = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const close = () => { setOpen(false); trigger.current?.focus(); };
-  useEffect(() => {
-    if (!open) return;
-    container.current?.querySelector<HTMLInputElement>("input:checked")?.focus();
-    const outside = (event: PointerEvent) => { if (!container.current?.contains(event.target as Node)) setOpen(false); };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, [open]);
   const label = options.find(option => option.value === theme)!.label;
-  return <div className="theme-control" ref={container} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); close(); } }} onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false); }}>
-    <ActivityButton ref={trigger} className={`activity-button ${open ? "active" : ""}`} label={`切换主题：${label}`} tooltipDisabled={open} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? "theme-picker" : undefined} onClick={() => setOpen(value => !value)}><ThemeIcon mode={theme} />{error && <span className="theme-error-dot" />}</ActivityButton>
-    {open && <div className="theme-popover" id="theme-picker" role="dialog" aria-label="外观主题">
-      <fieldset disabled={!ready} aria-busy={pending}><legend>外观主题</legend>{options.map(option => <label className={`theme-option ${theme === option.value ? "selected" : ""}`} key={option.value}>
-        <ThemeIcon mode={option.value} /><span><strong>{option.label}</strong><small>{option.hint}</small></span>
-        <input type="radio" name="appearance-theme" value={option.value} checked={theme === option.value} onChange={() => void choose(option.value)} aria-label={option.label} />
-      </label>)}</fieldset>
-      {pending && <p className="theme-hint" role="status">正在保存…</p>}
-      {error && <p className="theme-error" role="alert">{error}</p>}
-    </div>}
-  </div>;
+  return <Popover open={open} onOpenChange={setOpen} trigger={<ActivityButton className={`activity-button ${open ? "active" : ""}`} label={`切换主题：${label}`} tooltipDisabled><ThemeIcon mode={theme} /></ActivityButton>}>
+    <div className="theme-popover"><Field label="外观主题"><Select value={theme} disabled={!ready || pending} onChange={event => void choose(event.target.value as ThemeMode)}>{options.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</Select></Field>{pending && <p role="status">正在保存…</p>}{error && <Alert>{error}</Alert>}</div>
+  </Popover>;
 }

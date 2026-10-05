@@ -6,13 +6,9 @@ import type { BackendPlugin, InstallJob, JSONValue, PluginContext, PluginInfo, P
 import { Store } from "./store";
 import { Models } from "./models";
 
-export const manifestSchema = z.strictObject({
-  schemaVersion: z.literal(1), id: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/), name: z.string().min(1).max(60),
-  description: z.string().max(240), icon: z.string().min(1).max(4), color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  sdkVersion: z.literal("0.1"), frontend: z.string().min(1), backend: z.string().min(1).optional(), styles: z.string().min(1).optional(),
-  keepAlive: z.boolean().default(false),
-});
-type Loaded = { info: PluginInfo; manifest: PluginManifest; root: string; backend?: BackendPlugin; calls: number; changing: boolean };
+export { manifestSchema } from "@semicoder/malatang-sdk/manifest";
+import { manifestSchema } from "@semicoder/malatang-sdk/manifest";
+type Loaded = { invalidManifest?: boolean; info: PluginInfo; manifest: PluginManifest; root: string; backend?: BackendPlugin; calls: number; changing: boolean };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export async function containedFile(root: string, name: string) {
@@ -36,7 +32,7 @@ export class Plugins {
     for (const record of this.store.value.plugins) {
       try { await this.load(record.root, record.source, false); }
       catch (error) {
-        this.registry.set(record.id, { root: record.root, manifest: { schemaVersion: 1, id: record.id, name: record.id, description: "安装文件缺失或清单无效，请卸载后重新安装。", icon: "!", color: "#bc6452", sdkVersion: "0.1", frontend: "dist/client.js" }, calls: 0, changing: false, info: { id: record.id, name: record.id, description: "安装文件无法加载", icon: "!", color: "#bc6452", version: "unknown", packageName: record.id, source: record.source, builtin: false, enabled: false, status: "error", error: message(error), clientURL: "", styleURL: null, keepAlive: false, methods: [] } });
+        this.registry.set(record.id, { invalidManifest: true, root: record.root, manifest: { schemaVersion: 1, id: record.id, name: record.id, description: "安装文件缺失或清单无效，请卸载后重新安装。", icon: "!", color: "#bc6452", sdkVersion: "0.2", frontend: "dist/client.js", styles: "dist/client.css" }, calls: 0, changing: false, info: { id: record.id, name: record.id, description: "安装文件无法加载", icon: "!", color: "#bc6452", version: "unknown", packageName: record.id, source: record.source, builtin: false, enabled: false, status: "error", error: message(error), clientURL: "", styleURL: null, keepAlive: false, methods: [] } });
       }
     }
   }
@@ -53,6 +49,8 @@ export class Plugins {
   }
   private async inspect(root: string, source: string, builtin: boolean): Promise<Loaded> {
     const pkg = await Bun.file(join(root, "package.json")).json();
+    if (pkg.malatang?.sdkVersion !== "0.2") throw new Error("插件 SDK 版本不兼容：请使用 SDK 0.2 重新构建并安装插件；原有 KV 数据仍会保留。");
+    if (["models", "plugins", "settings"].includes(pkg.malatang?.id)) throw new Error("此插件 ID 为宿主保留名称");
     const manifest = manifestSchema.parse(pkg.malatang);
     if (["models", "plugins", "settings"].includes(manifest.id)) throw new Error("此插件 ID 为宿主保留名称");
     if (typeof pkg.name !== "string" || typeof pkg.version !== "string") throw new Error("插件缺少 package name/version");
@@ -100,6 +98,7 @@ export class Plugins {
   async setEnabled(id: string, enabled: boolean) {
     const plugin = this.get(id);
     if (plugin.changing || plugin.calls || this.models.busy(id)) throw new Error("插件正在运行，请先停止任务");
+    if (enabled && plugin.invalidManifest) throw new Error(plugin.info.error ?? "插件清单无效，请重新构建安装");
     if (plugin.info.enabled === enabled && plugin.info.status !== "error") return structuredClone(plugin.info);
     plugin.changing = true;
     try {
@@ -176,7 +175,7 @@ export class Plugins {
       if (plugin.info.status !== "active") return new Response("Plugin is disabled", { status: 404 });
       const name = decodeURIComponent(match[2]!);
       // Frontend bundles and their assets live in dist; never serve backend source or package credentials.
-      if (!name.startsWith("dist/") || name === plugin.manifest.backend || !/\.(js|css|svg|png|woff2?)$/.test(name)) return new Response("Not found", { status: 404 });
+      if (!name.startsWith("dist/") || name === plugin.manifest.backend || !/\.(js|css|svg|png|jpe?g|webp|woff2?)$/.test(name)) return new Response("Not found", { status: 404 });
       const file = Bun.file(await containedFile(plugin.root, name));
       return new Response(request.method === "HEAD" ? null : file, { headers: { "Content-Type": file.type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
     } catch { return new Response("Not found", { status: 404 }); }

@@ -1,6 +1,6 @@
-# @semicoder/malatang-sdk · 0.1
+# @semicoder/malatang-sdk · 0.2
 
-首版 SDK，包名为 `@semicoder/malatang-sdk`，当前由本地 workspace 提供，尚未发布 npm。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。包内为 TypeScript / TSX 源码，使用 Bun 1.4.2 及以上构建插件，React 19 为 peer dependency。发布流程见 [SDK npm 发布说明](https://github.com/potato47/malatang/blob/main/docs/npm-release.md)。
+未发布的破坏性更新（包版本 0.2.0、manifest sdkVersion 0.2），需要本轮开发宿主；正式应用 v0.1.0 不支持。包名为 `@semicoder/malatang-sdk`，当前由本地 workspace 提供，尚未发布 npm。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。包内为 TypeScript / TSX 源码，使用 Bun 1.4.2 及以上构建插件，React 19 与 ReactDOM 19 为 peer dependency，开发依赖须精确同版本。发布流程见 [SDK npm 发布说明](https://github.com/potato47/malatang/blob/main/docs/npm-release.md)。
 
 [麻辣烫官网](https://semicoder.dev/malatang) · [插件开发指南](https://semicoder.dev/malatang/docs/plugin-development) · [下载与安装](https://semicoder.dev/malatang/docs/installation)
 
@@ -19,17 +19,18 @@
     "description": "一句话介绍",
     "icon": "文",
     "color": "#cf633c",
-    "sdkVersion": "0.1",
+    "sdkVersion": "0.2",
     "frontend": "dist/client.js",
+    "styles": "dist/client.css",
     "backend": "dist/backend.js",
     "keepAlive": true
   }
 }
 ```
 
-`frontend` 必需，`backend` / `styles` 可省略。入口须在包内；浏览器资源放在 `dist/`，不通过资源路由公开后端入口。`id` 是 2–64 位小写字母、数字和连字符，首位为字母；`models` / `plugins` / `settings` 为宿主保留。ID 同时定义持久数据命名空间，勿随意更改。版本不兼容或重复 ID 会拒绝安装。
+`frontend: dist/client.js` 与 `styles: dist/client.css` 必需；存在 `src/backend.ts` 时声明 `backend: dist/backend.js`，否则省略。入口须在包内；浏览器资源放在 `dist/`，不通过资源路由公开后端入口。`id` 是 2–64 位小写字母、数字和连字符，首位为字母；`models` / `plugins` / `settings` 为宿主保留。ID 同时定义持久数据命名空间，勿随意更改。版本不兼容或重复 ID 会拒绝安装。
 
-`keepAlive` 是可选布尔值，默认 `false`。仅需要保留页面实例的插件声明为 `true`；现有未声明的插件仍在切页时卸载。该字段需要支持它的新版宿主，旧版严格 manifest 校验会拒绝含新字段的包。SDK 尚未发布，当前 schemaVersion / sdkVersion 保持 1 / 0.1。
+`keepAlive` 是可选布尔值，默认 `false`。仅需要保留页面实例的插件声明为 `true`；现有未声明的插件仍在切页时卸载。schemaVersion / sdkVersion 为 1 / 0.2。SDK 0.1 插件在新宿主中明确报错，需迁移源码并重新构建安装；KV、模型、账号和历史不清除。
 
 ## 前端
 
@@ -57,12 +58,12 @@ KV 每值最多 64 KiB。不存在的键返回 null。读写只接受 JSON，值
 ### 页面生命周期
 
 - 所有页面均首次访问才加载。`keepAlive: false` 时切走卸载，React effect cleanup 应释放订阅、定时器及页面资源；返回时重新初始化。
-- `keepAlive: true` 时切走只隐藏页面，保留组件状态、DOM 与独立滚动位置；隐藏页面不参与布局、键盘导航和无障碍访问，effect 和事件订阅继续运行。此模式会持续占用内存，重页面应谨慎开启。
+- `keepAlive: true` 时切走会关闭所有 SDK 弹层、释放其键盘监听且不向隐藏触发器恢复焦点；页面主体只隐藏，保留组件状态、DOM 与独立滚动位置；隐藏页面不参与布局、键盘导航和无障碍访问，effect 和事件订阅继续运行。此模式会持续占用内存，重页面应谨慎开启。
 - 插件停用、卸载、后端激活状态失效，或版本 / 前端 / 样式资源 URL / keepAlive 声明变化时释放旧实例；重新启用后首次访问再创建。普通目录刷新、短暂连接失败不清空已保留的页面。
 - 保留仅限当前窗口运行期间，无自动淘汰。刷新或重启不恢复未保存草稿，需持久化的数据继续使用 KV。翻译、随手记显式开启，应用中心与设置面板（含各设置分类）由宿主保留以避免切页丢失表单。
 - 页面卸载不等于后端插件停用，不取消宿主模型任务，也不保证回收已导入的 JS 模块缓存或插件自行泄漏的全局对象。不要把“切页”当作任务取消信号。
 
-`plugins.list` 返回归一化的 `keepAlive` 布尔值。已经安装的旧随手记归档不会被宿主隐式修改；需要安装新版归档才会开启保留，卸载重装仍保留原有 KV。
+`plugins.list` 返回归一化的 `keepAlive` 布尔值。已经安装的旧随手记归档不会被宿主隐式修改；SDK 0.1 插件需重新构建安装，卸载重装仍保留原有 KV。
 
 ## 可选后端
 
@@ -80,32 +81,47 @@ export default definePlugin({
 
 ## UI 约定
 
-宿主只在左侧图标栏提供切换和导航，右侧全部内容空间由当前页面使用，没有宿主顶部导航、第二侧栏或底部状态栏。页面标题、工具栏和内部导航由插件自行组织。宿主提供主题和唯一 React 运行时。基础组件包括 `PageHeader`、`Panel`、`Button`、`Badge`、`Field`、`ModelSelect`、`EmptyState`。主题源文件 `src/theme.css` 随宿主全局加载，插件不重复引入 React 或全局 reset。
+宿主拥有主题、48px 图标侧栏、React、JSX、ReactDOM 与 SDK UI。插件拥有完整内容页面，通过 `@semicoder/malatang-sdk/ui` 导入同一份实现；不重复打包 React、Radix 或公共样式。`ModelSelect` 使用宿主模型能力，与纯展示组件分开实现。
 
-使用 `--m-bg`、`--m-surface`、`--m-text`、`--m-muted`、`--m-accent`、`--m-line`、`--m-radius`、`--m-font`。页面外层使用 `.m-page`；表单需可访问标签，操作需 loading / disabled / error 状态。业务 CSS 使用插件前缀，避免覆盖宿主或其他插件；manifest.styles 对应的 link 只在页面可见时生效，隐藏时停用，卸载时移除。第三方 CSS/assets 当前需自行复制到 dist。
+| 组件 | 主要约定 |
+| --- | --- |
+| Button / IconButton | variant 为 primary/secondary/ghost/danger；size 为 sm/md（28px/36px）；loading 同时禁用。IconButton 必填 label；Button 默认 type=button，表单提交显式 type=submit |
+| Input / Select / Textarea | 继承原生属性与键盘语义；Input/Select 支持 sm/md；保留 required、disabled、aria-invalid |
+| Field | label、hint、error；内放一个 SDK 控件，自动关联 id / htmlFor / aria-describedby；自定义 id 使用 Field.id |
+| Checkbox / Switch | 原生复选框、button role=switch；Switch 使用 checked/onCheckedChange，Space/Enter 可操作 |
+| Badge / Alert / Loading | tone 为 neutral/success/warning/error；Alert 具有 alert/status 语义；Loading 提供可访问 label |
+| Page / PageHeader / Panel | 页面容器与标题；PanelHeader/PanelContent/PanelFooter 统一区域边距 |
+| EmptyState / ModelSelect | 空状态；模型选择与 ChatGPT 用量入口 |
+| Menu / Popover / Dialog / Tooltip | 基于 Radix，外观由 SDK 定义。trigger 使用 Button 等可转发 ref 的单个元素；Menu 子项使用 MenuItem；Dialog 必填 title、description；Tooltip 使用 children/content |
 
-宿主在根元素上设置 `data-theme="light|dark|system"`，浅色 / 深色即时切换；system 通过 `prefers-color-scheme` 跟随系统。插件继承同一套变量与 `color-scheme`，不维护独立主题偏好，不覆盖根元素属性。基础 UI 组件已自动适配。
+Menu/Popover/Dialog 支持 open/onOpenChange。宿主的 UIProvider 为每个页面建立可见性和 portal 作用域；嵌套作用域继承父页面隐藏状态。隐藏时关闭弹层，重新显示不会自行重开；卸载时移除 portal 与事件资源。插件无需自行添加 document 监听、焦点陷阱或 document.body 弹层。
 
-自定义组件应使用语义变量：次级背景 `--m-surface-muted`、悬停背景 `--m-surface-hover`、次级文字 `--m-text-secondary`、占位符 `--m-placeholder`、弱分隔线 `--m-line-soft`、强调按钮文字 `--m-on-accent`。状态色使用 `--m-success` / `--m-warning` / `--m-error` 及相应 `-bg`、`-line` 变量。避免为正文、输入框或面板写死黑白色，完整 token 见 `src/theme.css`。
+公共颜色见 `src/theme.css`：`--m-bg`、`--m-surface`、`--m-text`、`--m-muted`、`--m-accent`、`--m-line`，以及 success/warning/error 的正文、背景和边框。几何 token 包括 `--m-space-1/2/3/4/6/8`、`--m-control-sm/md`、`--m-radius-sm/--m-radius/--m-radius-lg`、`--m-font/--m-font-size/--m-line-height`、`--m-shadow-popup`、`--m-motion`。宿主根元素管理 light/dark/system；插件不设置 data-theme。
 
-### 配色与密度基线
+业务样式放 `src/*.module.css`，通过导入的 class 映射使用。不得引用 `.m-*` 或宿主页面私有类，不引入 theme.css/ui.css，不写全局 reset、:root/:global/html/body 或重定义 `--m-*`。颜色默认使用语义 token；品牌图形/数据颜色可在 package.json 顶层 `malatangStyleExceptions` 声明文件路径及理由，其他约束不能豁免。宿主 check、插件 check/build/pack 都执行样式检查。CSS Modules 是一致性约束，不是安全沙箱。
 
-2026-10-03 用户提供 ChatGPT 桌面客户端设置页截图，要求协调侧栏与设置配色。当前采用截图中的中性灰层次，替代之前 VS Code 风格的蓝色强调；这是一套基于用户参考图的应用配色，不是 ChatGPT 官方设计规范。浅色主题使用同一套明度关系作对应适配。
+CSS 中的相对 url 由 Bun 处理；JS 图片导入后用 `new URL(asset, import.meta.url).href`。构建自动输出 CSS 与资源，安装包需保留完整 dist。小型 CSS 图片可能被 Bun 内联。manifest stylesheet 只在页面可见时启用，卸载时移除。
 
-| 用途 | 浅色 | 深色 |
-| --- | --- | --- |
-| 内容区 `--m-bg` | `#ffffff` | `#181818` |
-| 设置菜单 `--m-surface-muted` | `#f3f3f3` | `#1e1e1e` |
-| 卡片 `--m-surface` | `#f7f7f7` | `#232323` |
-| 外侧图标栏 `--m-sidebar` | `#ebebeb` | `#292a2a` |
-| 菜单选中 `--m-surface-hover` | `#e8e8e8` | `#303030` |
-| 正文 `--m-text` | `#303030` | `#ededed` |
-| 主操作 `--m-accent` | `#242424` | `#ededed` |
-| 分隔 `--m-line` | `#e2e2e2` | `#363636` |
+## 插件开发 CLI（未发布）
 
-主按钮与图标背景若使用 `--m-accent`，前景必须配合 `--m-on-accent`，不能固定白色。选中、悬停、焦点和文本选区使用中性色，成功 / 警告 / 错误保留语义状态色。输入框使用 `--m-input-bg` / `--m-input-border`，焦点使用 `--m-focus`，次级按钮使用 `--m-button-secondary` / `--m-button-secondary-hover`。显式深色与跟随系统的深色使用相同 tokens。
+应用自带已校验的 SDK 快照。创建项目复制到 `vendor/malatang-sdk.tgz`，以相对 `file:` 依赖消费，项目可移到 workspace 外；不依赖公开 npm SDK。
 
-保留之前参考 [VS Code 活动栏源码](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/activitybar/activitybarPart.ts) 选定的紧凑尺寸：活动栏宽 48px，36px 点击区域、20px 工具图标和 4px 项间距。活动项为中性高亮和明暗边缘指示。右侧由当前页面使用，无顶部导航；设置分类侧栏仅在设置内部出现。插件自己的品牌图标允许保留识别色。
+```sh
+malatang plugin create ./my-notes --template notes --name 我的笔记
+cd my-notes
+bun install --ignore-scripts
+malatang plugin check
+malatang plugin build
+malatang plugin pack
+```
+
+开发宿主使用 `bun run agent plugin …`。create 必须指定目标目录，模板为 notes（默认）或 model；ID 默认由目录生成，名称默认目录名，也可用 --id/--name 覆盖。拒绝无效 ID、保留名称、空名称与非空目录。不会自动安装依赖、初始化 Git 或安装插件。
+
+check/build/pack 的目录默认调用者 cwd，支持含空格路径。开发者需安装 Bun >=1.4.2；CLI 使用该 Bun 和项目安装的 SDK 工具。生成的 `bun run check/build/pack` 调用同一实现。所有子命令有 --help/--json；诊断在 stderr，结果在 stdout。Ctrl-C 由 FIA 监督清理子进程；命令执行期间占用更新锁。
+
+check 不改源码；build 先检查，再生成完整 dist，失败删除旧 dist 和半成品；pack 总是重新检查构建，只打包 manifest 与完整 dist，并解包校验资源。使用现有 `plugins.install` 安装归档，无热更新或自动发布。
+
+notes 展示 Field、Textarea、保存状态、图片资源和 KV；model 展示空模型状态、ModelSelect、流式结果、取消、错误，以及卸载/重连时订阅清理。生成项目包含源码、CSS Modules、TS 配置、tools.ts、README、AGENTS.md 与 SDK 快照。
 
 ## 独立构建与打包
 

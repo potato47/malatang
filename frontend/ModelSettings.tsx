@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Badge, Button, Field } from "@semicoder/malatang-sdk/ui";
+import { Alert, Badge, Button, Checkbox, Field, Input, PageHeader, Panel, Select } from "@semicoder/malatang-sdk/ui";
 import type { ModelInfo, ProviderPreset, PresetModel } from "@semicoder/malatang-sdk/types";
 import ChatGPTConnection from "./ChatGPTConnection";
 import { app } from "./bridge";
@@ -80,50 +80,50 @@ export default function ModelSettings() {
   return <div className="settings-page">
     {editor ? <>
       <Button variant="ghost" className="settings-back" disabled={busy} onClick={() => { setEditor(false); setError(""); }}>← 返回模型列表</Button>
-      <div className="settings-heading"><div><h1>{editing ? "编辑模型" : "添加模型"}</h1><p>选择服务商和模型，配置一次，所有插件共享。</p></div><Badge>{form.preset ? "Pi 预设" : "自定义服务"}</Badge></div>
-      {(error || loadError) && <p className="settings-feedback m-error" role="alert">{error || loadError}</p>}
+      <PageHeader title={editing ? "编辑模型" : "添加模型"} description="选择服务商和模型，配置一次，所有插件共享。" actions={<Badge>{form.preset ? "Pi 预设" : "自定义服务"}</Badge>} />
+      {(error || loadError) && <Alert>{error || loadError}</Alert>}
       <form className="model-editor" onSubmit={event => void save(event)}><fieldset disabled={busy}>
-        <section className="model-form-section"><h2><span>1</span>选择模型</h2>
-          <Field label="服务商"><select aria-label="服务商" value={form.preset} onChange={e => { setForm({ ...blank(e.target.value), baseURL: e.target.value ? "" : "https://api.openai.com/v1" }); setModelSearch(""); setError(""); }}>
+        <Panel className="model-form-section"><h2><span>1</span>选择模型</h2>
+          <Field label="服务商"><Select aria-label="服务商" value={form.preset} onChange={e => { setForm({ ...blank(e.target.value), baseURL: e.target.value ? "" : "https://api.openai.com/v1" }); setModelSearch(""); setError(""); }}>
             <optgroup label={`Pi 预设 · ${providers.length} 个服务商`}>{providers.map(item => <option value={item.id} key={item.id}>{item.name}{!item.apiKeySupported ? " · 需要登录" : !item.modelCount ? " · 无文本模型" : ""}</option>)}</optgroup><option value="">自定义 OpenAI 兼容服务</option>
-          </select></Field>
+          </Select></Field>
           {provider?.notice && <p className="provider-notice">{provider.notice}</p>}
           {form.preset ? <>
-            <Field label="查找预设模型"><input type="search" aria-label="查找预设模型" placeholder="搜索模型名称或 ID" value={modelSearch} onChange={e => setModelSearch(e.target.value)} /></Field>
-            <Field label="模型" hint={catalogLoading ? "正在加载模型目录…" : `${catalog.length} 个 Pi 预设文本模型`}><select aria-label="预设模型" required value={form.model} disabled={catalogLoading || !supported} onChange={e => setForm({ ...form, model: e.target.value })}>
+            <Field label="查找预设模型"><Input type="search" aria-label="查找预设模型" placeholder="搜索模型名称或 ID" value={modelSearch} onChange={e => setModelSearch(e.target.value)} /></Field>
+            <Field label="模型" hint={catalogLoading ? "正在加载模型目录…" : `${catalog.length} 个 Pi 预设文本模型`}><Select aria-label="预设模型" required value={form.model} disabled={catalogLoading || !supported} onChange={e => setForm({ ...form, model: e.target.value })}>
               <option value="">{catalogLoading ? "正在加载…" : "选择一个模型"}</option>{missingModel && <option value={form.model} disabled>{form.model} · 已不在目录中</option>}{filteredCatalog.map(item => <option value={item.id} key={item.id}>{item.name} · {item.id}</option>)}
-            </select></Field>
+            </Select></Field>
             {missingModel && <p className="provider-notice" role="status">此模型已不在当前服务商目录中。原配置已保留，请重新选择模型后保存。</p>}
             {selected && <div className="model-capabilities"><Badge>{Intl.NumberFormat("en", { notation: "compact" }).format(selected.contextWindow)} 上下文</Badge>{selected.reasoning && <Badge>支持推理</Badge>}<span>{selected.id}</span></div>}
-          </> : <div className="form-columns"><Field label="服务商名称"><input aria-label="自定义服务商名称" required maxLength={100} value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })} /></Field><Field label="模型 ID"><input aria-label="模型 ID" required maxLength={200} placeholder="服务商提供的 model ID" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} /></Field></div>}
-          <Field label="显示名称" hint="可选，留空使用模型名称。"><input aria-label="显示名称" maxLength={100} placeholder={selected?.name || "例如：日常写作"} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
-        </section>
-        <section className="model-form-section"><h2><span>2</span>连接配置</h2>
+          </> : <div className="form-columns"><Field label="服务商名称"><Input aria-label="自定义服务商名称" required maxLength={100} value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })} /></Field><Field label="模型 ID"><Input aria-label="模型 ID" required maxLength={200} placeholder="服务商提供的 model ID" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} /></Field></div>}
+          <Field label="显示名称" hint="可选，留空使用模型名称。"><Input aria-label="显示名称" maxLength={100} placeholder={selected?.name || "例如：日常写作"} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
+        </Panel>
+        <Panel className="model-form-section"><h2><span>2</span>连接配置</h2>
           <Field label={provider?.id === "amazon-bedrock" ? "Bearer Token" : provider?.id === "github-copilot" ? "Copilot Token" : "API Key"} hint={keptKey ? "已保存密钥；留空保留，填写新值可替换。" : editing?.hasApiKey && !sameConnection ? "服务商或地址已变化，请重新填写密钥。" : "密钥仅保存在本机宿主，不会返回到插件或配置页面。"}>
-            <input type="password" aria-label="API Key" autoComplete="new-password" disabled={form.clearApiKey || !supported} value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} placeholder={keptKey ? "已配置 · 留空保留" : "填写 API Key 或 Token"} />
+            <Input type="password" aria-label="API Key" autoComplete="new-password" disabled={form.clearApiKey || !supported} value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} placeholder={keptKey ? "已配置 · 留空保留" : "填写 API Key 或 Token"} />
           </Field>
-          {editing?.hasApiKey && <label className="clear-key"><input type="checkbox" checked={form.clearApiKey} onChange={e => setForm({ ...form, clearApiKey: e.target.checked })} />清除已保存的密钥</label>}
-          {provider?.fields.map(field => <Field key={field.key} label={field.label}><input aria-label={field.label} required={field.required} maxLength={300} placeholder={field.placeholder} value={form.options[field.key] ?? ""} onChange={e => setForm({ ...form, options: { ...form.options, [field.key]: e.target.value } })} /></Field>)}
+          {editing?.hasApiKey && <label className="clear-key"><Checkbox checked={form.clearApiKey} onChange={e => setForm({ ...form, clearApiKey: e.target.checked })} />清除已保存的密钥</label>}
+          {provider?.fields.map(field => <Field key={field.key} label={field.label}><Input aria-label={field.label} required={field.required} maxLength={300} placeholder={field.placeholder} value={form.options[field.key] ?? ""} onChange={e => setForm({ ...form, options: { ...form.options, [field.key]: e.target.value } })} /></Field>)}
           <details className="connection-options" open={!form.preset || form.preset === "azure-openai-responses" || undefined} key={form.preset}><summary>API 地址{form.preset && form.preset !== "azure-openai-responses" ? " · 默认使用服务商预设" : ""}</summary>
-            <Field label="API Base URL" hint={form.preset ? "留空使用所选模型的预设地址；代理或专属端点可在此覆盖。" : "填写 API 根地址，宿主使用 Chat Completions 协议。"}><input type="url" aria-label="API Base URL" required={!form.preset || form.preset === "azure-openai-responses"} placeholder={form.preset === "azure-openai-responses" ? "https://your-resource.openai.azure.com" : selected?.baseURL || "https://api.example.com/v1"} value={form.baseURL} onChange={e => setForm({ ...form, baseURL: e.target.value })} /></Field>
+            <Field label="API Base URL" hint={form.preset ? "留空使用所选模型的预设地址；代理或专属端点可在此覆盖。" : "填写 API 根地址，宿主使用 Chat Completions 协议。"}><Input type="url" aria-label="API Base URL" required={!form.preset || form.preset === "azure-openai-responses"} placeholder={form.preset === "azure-openai-responses" ? "https://your-resource.openai.azure.com" : selected?.baseURL || "https://api.example.com/v1"} value={form.baseURL} onChange={e => setForm({ ...form, baseURL: e.target.value })} /></Field>
           </details>
-        </section>
+        </Panel>
         <div className="model-editor-footer"><span>保存配置不会发起模型调用。</span><Button type="submit" disabled={busy || catalogLoading || !supported || !form.model || Boolean(form.preset && !selected)}>{busy ? "保存中…" : "保存模型"}</Button></div>
       </fieldset></form>
     </> : <>
-      <div className="settings-heading"><div><h1>模型服务</h1><p>连接你常用的模型，让每个插件都能使用。</p></div><Button disabled={!loaded} onClick={() => begin()}>＋ 添加模型</Button></div>
-      {(error || loadError) && <p className="settings-feedback m-error" role="alert">{error || loadError}</p>}{success && <p className="settings-feedback model-success" role="status">✓ {success}</p>}
+      <PageHeader title="模型服务" description="连接你常用的模型，让每个插件都能使用。" actions={<Button disabled={!loaded} onClick={() => begin()}>＋ 添加模型</Button>} />
+      {(error || loadError) && <Alert>{error || loadError}</Alert>}{success && <p className="settings-feedback model-success" role="status">✓ {success}</p>}
       <ChatGPTConnection />
-      <div className="model-list-toolbar"><h2>已添加的模型 <span>{models.length}</span></h2><input type="search" aria-label="搜索已添加模型" placeholder="搜索模型或服务商" value={search} onChange={e => setSearch(e.target.value)} /></div>
+      <div className="model-list-toolbar"><h2>已添加的模型 <span>{models.length}</span></h2><Input type="search" aria-label="搜索已添加模型" placeholder="搜索模型或服务商" value={search} onChange={e => setSearch(e.target.value)} /></div>
       <div className="configured-models">{models.filter(model => `${model.name} ${model.provider} ${model.model}`.toLowerCase().includes(search.toLowerCase())).map(model => <div className="configured-model" key={model.id}>
         <span className="provider-avatar" aria-hidden="true">{model.provider.slice(0, 1).toUpperCase()}</span>
-        <div className="configured-model-info"><strong>{model.name}</strong><span>{model.provider} · {model.model}</span></div><Badge tone={model.configured ? "green" : "amber"}>{model.configured ? (model.kind === "chatgpt" ? "ChatGPT 订阅" : "已配置") : model.kind === "chatgpt" ? "需登录授权" : model.kind === "pi" && model.hasApiKey ? "需重新选择模型" : "待配置密钥"}</Badge>
+        <div className="configured-model-info"><strong>{model.name}</strong><span>{model.provider} · {model.model}</span></div><Badge tone={model.configured ? "success" : "warning"}>{model.configured ? (model.kind === "chatgpt" ? "ChatGPT 订阅" : "已配置") : model.kind === "chatgpt" ? "需登录授权" : model.kind === "pi" && model.hasApiKey ? "需重新选择模型" : "待配置密钥"}</Badge>
         <div className="configured-model-actions">{removeId === model.id ? <><Button variant="danger" disabled={busy} onClick={() => void remove(model.id)}>确认删除</Button><Button variant="ghost" disabled={busy} onClick={() => setRemoveId(null)}>取消</Button></> : <>{model.kind !== "chatgpt" && <Button variant="ghost" aria-label={`编辑 ${model.name}`} onClick={() => edit(model)}>编辑</Button>}<Button variant="ghost" aria-label={`删除 ${model.name}`} onClick={() => setRemoveId(model.id)}>删除</Button></>}</div>
       </div>)}</div>
       {!loaded && !error && <p className="settings-note">正在读取配置…</p>}
       {loaded && !models.some(model => `${model.name} ${model.provider} ${model.model}`.toLowerCase().includes(search.toLowerCase())) && <p className="settings-note">{models.length ? "没有匹配的模型。" : "尚未添加模型。可从 ChatGPT 账号选择模型，或添加其他模型服务。"}</p>}
       <p className="settings-note">模型的连接与权限会在首次调用时验证。</p>
-      <div className="provider-intro"><div><h2>从常用服务商开始</h2><p>内置 Pi 的 {providers.length} 个服务商预设，自动匹配模型与调用协议。</p></div><div className="provider-shortcuts">{["openai", "anthropic", "google", "deepseek", "openrouter", "moonshotai-cn"].map(id => providers.find(provider => provider.id === id)).filter((item): item is ProviderPreset => Boolean(item)).map(provider => <button key={provider.id} onClick={() => begin(provider.id)}><strong>{provider.name}</strong><span>{provider.modelCount} 个预设模型 <b>↗</b></span></button>)}</div></div>
+      <div className="provider-intro"><div><h2>从常用服务商开始</h2><p>内置 Pi 的 {providers.length} 个服务商预设，自动匹配模型与调用协议。</p></div><div className="provider-shortcuts">{["openai", "anthropic", "google", "deepseek", "openrouter", "moonshotai-cn"].map(id => providers.find(provider => provider.id === id)).filter((item): item is ProviderPreset => Boolean(item)).map(provider => <Button key={provider.id} onClick={() => begin(provider.id)}><strong>{provider.name}</strong><span>{provider.modelCount} 个预设模型 <b>↗</b></span></Button>)}</div></div>
     </>}
   </div>;
 }

@@ -1,3 +1,7 @@
+import * as JSXDev from "react/jsx-dev-runtime";
+import * as ReactDOM from "react-dom";
+import * as ReactDOMClient from "react-dom/client";
+import * as UI from "@semicoder/malatang-sdk/ui";
 import * as React from "react";
 import * as JSX from "react/jsx-runtime";
 import { createClient } from "@semicoder/fia/client";
@@ -10,4 +14,4 @@ const bridge: HostBridge = {
   on: (event, listener) => app.on(event as keyof typeof api.events, listener),
   onReconnect: listener => app.onReconnect(listener),
 };
-Object.assign(globalThis, { __MALATANG_REACT__: React, __MALATANG_JSX__: JSX, __MALATANG_BRIDGE__: bridge });
+Object.assign(globalThis, { __MALATANG_MODULES__: { "react": React, "react/jsx-runtime": JSX, "react/jsx-dev-runtime": JSXDev, "react-dom": ReactDOM, "react-dom/client": ReactDOMClient, "@semicoder/malatang-sdk/ui": UI }, __MALATANG_BRIDGE__: bridge });

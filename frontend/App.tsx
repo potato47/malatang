@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { PluginInfo } from "@semicoder/malatang-sdk/types";
-import { EmptyState } from "@semicoder/malatang-sdk/ui";
+import { Button, EmptyState, Loading, Page } from "@semicoder/malatang-sdk/ui";
 import { app } from "./bridge";
 import PluginPage, { pluginPageKey } from "./PluginPage";
 import PageSlot from "./PageSlot";
@@ -91,12 +91,12 @@ export default function App() {
           <PluginPage plugin={plugin} visible={page === plugin.id} />
         </PageSlot>)}
         {!selected && page !== "plugins" && page !== "settings" && (loaded ? (
-          <div className="page-scroll"><div className="m-page">
+          <div className="page-scroll"><Page>
             <EmptyState title="从一个小应用开始" description="应用已停用或尚未安装，前往应用中心管理。" />
-            <button className="m-button primary" onClick={() => setPage("plugins")}>打开应用中心</button>
-          </div></div>
+            <Button onClick={() => setPage("plugins")}>打开应用中心</Button>
+          </Page></div>
         ) : (
-          <div className="loading-state">{error ? "请等待连接恢复" : <><span className="loader" />正在连接工作空间…</>}</div>
+          <div className="loading-state">{error ? "请等待连接恢复" : <><Loading />正在连接工作空间…</>}</div>
         ))}
       </main>
     </div>

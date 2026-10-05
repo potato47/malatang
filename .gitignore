@@ -7,3 +7,5 @@ frontend/dist/
 *private*.pem
 resources/plugins/*.tgz
 artifacts/
+resources/sdk/
+*.tgz

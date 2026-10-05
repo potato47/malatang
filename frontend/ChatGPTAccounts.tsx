@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Button, Field } from "@semicoder/malatang-sdk/ui";
+import { Button, Field, Input } from "@semicoder/malatang-sdk/ui";
 import { chatGPTLabel, type ChatGPTStatus } from "../shared/chatgpt";
 import { app } from "./bridge";
 
@@ -25,7 +25,7 @@ export default function ChatGPTAccounts({ status, busy, perform }: {
       </div></div>
       {p.removalBlockedReason && <p className="chatgpt-account-hint">{p.removalBlockedReason}</p>}
       {editing === p.id && <form className="chatgpt-account-edit" onSubmit={event => { event.preventDefault(); if (!disabled && chatGPTLabel.safeParse(label).success) void perform(() => app.call("chatgpt.rename", { profileId: p.id, label })).then(ok => { if (ok) setEditing(null); }); }}>
-        <Field label="账号名称" hint="仅修改显示名称，不改变登录身份或模型绑定。"><input aria-label="账号名称" autoFocus value={label} maxLength={100} disabled={disabled} onChange={event => setLabel(event.target.value)} /></Field>
+        <Field label="账号名称" hint="仅修改显示名称，不改变登录身份或模型绑定。"><Input aria-label="账号名称" autoFocus value={label} maxLength={100} disabled={disabled} onChange={event => setLabel(event.target.value)} /></Field>
         <div className="chatgpt-actions"><Button type="submit" disabled={disabled || !chatGPTLabel.safeParse(label).success}>保存名称</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => setEditing(null)}>取消修改</Button></div>
       </form>}
     </li>)}</ul>

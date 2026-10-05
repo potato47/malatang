@@ -27,6 +27,10 @@
     "scripts",
     "tests",
     "fia.config.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "commands"
+  ],
+  "exclude": [
+    "packages/sdk/templates"
   ]
 }

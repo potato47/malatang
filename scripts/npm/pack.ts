@@ -21,11 +21,11 @@ try {
   const unpacked = join(temporary, "package");
   const pkg = await Bun.file(join(unpacked, "package.json")).json();
   assert(validatePackage(pkg).version === release.version, "Packed SDK version differs");
-  const allowed = new Set(["package.json", "README.md", "src", "build.ts"]);
+  const allowed = new Set(["package.json", "README.md", "src", "build.ts", "plugin.ts", "templates"]);
   for (const entry of await readdir(unpacked, { withFileTypes: true })) {
     assert(allowed.has(entry.name) && !entry.isSymbolicLink(), `Unexpected SDK archive entry: ${entry.name}`);
   }
-  for (const name of ["./types", "./client", "./ui", "./runtime", "./build", "./theme.css"]) {
+  for (const name of ["./types", "./client", "./ui", "./runtime", "./build", "./theme.css", "./ui.css", "./plugin", "./manifest"]) {
     const target = pkg.exports?.[name];
     assert(typeof target === "string" && target.startsWith("./") && !target.split("/").includes(".."), `Missing/unsafe SDK export: ${name}`);
     assert(await Bun.file(resolve(unpacked, target)).exists(), `Missing SDK export file: ${name}`);
@@ -36,7 +36,7 @@ try {
   const react = await Bun.file(join(root, "node_modules/react/package.json")).json();
   await Bun.write(join(consumer, "package.json"), JSON.stringify({
     name: "sdk-package-smoke", private: true, type: "module",
-    dependencies: { [packageName]: `file:${archive}`, react: react.version },
+    dependencies: { [packageName]: `file:${archive}`, react: react.version, "react-dom": react.version },
   }));
   await run([process.execPath, "install", "--ignore-scripts", "--registry", registry], consumer);
   for (const [source, target] of [["plugins/translate", "translate"], ["examples/quick-notes", "quick-notes"]]) {

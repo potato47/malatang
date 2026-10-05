@@ -1,3 +1,4 @@
+import { Alert, Button, PageHeader, Panel } from "@semicoder/malatang-sdk/ui";
 import React, { useEffect, useRef, useState } from "react";
 import { native, type UpdateState } from "@semicoder/fia/client";
 
@@ -28,18 +29,18 @@ export default function UpdateSettings() {
     finally { busy.current = false; if (mounted.current) setPending(false); }
   };
   const working = pending || !state || ["checking", "downloading", "applying"].includes(state.phase);
-  return <div className="settings-page"><div className="settings-heading"><div><h1>应用更新</h1><p>当前版本 {version || "读取中…"}</p></div></div>
-    <section className="update-card" aria-busy={working}>
+  return <div className="settings-page"><PageHeader title="应用更新" description={`当前版本 ${version || "读取中…"}`} />
+    <Panel className="update-card" aria-busy={working}>
       <h2 className="settings-section-title" role="status">{state ? messages[state.phase] : "正在读取更新状态…"}</h2>
       {state?.version && ["available", "downloaded", "requiresInstall"].includes(state.phase) && <p>新版本 {state.version}</p>}
-      <div className="update-actions"><button className="m-button" disabled={working || state?.phase === "disabled"} onClick={() => void act(() => native.updates.check())}>检查更新</button>
-        {state?.phase === "available" && <button className="m-button primary" disabled={working} onClick={() => void act(() => native.updates.download())}>下载更新</button>}
-        {state?.phase === "downloaded" && <button className="m-button primary" disabled={working} onClick={() => void act(() => native.updates.apply())}>安装更新</button>}
-        {state?.phase === "requiresInstall" && state.downloadURL && <button className="m-button primary" disabled={working} onClick={() => void act(() => native.system.openURL({ url: state.downloadURL! }))}>下载安装包</button>}
+      <div className="update-actions"><Button disabled={working || state?.phase === "disabled"} onClick={() => void act(() => native.updates.check())}>检查更新</Button>
+        {state?.phase === "available" && <Button disabled={working} onClick={() => void act(() => native.updates.download())}>下载更新</Button>}
+        {state?.phase === "downloaded" && <Button disabled={working} onClick={() => void act(() => native.updates.apply())}>安装更新</Button>}
+        {state?.phase === "requiresInstall" && state.downloadURL && <Button disabled={working} onClick={() => void act(() => native.system.openURL({ url: state.downloadURL! }))}>下载安装包</Button>}
       </div>
       <p className="settings-note">启动时和每 24 小时自动检查更新。更新下载完成后会请你确认；安装前请保存草稿，等待模型、插件和登录任务结束。</p>
       <p className="settings-note">更新失败时保留当前版本；新版本启动失败时自动恢复上一版代码。已保存的数据会保留。</p>
-      {(error || state?.message) && <p className="m-error" role="alert">{error || state?.message}</p>}
-    </section>
+      {(error || state?.message) && <Alert>{error || state?.message}</Alert>}
+    </Panel>
   </div>;
 }

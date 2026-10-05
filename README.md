@@ -2,6 +2,10 @@
 
 基于 FIA 的本地插件应用平台。宿主提供模型、存储和统一界面组件，独立插件组合这些能力，拥有自己的应用页面。
 
+## 当前开发分支
+
+本分支实现 **SDK 0.2.0 / manifest 0.2** 的统一 UI 与 `malatang plugin create/check/build/pack`，尚未发布。需要本轮 FIA 应用子命令 runtime；旧固定归档和正式应用 v0.1.0 不包含这些能力，不能只按相同框架版本号替换。新 runtime 的归档与校验记录见 `docs/plugin-development.md`；公开下载入口保持正式 v0.1.0。
+
 ## 下载与安装
 
 官网统一位于 [Semicoder · 麻辣烫](https://semicoder.dev/malatang)，[下载与安装](https://semicoder.dev/malatang/docs/installation) 页面提供正式 DMG 下载、发行状态与安装指引。具体版本和校验信息以该页及 [GitHub Releases](https://github.com/potato47/malatang/releases) 为准；`fia-runtime-*` 预发布仅供构建，不是麻辣烫安装包。
@@ -133,3 +137,16 @@ bun run build
 登录与账号管理 UI 回归：同一开发实例打开 `/tests/chatgpt-login.html`，以隔离的 API fixtures 检查单个 / 多个注册恢复、失败账号重试、手动选择、等待 / 取消、显式添加账号、首次登录、重命名及保存失败、单个 / 批量移除的确认和保护。加 `?preview` 可交互查看测试账号，不发起真实授权或写入 Keychain；生产构建不包含此页面。
 
 翻译模型 UI 回归：同一开发实例打开 `/tests/translate-models.html`，检查空列表与快捷键禁用、旧模型偏好回退、旧演示历史来源、真实模型 ID 的 SDK 调用以及账号断开 / 最后一个模型删除。此页面使用离线 fixtures，不代表真实模型联网验收。
+
+## 创建独立插件（开发版）
+
+```sh
+bun run agent plugin create /tmp/my-notes --template notes
+cd /tmp/my-notes
+bun install --ignore-scripts
+bun run check
+bun run build
+bun run pack
+```
+
+开发宿主需先 `bun run dev`。安装开发应用的 CLI 后，同样使用 `malatang plugin …`；另有 `--template model`，所有子命令支持 `--help`/`--json`。项目随附 SDK 快照，可离开 workspace 使用。完整契约见 [插件开发](docs/plugin-development.md) 和 [SDK](packages/sdk/README.md)。

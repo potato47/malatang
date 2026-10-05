@@ -1,14 +1,14 @@
-import React, { useEffect, useState } from "react";
+import icon from "./assets/notebook.svg";
+import React, { useEffect, useRef, useState } from "react";
 import { createPluginClient } from "@semicoder/malatang-sdk/client";
-import { Badge, Button, PageHeader, Panel } from "@semicoder/malatang-sdk/ui";
+import { Alert, Badge, Button, Field, Page, PageHeader, Panel, PanelHeader, PanelContent, PanelFooter, Textarea } from "@semicoder/malatang-sdk/ui";
+import styles from "./page.module.css";
 const client = createPluginClient("quick-notes");
-export default function QuickNotes() {
-  const [text, setText] = useState("");
-  const [saved, setSaved] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => { let live = true; client.kv.get("note").then(value => { if (live) { const content = typeof value === "string" ? value : ""; setText(content); setSaved(content); } }).catch(e => live && setError(String(e))).finally(() => live && setLoading(false)); return () => { live = false; }; }, []);
-  const save = async () => { setSaving(true); setError(""); try { await client.kv.set("note", text); setSaved(text); } catch (e) { setError(String(e)); } finally { setSaving(false); } };
-  return <div className="m-page"><PageHeader eyebrow="YOUR PERSONAL SPACE" title="随手记" description="一闪而过的想法，也值得好好放下。" actions={<Badge tone="green">独立安装的插件</Badge>} /><Panel className="note-panel"><div className="panel-heading"><span>今天，在想什么？</span><Badge>{loading ? "读取中" : text === saved ? "已保存到本机" : "尚未保存"}</Badge></div><textarea aria-label="笔记内容" placeholder="从一个想法开始…" className="note-editor" maxLength={16000} disabled={loading} value={text} onChange={e => setText(e.target.value)} /><div className="panel-footer"><span>{text.length} 字符 · 插件专属 KV</span><Button onClick={() => void save()} disabled={loading || saving || text === saved}>{saving ? "保存中…" : "保存笔记"}</Button></div></Panel>{error && <p className="m-error" role="alert">{error}</p>}<div className="m-callout">这个页面来自独立构建的插件包，使用和内置应用相同的 UI SDK 与存储接口。卸载插件会保留笔记，重新安装后可继续使用。</div></div>;
+export default function Notes() {
+  const [text, setText] = useState(""); const [saved, setSaved] = useState("");
+  const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  const alive = useRef(false);
+  useEffect(() => { alive.current = true; let current = true; void client.kv.get("note").then(value => { if (current) { const content = typeof value === "string" ? value : ""; setText(content); setSaved(content); } }).catch(error => current && setError(String(error))).finally(() => current && setLoading(false)); return () => { current = false; alive.current = false; }; }, []);
+  const save = async () => { setSaving(true); setError(""); try { await client.kv.set("note", text); if (alive.current) setSaved(text); } catch (error) { if (alive.current) setError(String(error)); } finally { if (alive.current) setSaving(false); } };
+  return <Page><PageHeader title={"随手记"} description="使用与宿主相同的组件，把灵感保存在本机。" /><Panel><PanelHeader><span className={styles.heading}><img className={styles.logo} src={new URL(icon, import.meta.url).href} alt="" />随手记</span><Badge>{loading ? "读取中" : saved === text ? "已保存" : "尚未保存"}</Badge></PanelHeader><PanelContent><Field label="笔记内容" hint="内容保存到插件专属 KV；卸载后仍会保留。"><Textarea className={styles.editor} value={text} maxLength={16000} disabled={loading || saving} onChange={event => setText(event.target.value)} placeholder="从一个想法开始…" /></Field></PanelContent><PanelFooter><span>{text.length} / 16,000</span><Button loading={saving} disabled={loading || saved === text} onClick={() => void save()}>保存笔记</Button></PanelFooter></Panel>{error && <Alert>{error}</Alert>}</Page>;
 }

@@ -7,7 +7,7 @@ import PageSlot from "../PageSlot";
 import PluginPage, { pluginPageKey } from "../PluginPage";
 import "../style.css";
 
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, __MALATANG_REACT__: React });
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, __MALATANG_MODULES__: { react: React } });
 const container = document.getElementById("fixture")!;
 container.style.cssText = "height:180px;width:420px;display:flex;flex-direction:column";
 const root = createRoot(container);
@@ -67,7 +67,7 @@ async function run() {
   assert(Number(mounts) === 4, "Re-enable must create a fresh instance");
   results.push("PASS opt-out, resource change, removal and re-enable cleanup");
 
-  const module = "const React=globalThis.__MALATANG_REACT__; export default function Page(){return React.createElement('input',{'aria-label':'Loaded plugin',defaultValue:'initial'});}";
+  const module = "const React=globalThis.__MALATANG_MODULES__.react; export default function Page(){return React.createElement('input',{'aria-label':'Loaded plugin',defaultValue:'initial'});}";
   const url = URL.createObjectURL(new Blob([module], { type: "text/javascript" }));
   const nextURL = URL.createObjectURL(new Blob([module], { type: "text/javascript" }));
   const styleURL = URL.createObjectURL(new Blob([":root{--retention-test:active}"], { type: "text/css" }));

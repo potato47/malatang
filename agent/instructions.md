@@ -17,3 +17,10 @@ This is a trusted local plugin platform. The host owns model configuration and c
 - Application updates use FIA's native update flow. Users can open Settings → 应用更新 or Check for Updates in the native menu. Downloaded updates require confirmation and reload the application; save drafts first. Model, plugin and sign-in tasks block application switching. Updates do not upgrade separately installed plugins. Native runtime changes require a new installer from the download link.
 
 Events have no replay. Read snapshots initially and after reconnecting. After an unknown execution outcome, query jobs/runs/plugins before repeating a mutation. The application uses FIA's existing CLI; do not start another service or add a parallel CLI.
+
+
+## SDK 0.2 插件开发（未发布开发版）
+
+使用 `malatang plugin create <directory> [--template notes|model] [--id ID] [--name NAME]` 创建项目；开发入口为 `bun run agent plugin …`。先查看 `malatang plugin --help`。创建不安装依赖、Git 或插件，不覆盖非空目录。让开发者在项目中运行 `bun install --ignore-scripts`，再使用 check/build/pack；三个命令默认调用者 cwd，也可传路径。所有命令支持 --json，诊断在 stderr。
+
+项目随附 SDK 0.2.0 tgz 与相对 file 依赖。公共 UI 从 SDK 导入，业务用 CSS Modules。pack 重新检查构建并校验完整资源；随后继续调用现有 plugins.install，不新增安装服务。SDK 0.1 插件需迁移重建；切勿清除模型、账号、KV 或历史数据。正式 v0.1.0 和旧 FIA 归档不支持这一开发流程。
