@@ -21,6 +21,27 @@ export async function generateAgentArtifacts(config: ResolvedFIAConfig, destinat
   const directory = resolve(destination, config.agent.command);
   await mkdir(resolve(directory, "references"), { recursive: true });
   const command = config.agent.command;
+  const commands: Record<string, { description: string; entry: string }> = {};
+  for (const [name, declaration] of Object.entries(config.agent.commands ?? {})) {
+    const staging = resolve(config.projectRoot, ".fia/build/commands");
+    await mkdir(staging, { recursive: true });
+    const runner = resolve(staging, name + ".ts");
+    await writeFile(
+      runner,
+      `import run from ${JSON.stringify(resolve(config.projectRoot, declaration.entry))};\n` +
+        `const exitCode = await run({ args: process.argv.slice(2), cwd: process.cwd(), assetsDirectory: process.env.FIA_COMMAND_ASSETS });\n` +
+        `if (exitCode !== undefined && (!Number.isInteger(exitCode) || exitCode < 0 || exitCode > 255)) throw new Error("Invalid command exit code");\nprocess.exitCode = exitCode ?? 0;\n`,
+    );
+    const built = await Bun.build({
+      entrypoints: [runner],
+      target: "bun",
+      format: "esm",
+      outdir: resolve(directory, "commands"),
+      naming: name + ".js",
+    });
+    if (!built.success) throw new AggregateError(built.logs, "Command failed to build: " + name);
+    commands[name] = { description: declaration.description, entry: `commands/${name}.js` };
+  }
   const instructions = config.agent.instructions
     ? await readFile(resolve(config.projectRoot, config.agent.instructions), "utf8")
     : "";
@@ -106,12 +127,21 @@ export async function generateAgentArtifacts(config: ResolvedFIAConfig, destinat
   types.push(
     `export interface FIAApplication {\n${methods.join("\n")}\n${events.join("\n")}\nonReconnect(listener: () => void): () => void;\nclose(): void;\n}\ndeclare global { const app: FIAApplication; function help(name?: string): string; }\n`,
   );
-  await writeFile(resolve(directory, "SKILL.md"), skill);
+  const commandHelp = Object.entries(commands)
+    .map(([name, value]) => `- \`${command} ${name} --help\`: ${value.description}`)
+    .join("\n");
+  await writeFile(
+    resolve(directory, "SKILL.md"),
+    skill +
+      (commandHelp
+        ? `\n## Application commands\n\n${commandHelp}\n\nThese commands run in supervised processes, preserve the caller's working directory, and use the active application code. Their own documentation describes any development dependencies.\n`
+        : ""),
+  );
   await writeFile(resolve(directory, "references/api.md"), reference);
   await writeFile(resolve(directory, "schema.json"), JSON.stringify(schema, null, 2) + "\n");
   await writeFile(
     resolve(directory, "metadata.json"),
-    JSON.stringify({ description: config.agent.description }) + "\n",
+    JSON.stringify({ description: config.agent.description, commands }) + "\n",
   );
   await writeFile(resolve(directory, "agent.d.ts"), types.join("\n"));
   return schema;

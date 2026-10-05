@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import type { InitializeFrame } from "./backend.ts";
 import { APIServer, apiError } from "./api-server.ts";
 import { APIError } from "./api-client.ts";
+import type { ApplicationCommand } from "./agent-commands.ts";
 
 export interface AgentRecord {
   hostPID: number;
@@ -39,12 +40,16 @@ export async function startAgentServer(
   await chmod(sockets, 0o700);
   const socket = resolve(sockets, init.generation.slice(0, 12) + ".sock");
   const token = crypto.randomUUID() + crypto.randomUUID();
-  const metadata = await readFile(
-    resolve(dirname(init.webRoot), "agent", init.agentCommand!, "metadata.json"),
-    "utf8",
-  )
-    .then((value) => JSON.parse(value) as { description?: string })
-    .catch(() => ({}) as { description?: string });
+  const agentDirectory = resolve(dirname(init.webRoot), "agent", init.agentCommand!);
+  const metadata = await readFile(resolve(agentDirectory, "metadata.json"), "utf8")
+    .then(
+      (value) =>
+        JSON.parse(value) as {
+          description?: string;
+          commands?: Record<string, ApplicationCommand>;
+        },
+    )
+    .catch(() => ({}) as { description?: string; commands?: Record<string, ApplicationCommand> });
   const record: AgentRecord = {
     protocolVersion: 1,
     hostPID: process.ppid,
@@ -85,6 +90,19 @@ export async function startAgentServer(
         return apiError(new APIError("stale_instance", "Application instance changed"), 409);
       if (!api.ready || api.updating)
         return apiError(new APIError("updating", "Application is updating"), 503);
+      if (path === "/commands" && request.method === "GET") {
+        return Response.json({
+          result: {
+            commands: Object.fromEntries(
+              Object.entries(metadata.commands ?? {}).map(([name, command]) => [
+                name,
+                { ...command, entry: resolve(agentDirectory, command.entry) },
+              ]),
+            ),
+            assetsDirectory: api.context.app.codeDirectory,
+          },
+        });
+      }
       if (path === "/browser" && request.method === "POST") {
         if (!init.development || !issueBrowserURL)
           return apiError(

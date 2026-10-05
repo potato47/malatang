@@ -69,7 +69,8 @@ struct RuntimeUpdateTests {
       "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>CFBundleIdentifier</key><string>com.example.updates</string><key>CFBundleExecutable</key><string>FIAHost</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>"
         .utf8
     ).write(to: bundleURL.appending(path: "Contents/Info.plist"))
-    let first = try f.write(1, at: factory, backend: backend, frontend: frontend, extra: ["agent/update-test/SKILL.md": "skill-1"])
+    let startupBackend = backend.replacingOccurrences(of: "await native.windows.create", with: "await native.call(\"test.waitForConsent\", {}, {timeout: 0}); await native.windows.create")
+    let first = try f.write(1, at: factory, backend: startupBackend, frontend: frontend, extra: ["agent/update-test/SKILL.md": "skill-1"])
     let bundle = try #require(Bundle(url: bundleURL))
     let networkConfig = URLSessionConfiguration.ephemeral
     networkConfig.protocolClasses = [RuntimeUpdateURLProtocol.self]
@@ -94,6 +95,11 @@ struct RuntimeUpdateTests {
     let runtime = try FIARuntime(
       manifest: manifest, bundle: bundle, supportDirectory: f.root.appending(path: "data"),
       updateNetwork: network)
+    runtime.native.register("test.waitForConsent", input: FIAEmpty.self, output: FIAEmpty.self) { _ in
+      // Exceeds the old outer 15-second timeout while the supervisor correctly waits.
+      try await Task.sleep(for: .seconds(16))
+      return FIAEmpty()
+    }
     runtime.updater.confirmInstallation = { _ in true }
     do {
       try await runtime.start(automaticUpdates: false, background: true)

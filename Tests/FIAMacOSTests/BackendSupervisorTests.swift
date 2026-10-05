@@ -25,9 +25,12 @@ struct BackendSupervisorTests {
         )
         supervisor.readinessTimeout = .milliseconds(150)
         supervisor.start()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(supervisor.waitingOnNative)
         let deadline = ContinuousClock.now + .seconds(2)
         while !states.contains(.ready(port: 45_683)), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(states.contains(.ready(port: 45_683)))
+        #expect(!supervisor.waitingOnNative)
         #expect(!states.contains(where: { if case .failed = $0 { true } else { false } }))
         try await supervisor.stop()
     }

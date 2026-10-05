@@ -56,6 +56,7 @@ public final class BackendSupervisor {
     private let onRequest: RequestHandler
     private let onState: (State) -> Void
     private var sessionSecret: String { configuration.sessionSecret }
+    public var waitingOnNative: Bool { awaitingReady && !requestTasks.isEmpty }
     public var generationID: String { generation.uuidString }
     public var onListening: ((Int) -> Void)?
     public var allowsAutomaticRestart: Bool

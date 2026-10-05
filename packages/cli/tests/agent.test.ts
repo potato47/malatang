@@ -44,7 +44,7 @@ const contract = defineAPI({
     },
   },
 });
-async function fixture(development = false) {
+async function fixture(development = false, commands = false) {
   const root = await realpath(await mkdtemp(resolve(tmpdir(), "fia-agent-")));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const bundlePath = resolve(root, "Test App.app");
@@ -52,6 +52,24 @@ async function fixture(development = false) {
   await mkdir(resolve(supportPath, "Backend"), { recursive: true });
   await mkdir(resolve(bundlePath, "Contents/Helpers"), { recursive: true });
   await mkdir(resolve(bundlePath, "Contents/Resources"), { recursive: true });
+  if (commands) {
+    const directory = resolve(root, "agent/test-app/commands");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      resolve(directory, "probe.js"),
+      `
+if (process.argv.includes("wait")) { console.log("ready"); await new Promise(() => {}); }
+else { console.log(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),assets:process.env.FIA_COMMAND_ASSETS})); process.exitCode = process.argv.includes("fail") ? 7 : 0; }
+`,
+    );
+    await writeFile(
+      resolve(directory, "../metadata.json"),
+      JSON.stringify({
+        description: "Commands fixture",
+        commands: { probe: { description: "Probe command", entry: "commands/probe.js" } },
+      }),
+    );
+  }
   await symlink(process.execPath, resolve(bundlePath, "Contents/Helpers/bun"));
   for (const file of ["agent-cli.js", "script-preload.js"])
     await cp(
@@ -117,7 +135,7 @@ async function fixture(development = false) {
     development,
     applicationSupport: resolve(supportPath, "Backend"),
     generation: crypto.randomUUID(),
-    webRoot: root,
+    webRoot: resolve(root, "web"),
     resourceDirectory: root,
     version: "1.0.0",
     build: 1,
@@ -525,4 +543,30 @@ test("browser URLs require the authenticated development agent endpoint", async 
   expect(
     (await fetch("http://localhost/browser", { unix: dev.record.socket, method: "POST" })).status,
   ).toBe(401);
+});
+
+test("application commands preserve arguments, cwd, asset root, help and exit status", async () => {
+  const f = await fixture(false, true);
+  const result = await f.cli(["probe", "a b", "--json", "$(literal)"]);
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({
+    args: ["a b", "--json", "$(literal)"],
+    cwd: f.root,
+    assets: f.root,
+  });
+  expect((await f.cli(["probe", "fail"])).exitCode).toBe(7);
+  expect((await f.cli(["help"])).stdout).toContain("probe: Probe command");
+  expect((await f.cli(["unregistered"])).exitCode).toBe(2);
+});
+
+test("application commands hold the update lease and are cancelled with their supervisor", async () => {
+  const f = await fixture(true, true);
+  const child = f.spawn(["probe", "wait"]);
+  await until(() => f.api.leases.size === 1);
+  await expect(f.api.prepare()).rejects.toMatchObject({ code: "update_busy" });
+  child.kill("SIGINT");
+  expect(await child.exited).toBe(130);
+  await until(() => f.api.leases.size === 0);
+  await f.api.prepare();
+  expect(f.api.updating).toBe(true);
 });

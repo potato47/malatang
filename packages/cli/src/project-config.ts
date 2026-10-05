@@ -2,6 +2,7 @@ import { lstat, realpath, readFile } from "node:fs/promises";
 import { isAbsolute, resolve, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { FIAConfig } from "./config.ts";
+import { reservedAgentCommands } from "./agent-commands.ts";
 
 export interface ResolvedFIAConfig extends FIAConfig {
   projectRoot: string;
@@ -69,7 +70,23 @@ export function validateConfig(input: unknown, root: string): ResolvedFIAConfig 
   if (!Number.isSafeInteger(app.build) || (app.build as number) < 1)
     fail("app.build must be a positive safe integer");
   const agent = object(value.agent, "agent");
-  keys(agent, ["command", "description", "instructions"], "agent");
+  keys(agent, ["command", "description", "instructions", "commands"], "agent");
+  const commands = object(agent.commands ?? {}, "agent.commands");
+  const commandEntries: string[] = [];
+  for (const [name, declaration] of Object.entries(commands)) {
+    if (
+      !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(name) ||
+      name.length > 64 ||
+      reservedAgentCommands.has(name)
+    )
+      fail("Invalid or reserved application command: " + name);
+    const command = object(declaration, "agent.commands." + name);
+    keys(command, ["description", "entry"], "agent.commands." + name);
+    nonempty(command.description, "Command description");
+    nonempty(command.entry, "Command entry");
+    if (command.description.length > 1024) fail("Command description exceeds 1024 characters");
+    commandEntries.push(command.entry);
+  }
   nonempty(agent.command, "agent.command");
   nonempty(agent.description, "agent.description");
   if (
@@ -94,6 +111,7 @@ export function validateConfig(input: unknown, root: string): ResolvedFIAConfig 
   for (const path of [
     entry,
     apiEntry,
+    ...commandEntries,
     ...(agent.instructions === undefined ? [] : [agent.instructions]),
     webRoot,
     dist,
@@ -185,6 +203,7 @@ export async function loadProjectConfig(root: string): Promise<ResolvedFIAConfig
   for (const entry of [
     config.backend.entry,
     config.api.entry,
+    ...Object.values(config.agent.commands ?? {}).map((command) => command.entry),
     ...(config.agent.instructions ? [config.agent.instructions] : []),
     config.web.root,
     ...config.backend.assets,

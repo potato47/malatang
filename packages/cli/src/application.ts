@@ -576,13 +576,12 @@ export async function runDevelopment(
           "Vite",
         );
         await writeFile(resolve(control, "vite.ready"), "");
-        session.emit({
-          event: "ready",
-          component: "dev",
-          message: "Application ready; frontend HMR and backend restart enabled",
-        });
         const record = await waitUntil(
           async () => {
+            if (stop || hasProcessExited(host)) throw new Error("Development startup stopped");
+            const inspection = await readInspection(control!);
+            if (inspection?.backend === "failed")
+              throw new Error("Development backend failed during startup");
             try {
               return await connectAgent(
                 {
@@ -602,7 +601,13 @@ export async function runDevelopment(
           },
           15_000,
           "Development agent endpoint",
+          async () => (await readInspection(control!))?.waitingOnNative === true,
         );
+        session.emit({
+          event: "ready",
+          component: "dev",
+          message: "Application ready; frontend HMR and backend restart enabled",
+        });
         const { url } = (await readResult(
           await agentFetch(record)("/browser", { method: "POST" }),
         )) as { url: string };
@@ -620,6 +625,15 @@ export async function runDevelopment(
           )
             return;
           if (["fia.config.ts", "vite.config.ts", "package.json", "bun.lock"].includes(path)) {
+            changedConfig = true;
+            return;
+          }
+          // Command entrypoints bundle transitive project imports. Rebuild the application
+          // when server-side source changes so development never executes stale commands.
+          if (
+            Object.keys(config.agent.commands ?? {}).length &&
+            /\.(?:[cm]?[jt]sx?)$/u.test(path)
+          ) {
             changedConfig = true;
             return;
           }

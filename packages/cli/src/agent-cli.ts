@@ -5,6 +5,7 @@ import { APIError, createAPIClient, readLines, readResult, type APIFetch } from 
 import { installSkill, manageCLI, type AgentInstallation } from "./agent-install.ts";
 import { eventPath, parseEventMatch } from "./api-values.ts";
 import type { AgentRecord } from "./agent-server.ts";
+import { reservedAgentCommands, type ApplicationCommands } from "./agent-commands.ts";
 
 export function agentFetch(record: AgentRecord, source: "cli" | "script" = "cli"): APIFetch {
   return (path, init = {}) => {
@@ -267,10 +268,20 @@ export async function runAgentCLI(
       flag(args, "--json");
       noExtra(args);
       const schema = await readResult(await send("/schema", { signal: lifetime.signal }));
+      const extensions =
+        command === "schema"
+          ? undefined
+          : ((await readResult(
+              await send("/commands", { signal: lifetime.signal }),
+            )) as ApplicationCommands);
       if (command === "schema") emit(schema);
       else
         process.stdout.write(
-          `${app.command} — ${record.description ?? manifest.agent.description ?? manifest.app.name}\n\nCommands: help, schema --json, call METHOD --json JSON, events EVENT --jsonl [--count N] [--timeout MS] [--match JSON], exec (--file FILE | -e CODE | < stdin) [--timeout MS] [--jsonl], open [--browser [--url]], status --json, quit, install, uninstall, skill install [--dir DIRECTORY]\n\n${JSON.stringify(schema, null, 2)}\n`,
+          `${app.command} — ${record.description ?? manifest.agent.description ?? manifest.app.name}\n\nCommands: help, schema --json, call METHOD --json JSON, events EVENT --jsonl [--count N] [--timeout MS] [--match JSON], exec (--file FILE | -e CODE | < stdin) [--timeout MS] [--jsonl], open [--browser [--url]], status --json, quit, install, uninstall, skill install [--dir DIRECTORY]\n\n${Object.entries(
+            extensions?.commands ?? {},
+          )
+            .map(([name, value]) => `${name}: ${value.description} (${app.command} ${name} --help)`)
+            .join("\n")}\n\n${JSON.stringify(schema, null, 2)}\n`,
         );
       return 0;
     }
@@ -341,6 +352,22 @@ export async function runAgentCLI(
       }
     }
     if (command === "exec") return await executeScript(args, app, record, lifetime.signal);
+    if (!reservedAgentCommands.has(command)) {
+      const extensions = (await readResult(
+        await send("/commands", { signal: lifetime.signal }),
+      )) as ApplicationCommands;
+      const extension = Object.hasOwn(extensions.commands, command)
+        ? extensions.commands[command]
+        : undefined;
+      if (extension)
+        return await executeScript(
+          ["--file", extension.entry, "--timeout", "0"],
+          app,
+          record,
+          lifetime.signal,
+          { args, assetsDirectory: extensions.assetsDirectory },
+        );
+    }
     throw new APIError("usage", "Unknown command: " + command);
   } catch (error) {
     const code = lifetime.signal.aborted
@@ -376,6 +403,7 @@ async function executeScript(
   app: AgentInstallation,
   record: AgentRecord,
   signal: AbortSignal,
+  command?: { args: string[]; assetsDirectory: string },
 ): Promise<number> {
   const file = option(args, "--file");
   let code = option(args, "-e");
@@ -441,6 +469,7 @@ async function executeScript(
         "--preload",
         preload,
         ...(file ? [resolve(file)] : ["--eval", code!]),
+        ...(command?.args ?? []),
       ],
       {
         cwd: process.cwd(),
@@ -448,7 +477,11 @@ async function executeScript(
         stdout: "pipe",
         stderr: "pipe",
         detached: true,
-        env: { ...process.env, FIA_SCRIPT_CONNECTION: JSON.stringify({ record, sessionId }) },
+        env: {
+          ...process.env,
+          FIA_SCRIPT_CONNECTION: JSON.stringify({ record, sessionId }),
+          ...(command ? { FIA_COMMAND_ASSETS: command.assetsDirectory } : {}),
+        },
       },
     );
   } catch (error) {

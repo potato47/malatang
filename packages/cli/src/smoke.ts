@@ -8,9 +8,18 @@ export async function waitUntil<T>(
   read: () => Promise<T | undefined>,
   timeout: number,
   label: string,
+  paused?: () => Promise<boolean>,
 ): Promise<T> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
+  let deadline = Date.now() + timeout;
+  let previous = Date.now();
+  let wasPaused = false;
+  while (true) {
+    const now = Date.now();
+    const isPaused = (await paused?.()) ?? false;
+    if (isPaused || wasPaused) deadline += now - previous;
+    wasPaused = isPaused;
+    previous = now;
+    if (now >= deadline) break;
     const result = await read();
     if (result !== undefined) return result;
     await Bun.sleep(100);

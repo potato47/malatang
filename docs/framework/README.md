@@ -173,3 +173,13 @@ fia agent open --browser       # 在默认浏览器打开
 ## 应用外观
 
 前后端都可以调用 `native.application.setAppearance({ mode: "light" | "dark" | "system" })`，同步应用原生标题栏、菜单和原生控件的外观。默认跟随系统；`system` 清除应用级覆盖，不修改 macOS 设置。应用自己持久化用户偏好，并在 backend `start` 时重新应用。该接口不替应用生成网页样式：WebView 的 CSS 主题仍由应用管理；跟随系统时可使用 `prefers-color-scheme`。
+
+## 应用自定义 CLI 子命令
+
+在 `fia.config.ts` 的 `agent.commands` 中声明子命令，例如 `commands: { plugin: { description: "Develop plugins", entry: "cli/plugin.ts" } }`。命令名不能覆盖 help、call、exec 等框架内置命令。入口默认导出接收 `FIACommandContext`（从 `@semicoder/fia/config` 导入类型）的函数，返回 `void` 或 0–255 退出码。
+
+上下文包含 `args`、调用者 `cwd` 和 `assetsDirectory`（开发项目根目录；生产生效代码的 backend 资产目录）。入口会被编译进签名代码产物，通过 `应用命令 plugin ...` 或 `fia agent plugin ...` 调用；help 与生成的 skill 自动列出它。命令跟随当前生效版本，沿用实例连接、后台启动、脚本租约和进程组清理，不创建另一套 CLI。自定义命令不设执行超时，Ctrl-C/应用断开会终止；运行期间阻止应用更新。stdout/stderr 和退出码原样传递，参数以数组传递。
+
+自定义命令可要求自己的开发依赖；框架不会隐式安装依赖或执行包安装脚本。应用应在命令帮助中注明要求。变更通用 CLI 会改变 runtime ID，既有应用须通过完整安装包取得新运行时。
+
+带自定义命令的开发应用在后端脚本或其项目依赖变化时重新构建，避免命令继续使用旧 bundle。原生 Keychain/对话框交互期间，监督层与外层启动流程共用就绪判定；开发 CLI 同样暂停等待计时，交互结束后恢复超时约束。

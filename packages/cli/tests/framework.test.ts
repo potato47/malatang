@@ -21,6 +21,10 @@ test("skill generation uses only the contract and produces standalone checked ty
       'throw new Error("Backend must not load when documenting the API")',
     );
     await writeFile(
+      resolve(root, "command.ts"),
+      "export default async (ctx: { args: string[]; cwd: string }) => { console.log(JSON.stringify(ctx)); return 0; };",
+    );
+    await writeFile(
       resolve(root, "shared/api.ts"),
       `import { defineAPI, z } from ${JSON.stringify(resolve(import.meta.dir, "../src/business-api.ts"))};
 export default defineAPI({ methods: {
@@ -31,12 +35,31 @@ export default defineAPI({ methods: {
     const config = validateConfig(
       {
         app: { name: "Skill Test", identifier: "test.skill", build: 2, version: "1.1.0" },
-        agent: { command: "skill-test", description: "Test skill" },
+        agent: {
+          command: "skill-test",
+          description: "Test skill",
+          commands: { probe: { description: "Probe", entry: "command.ts" } },
+        },
       },
       root,
     );
     await generateAgentArtifacts(config, resolve(root, "artifacts"));
     const directory = resolve(root, "artifacts/skill-test");
+    const probe = Bun.spawn([process.execPath, resolve(directory, "commands/probe.js"), "a b"], {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, FIA_COMMAND_ASSETS: root },
+    });
+    expect(await probe.exited).toBe(0);
+    expect(JSON.parse(await new Response(probe.stdout).text())).toEqual({
+      args: ["a b"],
+      cwd: await import("node:fs/promises").then((fs) => fs.realpath(root)),
+      assetsDirectory: root,
+    });
+    expect(await readFile(resolve(directory, "SKILL.md"), "utf8")).toContain(
+      "skill-test probe --help",
+    );
     expect(await readFile(resolve(directory, "SKILL.md"), "utf8")).toContain('build: "2"');
     expect(
       JSON.parse(await readFile(resolve(directory, "schema.json"), "utf8")).methods["counter.add"],
@@ -230,4 +253,41 @@ test("npm library entrypoints share standard Zod and include readable framework 
   const readme = await readFile(resolve(packageRoot, "README.md"), "utf8");
   for (const match of readme.matchAll(/\]\((docs\/framework\/[^)]+)\)/gu))
     expect(await Bun.file(resolve(packageRoot, match[1]!)).exists()).toBe(true);
+});
+
+test("application command names and entries cannot override built-ins or escape the project", () => {
+  const app = { name: "Commands", identifier: "test.commands", version: "1.0.0", build: 1 };
+  for (const [name, entry] of [
+    ["call", "cli.ts"],
+    ["-bad", "cli.ts"],
+    ["plugin", "../cli.ts"],
+    ["plugin", ".fia/cli.ts"],
+  ]) {
+    expect(() =>
+      validateConfig(
+        {
+          app,
+          agent: {
+            command: "commands",
+            description: "Commands",
+            commands: { [name!]: { description: "Test", entry } },
+          },
+        },
+        "/tmp",
+      ),
+    ).toThrow();
+  }
+  expect(
+    validateConfig(
+      {
+        app,
+        agent: {
+          command: "commands",
+          description: "Commands",
+          commands: { plugin: { description: "Plugins", entry: "cli/plugin.ts" } },
+        },
+      },
+      "/tmp",
+    ).agent.commands?.plugin?.entry,
+  ).toBe("cli/plugin.ts");
 });

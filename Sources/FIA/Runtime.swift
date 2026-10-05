@@ -114,6 +114,7 @@ public final class FIARuntime {
     try publishAgentAssets()
     _ = try windows.create(WindowOptions(id: "main"))
     launchBackend()
+    startInspection()
     try await waitForBackend()
     if let readyFile = ProcessInfo.processInfo.environment["FIA_DEV_READY_FILE"] {
       let deadline = Date().addingTimeInterval(15)
@@ -125,7 +126,6 @@ public final class FIARuntime {
     connectWindows()
     try publishAgentAssets()
     if !background { try windows.restoreMainWindow() }
-    startInspection()
     if automaticUpdates { updater.startAutomaticChecks() }
   }
   private func launchBackend(trial: Bool = false) {
@@ -222,12 +222,13 @@ public final class FIARuntime {
       return components.url!
     }
   }
-  private func waitForBackend(deadline: Date = Date().addingTimeInterval(15)) async throws {
+  private func waitForBackend() async throws {
+    // BackendSupervisor owns the startup deadline and suspends it during native dialogs.
+    // An outer wall-clock deadline would incorrectly fail Keychain consent.
     while !backendReady {
       try Task.checkCancellation()
       guard lifecycle == .running else { throw CancellationError() }
       if let backendFailure { throw UpdateError(backendFailure) }
-      if Date() >= deadline { throw UpdateError("Backend readiness timed out") }
       try await Task.sleep(for: .milliseconds(50))
     }
   }
@@ -246,8 +247,8 @@ public final class FIARuntime {
     activeRelease = release
     activeDirectory = directory
     launchBackend(trial: trial)
+    try await waitForBackend()
     let deadline = Date().addingTimeInterval(15)
-    try await waitForBackend(deadline: deadline)
     guard let origin = backendOrigin else { throw UpdateError("Backend endpoint missing") }
     guard Date() < deadline else { throw UpdateError("Backend readiness timed out") }
     var request = URLRequest(url: origin.appending(path: "_fia/health"))
@@ -326,6 +327,7 @@ public final class FIARuntime {
           "backend": self.backendReady
             ? "ready" : (self.backendFailure == nil ? "starting" : "failed"),
           "build": self.activeRelease.build,
+          "waitingOnNative": self.backend?.waitingOnNative ?? false,
           "windows": self.windows.registeredIDs, "visibleWindows": self.windows.states.filter { $0.orderedIn }.map(\.id), "background": self.background, "frontendsReady": self.frontendReady.sorted(),
           "methods": self.native.methods,
           "processGroups": [self.backend?.processIdentifier].compactMap { $0 },

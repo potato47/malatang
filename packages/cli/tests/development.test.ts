@@ -67,3 +67,23 @@ test("development detects both normal and signal-terminated child processes", as
     }
   }
 });
+
+test("development startup excludes native interaction wait but still times out afterwards", async () => {
+  const { waitUntil } = await import("../src/smoke.ts");
+  const start = Date.now();
+  const result = await waitUntil(
+    async () => (Date.now() - start > 350 ? "ready" : undefined),
+    200,
+    "startup",
+    async () => Date.now() - start < 300,
+  );
+  expect(result).toBe("ready");
+  await expect(
+    waitUntil(
+      async () => undefined,
+      120,
+      "startup",
+      async () => false,
+    ),
+  ).rejects.toThrow("timed out");
+});
