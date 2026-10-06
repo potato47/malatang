@@ -71,10 +71,10 @@ Environment secrets 中点 **Add environment secret**，逐项添加：
 base64 < '/完整路径/DeveloperID-Malatang.p12' | pbcopy
 ```
 
-更新私钥已经生成在本机以下位置。只有在 GitHub 尚未配置该 Secret 时才上传这份；不要重新生成另一份：
+更新私钥已生成在本地麻辣烫项目的 `.fia/release-secrets/update-private.pem`。以下命令在麻辣烫仓库根目录执行，不依赖 workspace 名称。只有在 GitHub 尚未配置该 Secret 时才上传这份；不要重新生成另一份：
 
 ```sh
-pbcopy < '/Users/next/projects/fia-workspace/malatang/.fia/release-secrets/update-private.pem'
+pbcopy < '.fia/release-secrets/update-private.pem'
 ```
 
 接着在同一环境的 **Environment variables** 添加：

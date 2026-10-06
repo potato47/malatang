@@ -8,5 +8,6 @@ Declare shared operations and events in shared/api.ts. Implement them in backend
 - workspace 中的 FIA 是共同开发项目。框架重建后执行 `bun install --force --ignore-scripts` 刷新本地包，验证实际消费的产物；应用依赖新能力时同时检查 `release/runtime-lock.json` 的源码提交与归档 SHA-256。仅凭同版本号不能确认一致。
 - 修改业务 API、模型、插件契约时，核对 `shared/api.ts`、`agent/instructions.md`、`packages/sdk/README.md`、内置/示例插件及根 README；模型目录升级同时维护迁移与不可用状态说明。
 - 官网在独立 Semicoder 仓库的 `content/projects/malatang/`，workspace 入口为 `../semicoder/`。可见行为、SDK、安装与发布变化需在同一任务检查对应页面，并在网站 `docs/project-sources.md` 记录来源。网站不是应用运行/构建依赖。
+- 每次应用或 SDK 版本发布必须同步官网安装、插件开发及受影响指南，并记录版本证据和网站部署状态；两种发行不能互相代替。
 - 应用 `v*`、SDK `sdk-v*` 与网站主干部署分别管理；应用更新源由应用发布流程维护，不因官网迁入个人网站而更换。未发布变更与公开固定快照分开说明，普通开发不自动推送或发布。
 - workspace 内遵守根 `docs/agent/development.md`。以上 check/build 要求适用于实现修改；仅文档/规范修改按 workspace 规则检查事实、链接、格式与差异，不启动应用或运行无关完整测试。

@@ -77,7 +77,7 @@ git push origin v0.2.1
 
 `version:app` 同时递增 build；推送标签前复核 `release` / `github-pages` 环境允许该精确标签。只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。`release/notes/<version>.md` 会追加到对应正式 Release 说明，用于记录用户可见变化和迁移步骤。应用版本不等于 SDK 或插件版本，不自动修改后者。
 
-Release 与更新源发布完成后，核对正式 DMG 附件、SHA-256、签名公证报告及匿名下载，再同步 Semicoder 安装页与 `docs/project-sources.md`。网站主干推送会独立触发部署，不属于应用发布的自动步骤。新 Release notes 包含官网与安装页链接，已公开版本不回写。
+Release 与更新源发布完成后，核对正式 DMG 附件、SHA-256、签名公证报告及匿名下载，必须在同一发布任务同步 Semicoder 安装页、项目介绍、受影响使用指南/迁移说明与 `docs/project-sources.md`，并记录官网内容及部署状态。网站主干推送会独立触发部署，按当次授权执行；受阻时明确记录未完成项与完成条件，不能仅以应用已发布宣称整次交付完成。新 Release notes 包含官网与安装页链接，已公开版本不回写。
 
 新安装包与签名更新的 `downloadURL` 指向官网安装页。发布校验只允许该地址及旧版 `https://github.com/potato47/malatang/releases/latest`，以便读取不可改写的历史签名清单；不得因此放宽更新文件的固定来源、签名或内容校验。改官网入口不改 `updatesURL`、历史清单或已有 Release 附件。
 

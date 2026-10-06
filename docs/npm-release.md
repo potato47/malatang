@@ -60,6 +60,12 @@ bun run npm:pack
 
 普通 `Build Malatang` CI 也执行 SDK 验收。发布工作流在 macOS 完成相同检查、打包和测试，检查未改动受跟踪文件，再上传唯一版本归档；Linux publish job 下载同一归档并发布，不重新构建。
 
+## 官网文档同步
+
+每次 SDK 发布必须同步独立 Semicoder 仓库 `content/projects/malatang/` 的插件开发指南、项目介绍、兼容/迁移说明和相关安装内容；在网站 `docs/project-sources.md` 记录源码提交、实际 npm 版本、归档与独立消费结果。应用 Release 与 SDK npm 分别验收，未发布 API 不替代默认教程。workspace 内网站入口为 `../semicoder/`。
+
+官网内容及部署状态纳入当次发布交付。缺少产物证据或部署授权时记录未完成项与完成条件；网站 `main` 推送会部署，不因 SDK 已发布而自动获得推送授权。
+
 ## 后续发布
 
 以下为下一 SDK 版本的操作示例：
