@@ -53,6 +53,12 @@ git push origin v0.16.2
 
 GitHub Actions 内不执行本地的 `bun run release`：该命令会递增版本，而 CI 发布的是标签提交中已经确定的版本。本地交互式发布命令仍可使用；同一版本不能本地发布后再通过标签重复发布。
 
+## 官网文档同步
+
+每次版本发布必须同步独立 Semicoder 仓库的 `content/projects/fia/`：介绍、安装、API/CLI、平台与分发指南，并在网站 `docs/project-sources.md` 记录版本证据。先准备相关文档，registry 归档及独立消费通过后再更新默认安装说明；本地同版本构建、固定运行时归档和公开 npm 分开记录。workspace 内网站入口为 `../semicoder/`，不构成框架构建依赖。
+
+网站内容、推送和部署分别验收；`main` 推送会部署，按当次用户授权执行。若官网同步受阻，明确记录未完成项和完成条件，不能仅以 npm 发布成功宣称全部交付完成。
+
 ## 不发布的验收
 
 在 GitHub Actions → Publish npm → Run workflow 选择分支或标签。手动运行会完成构建、检查、打包并上传 artifact，**始终跳过发布**，不需要配置 npm 认证。首次配置后先用此入口验证 runner 上的完整构建。
