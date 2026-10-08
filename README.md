@@ -36,7 +36,13 @@ bun run dev
 bun run agent open --browser --url
 ```
 
-`bun run build` 生成 `dist/Malatang.app`。开发和打包应用使用各自的 FIA 数据目录，互不覆盖。开发后端读取资源的根目录是项目目录；打包后是随应用分发的 backend 目录。
+使用当前 workspace FIA 构建包时，`bun run dev` 显示 `Malatang Dev` /「麻辣烫 · 开发版」，Dock 带黄色 `DEV` 标记，菜单栏也显示 `DEV`；macOS Bundle ID 为 `com.semicoder.malatang.dev`。现有 `.fia/dev/data/com.semicoder.malatang` 数据与按路径区分的 Keychain 登录项继续使用，无需搬迁。
+
+`bun run run` 构建并启动 `.fia/preview/Malatang Preview.app`，显示「麻辣烫 · 预览版」、蓝色 `PREV` 标记，使用独立的 `.fia/preview/data/com.semicoder.malatang` 数据。直接打开该预览包也保持隔离，数据跨重启保留；首次使用需单独配置模型。`bun run agent --preview` 控制预览版，例如 `bun run agent --preview quit`。开发版与预览版都禁用正式更新源，可与官网版同时运行。显式安装的本地 CLI/skill 分别为 `malatang-dev`、`malatang-preview`，正式入口仍为 `malatang`。
+
+`bun run build` 仍生成正式身份的 `dist/Malatang.app`，默认与已安装官网版共用正式数据目录，同目录只允许一个实例。日常测试使用上述 dev / run；不要用正式构建路径判断数据已隔离。开发后端资源根目录是项目目录；预览/正式打包后是随应用分发的 backend 目录。
+
+以上开发标记和隔离 run 尚未发布，依赖本轮新的 FIA 构建包。`release/runtime-lock.json` 保留已公开固定归档，该旧归档不含这些能力，旧 `run` 仍访问正式数据。发布前需生成、验收并公开新的固定 runtime，再更新 lock 与官网来源。
 
 ## 先体验
 

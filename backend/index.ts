@@ -67,7 +67,10 @@ export default defineBackend({
     models = new Models(store, run => emit("runs.changed", { pluginId: run.pluginId, runId: run.id, revision: run.revision, status: run.status }), modelChanged, fetch, chatgpt);
     plugins = new Plugins(store, models, app.codeDirectory, () => emit("plugins.changed", { revision: ++revision }));
     await plugins.open();
-    await native.windows.update({ id: "main", title: "麻辣烫", width: 1200, height: 800 });
+    // Keep production builds compatible with the previous fixed FIA archive.
+    const mode = "mode" in app ? app.mode : undefined;
+    const title = mode === "development" ? "麻辣烫 · 开发版" : mode === "preview" ? "麻辣烫 · 预览版" : "麻辣烫";
+    await native.windows.update({ id: "main", title, width: 1200, height: 800 });
     await native.windows.setTitlebar({ id: "main", items: [] });
   },
   beforeUpdate: () => ({ ready: !models.busy() && !plugins.busy() && !chatgpt.busy(), reason: "模型、插件或登录任务正在运行" }),
