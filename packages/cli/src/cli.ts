@@ -20,13 +20,14 @@ import { requestSession } from "./session.ts";
 import { smokeApplication } from "./smoke.ts";
 import { generateUpdateKeys } from "./updates.ts";
 import { CLI_VERSION } from "./metadata.ts";
+import { localProfile } from "./local-profile.ts";
 
 export const help = `FIA ${CLI_VERSION} — macOS applications for humans and agents
 
 fia create [name] [--yes] [--git|--no-git] [--install|--no-install] [--local]
-fia agent <args>         Call this project's running development application
+fia agent [--preview] <args> Call this project's development or preview application
 fia dev [--open-browser] Vite HMR and supervised Bun restart
-fia run                  Build and run a production .app
+fia run                 Build and run an isolated Preview .app (no HMR)
 fia build [--dmg]        Assemble an application; optionally package and test a DMG
 fia release [--update]   Notarized installer or signed frontend/backend update
 fia check | test         Validate configuration and TypeScript; run Bun tests
@@ -90,11 +91,13 @@ export async function runCLI(args: readonly string[], cwd = process.cwd()): Prom
     }
     if (command === "agent") {
       const config = await loadProjectConfig(cwd);
+      const preview = rest[0] === "--preview";
+      const profile = localProfile(config, preview ? "preview" : "development");
       return runAgentCLI(
-        rest,
-        resolve(config.projectRoot, ".fia/dev", config.app.name + ".app"),
-        resolve(config.projectRoot, ".fia/dev/data", config.app.identifier),
-        true,
+        preview ? rest.slice(1) : rest,
+        resolve(profile.directory, profile.config.app.name + ".app"),
+        resolve(profile.dataRoot, config.app.identifier),
+        !preview,
       );
     }
     if (command === "doctor") {

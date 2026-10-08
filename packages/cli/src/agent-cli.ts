@@ -175,12 +175,18 @@ export async function runAgentCLI(
     );
     if (manifest.schema !== 4 || !manifest.agent?.command)
       throw new APIError("incompatible_runtime", "Install a FIA 4 application");
+    // A Dev bundle requires the managed Vite/backend session, including via its installed CLI.
+    development ||= manifest.localProfile?.mode === "development";
     const app: AgentInstallation = {
       bundlePath,
       identifier: manifest.app.identifier,
       command: manifest.agent.command,
       supportPath:
-        support ?? resolve(homedir(), "Library/Application Support", manifest.app.identifier),
+        support ??
+        resolve(
+          manifest.localProfile?.dataRoot ?? resolve(homedir(), "Library/Application Support"),
+          manifest.app.identifier,
+        ),
     };
     const args = [...argv];
     const command = args.shift() ?? "help";

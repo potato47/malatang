@@ -29,6 +29,7 @@ import { loadProjectConfig, type ResolvedFIAConfig } from "./project-config.ts";
 import { createSession } from "./session.ts";
 import { readInspection, waitUntil, smokeApplication } from "./smoke.ts";
 import { writeSignedRelease } from "./updates.ts";
+import { localProfile } from "./local-profile.ts";
 
 export interface RunSettings {
   cwd: string;
@@ -66,10 +67,14 @@ const xml = (value: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
-export function infoPlist(config: ResolvedFIAConfig) {
+export function infoPlist(
+  config: ResolvedFIAConfig,
+  bundleIdentifier = config.app.identifier,
+  hasIcon = !!config.app.icon,
+) {
   const values: Record<string, string> = {
     CFBundleExecutable: "FIAHost",
-    CFBundleIdentifier: config.app.identifier,
+    CFBundleIdentifier: bundleIdentifier,
     CFBundleName: config.app.name,
     CFBundleDisplayName: config.app.name,
     CFBundleShortVersionString: config.app.version,
@@ -77,7 +82,7 @@ export function infoPlist(config: ResolvedFIAConfig) {
     CFBundlePackageType: "APPL",
     LSMinimumSystemVersion: "14.0",
     ...config.permissions,
-    ...(config.app.icon ? { CFBundleIconFile: "AppIcon" } : {}),
+    ...(hasIcon ? { CFBundleIconFile: "AppIcon" } : {}),
   };
   return (
     '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>' +
@@ -175,6 +180,7 @@ export async function buildApplication(
   config: ResolvedFIAConfig,
   options: {
     development?: boolean;
+    preview?: boolean;
     distribution?: boolean;
     runner?: ApplicationProcessRunner;
   } = {},
@@ -182,9 +188,19 @@ export async function buildApplication(
   if (process.platform !== "darwin" || process.arch !== "arm64")
     throw new Error("FIA requires macOS on Apple Silicon");
   const runner = options.runner ?? defaultRunner;
+  if (
+    (options.development && options.preview) ||
+    (options.distribution && (options.development || options.preview))
+  )
+    throw new Error("Local builds cannot be combined with distribution or another local mode");
+  const profile =
+    options.development || options.preview
+      ? localProfile(config, options.development ? "development" : "preview")
+      : undefined;
+  if (profile) config = profile.config;
   await verifyAssets();
   const root = config.projectRoot;
-  const parent = resolve(root, options.development ? ".fia/dev" : "dist");
+  const parent = profile?.directory ?? resolve(root, "dist");
   await mkdir(parent, { recursive: true });
   const temporary = await mkdtemp(resolve(parent, ".assemble-"));
   const app = resolve(temporary, config.app.name + ".app");
@@ -208,6 +224,32 @@ export async function buildApplication(
       await chmod(resolve(contents, path), 0o755);
     if (config.app.icon)
       await cp(resolve(root, config.app.icon), resolve(resources, "AppIcon.icns"));
+    if (profile) {
+      const icons = resolve(temporary, "local-icon");
+      await checked(
+        runner,
+        [
+          resolve(assetDirectory, "FIAHost"),
+          "icon-badge",
+          config.app.icon ? resolve(root, config.app.icon) : "",
+          profile.badge,
+          icons,
+        ],
+        root,
+      );
+      await checked(
+        runner,
+        [
+          "/usr/bin/iconutil",
+          "--convert",
+          "icns",
+          "--output",
+          resolve(resources, "AppIcon.icns"),
+          resolve(icons, "icon.iconset"),
+        ],
+        root,
+      );
+    }
     const identity = options.distribution
       ? config.signing?.releaseIdentity
       : (config.signing?.developmentIdentity ?? "-");
@@ -241,6 +283,15 @@ export async function buildApplication(
           agent: { command: config.agent.command, description: config.agent.description },
           frameworkVersion: CLI_VERSION,
           app: config.app,
+          ...(profile
+            ? {
+                localProfile: {
+                  mode: profile.mode,
+                  dataRoot: profile.dataRoot,
+                  label: profile.badge,
+                },
+              }
+            : {}),
           runtimeId: release.runtimeId,
           bunSHA256: await sha256(resolve(contents, "Helpers/bun")),
           ...(options.development
@@ -258,7 +309,10 @@ export async function buildApplication(
         2,
       ),
     );
-    await writeFile(resolve(contents, "Info.plist"), infoPlist(config));
+    await writeFile(
+      resolve(contents, "Info.plist"),
+      infoPlist(config, profile?.bundleIdentifier, !!config.app.icon || !!profile),
+    );
     await sign(app);
     await checked(runner, ["/usr/bin/codesign", "--verify", "--deep", "--strict", app], root);
     const destination = resolve(parent, config.app.name + ".app");
@@ -434,12 +488,14 @@ export async function releaseApplication(config: ResolvedFIAConfig, update = fal
   return packageDiskImage(config, output.app, { distribution: true });
 }
 export async function runApplication(config: ResolvedFIAConfig) {
-  const built = await buildApplication(config);
+  const built = await buildApplication(config, { preview: true });
+  const profile = localProfile(config, "preview");
   const child = Bun.spawn([built.executable], {
     cwd: config.projectRoot,
     stdin: "ignore",
     stdout: "inherit",
     stderr: "inherit",
+    env: { ...process.env, FIA_DEVELOPMENT: "0", FIA_DATA_DIRECTORY: profile.dataRoot },
   });
   return await child.exited;
 }

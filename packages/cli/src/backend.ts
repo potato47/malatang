@@ -29,6 +29,8 @@ export type BackendServer<WebSocketData = unknown> = Bun.Server<WebSocketData>;
 
 export interface AppContext {
   readonly name: string;
+  /** Older runtimes may omit this field. */
+  readonly mode?: "development" | "preview" | "production";
   readonly identifier: string;
   readonly dataDirectory: string;
   /** Read-only code and configured business assets; never store user data here. */
@@ -156,7 +158,11 @@ export interface InitializeFrame {
   readonly developmentOrigin?: string;
   readonly version: string;
   readonly build: number;
-  readonly app: { readonly name: string; readonly identifier: string };
+  readonly app: {
+    readonly name: string;
+    readonly identifier: string;
+    readonly mode?: AppContext["mode"];
+  };
 }
 
 interface Pending {
@@ -444,6 +450,7 @@ export async function runBackend<Data, Paths extends string>(
   });
   const app = {
     ...initialize.app,
+    mode: initialize.app.mode ?? (initialize.development ? "development" : "production"),
     dataDirectory: initialize.applicationSupport,
     codeDirectory: initialize.development
       ? process.cwd()

@@ -15,9 +15,9 @@ There is one project template. `create` accepts `--yes`, `--git/--no-git`, `--in
 
 | Command                               | Purpose                                                    |
 | ------------------------------------- | ---------------------------------------------------------- |
-| `agent <args>`                        | Invoke this project’s running development application      |
+| `agent [--preview] <args>`            | Invoke this project’s development or preview application   |
 | `dev [--open-browser]`                | Native window, Vite HMR and supervised Bun restart         |
-| `run`                                 | Build and launch a production layout                       |
+| `run`                                 | Build and launch an isolated Preview app without HMR       |
 | `build`                               | Assemble and sign a local `.app` without Swift compilation |
 | `build --dmg`                         | Create and mount-check a local test DMG                    |
 | `release`                             | Developer ID signing, notarization, stapling and DMG       |
@@ -30,6 +30,10 @@ There is one project template. `create` accepts `--yes`, `--git/--no-git`, `--in
 | `update keygen --output <directory>`  | Generate an Ed25519 release key pair                       |
 
 `icon` accepts `--background`, `--foreground`, `--output`, and `--force` for exported files. In a project it writes the configured app icon, or `assets/icon.icns`; the standard path is discovered automatically. It does not rewrite executable TypeScript configuration. Keep private update keys outside the repository.
+
+`dev` produces `.fia/dev/<name> Dev.app` with a yellow DEV badge and a `.dev` macOS bundle ID. `run` produces `.fia/preview/<name> Preview.app` with a blue PREV badge and a `.preview` bundle ID. Menu bar labels distinguish both. Local modes disable release updates; `build` and `release` retain the configured production identity.
+
+Development keeps its existing `.fia/dev/data/<identifier>` storage; Preview uses `.fia/preview/data/<identifier>`. The local bundle embeds its data root, including when opened directly; an explicit `FIA_DATA_DIRECTORY` still overrides it. Local bundles are project artifacts, not portable distributions. Production bundles use Application Support by default. The logical `app.identifier` and Keychain service stay stable, so applications should scope Keychain keys by `app.dataDirectory`. `app.mode` exposes development/preview/production for UI labels. Installed local CLI/skill names use `-dev` or `-preview`; `fia agent --preview quit` exits Preview.
 
 ## Configuration
 

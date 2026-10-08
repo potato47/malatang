@@ -15,6 +15,8 @@ bun run dev
 
 应用开发不需要 Swift 编译器或 Xcode 工程。`fia dev` 自动启动窗口、Bun 和 Vite；前端使用 HMR，后端变更执行受控进程重启。`fia dev --open-browser` 可打开普通浏览器调试；使用 `fia agent open --browser --url` 获取新的单次认证链接。
 
+本地开发显示 `<name> Dev`、黄色 `DEV` Dock 标记及菜单栏标记，macOS Bundle ID 追加 `.dev`。`fia run` 提供不带 HMR 的隔离打包预览：`<name> Preview`、蓝色 `PREV` 标记及 `.preview` Bundle ID。开发数据保留在 `.fia/dev/data`，预览数据在 `.fia/preview/data`，可与正式安装版同时运行；直接打开预览包也保留隔离。`fia agent --preview` 控制预览版。两种本地模式都禁用正式更新源，具体身份、凭据兼容及数据边界见[框架契约](docs/framework/README.md#本地开发与打包预览)。
+
 项目入口：
 
 - `fia.config.ts`：应用信息、系统权限说明、签名和更新设置。

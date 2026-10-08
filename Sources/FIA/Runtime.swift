@@ -52,12 +52,7 @@ public final class FIARuntime {
   ) throws {
     self.manifest = manifest
     self.bundle = bundle
-    let support =
-      try supportDirectory ?? ProcessInfo.processInfo.environment["FIA_DATA_DIRECTORY"].map {
-        URL(fileURLWithPath: $0)
-      }
-      ?? FileManager.default.url(
-        for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+    let support = try supportDirectory ?? manifest.supportRoot()
     self.supportDirectory = support
     let appSupport = support.appending(path: manifest.app.identifier, directoryHint: .isDirectory)
     guard let resourcesURL = bundle.resourceURL else {
@@ -76,7 +71,7 @@ public final class FIARuntime {
     resources = try ResourceStore()
     keychain = KeychainService(service: manifest.app.identifier)
     updater = CodeUpdateManager(
-      config: development ? nil : manifest.updates, store: store, network: updateNetwork)
+      config: development || manifest.localProfile != nil ? nil : manifest.updates, store: store, network: updateNetwork)
     native.setPermissions(
       Dictionary(
         uniqueKeysWithValues: [
@@ -144,7 +139,8 @@ public final class FIARuntime {
       sessionSecret: session, bundlePath: bundle.bundleURL.resolvingSymlinksInPath().path, runtimeId: manifest.runtimeId, agentCommand: manifest.agent?.command, updating: trial, webRoot: activeDirectory.appending(path: "web").path,
       resourceDirectory: resources.directory.path,
       developmentOrigin: developmentOrigin?.absoluteString, version: activeRelease.version,
-      build: activeRelease.build, preferredPort: port, automaticallyRestart: !trial)
+      build: activeRelease.build, preferredPort: port, automaticallyRestart: !trial,
+      applicationMode: manifest.localProfile?.mode ?? (development ? "development" : "production"))
     do {
       let backend = try BackendSupervisor(
         configuration: configuration, applicationSupportDirectory: supportDirectory
@@ -606,6 +602,11 @@ private struct Capabilities: Encodable, Sendable {
   let capabilities: [String: Bool]
 }
 struct RuntimeManifest: Codable, Sendable {
+  struct LocalProfile: Codable, Sendable {
+    let mode: String
+    let dataRoot: String
+    let label: String
+  }
   struct App: Codable, Sendable {
     let name: String
     let identifier: String
@@ -625,6 +626,13 @@ struct RuntimeManifest: Codable, Sendable {
   var agent: AgentConfiguration? = nil
   let statusItem: StatusItem?
   let updates: UpdateConfiguration?
+  var localProfile: LocalProfile? = nil
+  func supportRoot(environment: [String: String] = ProcessInfo.processInfo.environment) throws -> URL {
+    if let path = environment["FIA_DATA_DIRECTORY"] ?? localProfile?.dataRoot {
+      return URL(fileURLWithPath: path, isDirectory: true)
+    }
+    return try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+  }
   static func load() throws -> RuntimeManifest {
     guard let path = Bundle.main.resourceURL?.appending(path: "fia.runtime.json") else {
       throw UpdateError("FIA must run from an application bundle")

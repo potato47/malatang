@@ -20,6 +20,10 @@ public enum FIAApplication {
                 try renderIcon(arguments: [CommandLine.arguments[0]] + Array(CommandLine.arguments.dropFirst(2)))
                 return
             }
+            if CommandLine.arguments.dropFirst().first == "icon-badge" {
+                try renderBadgedIcon(arguments: Array(CommandLine.arguments.dropFirst(2)))
+                return
+            }
             let manifest = try RuntimeManifest.load()
             let runtime = try FIARuntime(manifest: manifest)
             let application = NSApplication.shared
@@ -150,8 +154,14 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: configuration.symbol, accessibilityDescription: configuration.tooltip)
         item.button?.toolTip = configuration.tooltip
+        if let profile = manifest.localProfile {
+            item.button?.title = " " + profile.label
+            item.button?.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
+            item.button?.toolTip = manifest.app.name + " — " + (configuration.tooltip ?? manifest.app.name)
+        }
         let menu = NSMenu()
         let show = NSMenuItem(title: "Show", action: #selector(showMainWindow), keyEquivalent: "")
+        if manifest.localProfile != nil { show.title = "Show " + manifest.app.name }
         show.target = self
         menu.addItem(show)
         let install = NSMenuItem(title: "Install Command Line Tool…", action: #selector(installCLI), keyEquivalent: "")

@@ -22,18 +22,21 @@ public struct FIABunConfiguration: Sendable {
     public let build: Int
     public let preferredPort: Int
     public let automaticallyRestart: Bool
+    public let applicationMode: String
 
     public init(development: Bool, appName: String, appIdentifier: String, executable: String,
                 arguments: [String] = [], sha256: String, sessionSecret: String,
                 bundlePath: String? = nil, runtimeId: String? = nil, agentCommand: String? = nil, updating: Bool = false,
                 webRoot: String, resourceDirectory: String, developmentOrigin: String? = nil,
-                version: String, build: Int, preferredPort: Int = 0, automaticallyRestart: Bool = true) {
+                version: String, build: Int, preferredPort: Int = 0, automaticallyRestart: Bool = true,
+                applicationMode: String = "production") {
         self.development = development; self.appName = appName; self.appIdentifier = appIdentifier
         self.executable = executable; self.arguments = arguments; self.sha256 = sha256
         self.bundlePath = bundlePath; self.runtimeId = runtimeId; self.agentCommand = agentCommand; self.updating = updating
         self.sessionSecret = sessionSecret; self.webRoot = webRoot; self.resourceDirectory = resourceDirectory
         self.developmentOrigin = developmentOrigin; self.version = version; self.build = build
         self.preferredPort = preferredPort; self.automaticallyRestart = automaticallyRestart
+        self.applicationMode = applicationMode
     }
 }
 
@@ -217,7 +220,7 @@ public final class BackendSupervisor {
                 "resourceDirectory": configuration.resourceDirectory,
                 "developmentOrigin": configuration.developmentOrigin as Any? ?? NSNull(),
                 "version": configuration.version, "build": configuration.build,
-                "app": ["name": configuration.appName, "identifier": configuration.appIdentifier],
+                "app": ["name": configuration.appName, "identifier": configuration.appIdentifier, "mode": configuration.applicationMode],
             ])
             diagnostic("sent Backend initialize frame")
         } catch {

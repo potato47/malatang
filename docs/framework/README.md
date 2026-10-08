@@ -34,6 +34,18 @@ exec 支持 --file FILE、-e CODE 或 stdin，注入 app SDK 和 help。独立 B
 
 ## TypeScript 配置与窗口
 
+### 本地开发与打包预览
+
+`fia dev` 生成 `.fia/dev/<name> Dev.app`，使用 macOS Bundle ID `<identifier>.dev`、黄色 `DEV` Dock 标记和菜单栏文字。`fia run` 现在生成并运行 `.fia/preview/<name> Preview.app`，使用 `<identifier>.preview`、蓝色 `PREV` 标记；它运行打包后的代码，不使用 Vite/HMR。二者均禁用正式更新源。`fia build` / `release` 仍生成正式身份的产物。
+
+开发数据保留在 `<project>/.fia/dev/data/<identifier>/Backend`；预览数据位于 `<project>/.fia/preview/data/<identifier>/Backend`。路径固化在本地 bundle 中，直接打开预览包也使用隔离数据；显式 `FIA_DATA_DIRECTORY` 仍可覆盖根目录。预览数据跨重启保留。不要将本地 bundle 当作可搬运的发行包。
+
+OS Bundle ID 与逻辑应用 identifier 分开：`context.app.identifier`、已有开发数据路径和 Keychain service 继续使用原 identifier，不复制、删除或重命名已有数据。Keychain key 不会自动按环境隔离，应用应按 `context.app.dataDirectory` 派生 key；已有按路径隔离的凭据无需迁移。`context.app.mode` 为 `development` / `preview` / `production`（旧运行时可能缺省），可用于窗口标题等应用展示。
+
+`fia agent` 指向开发版；`fia agent --preview` 指向预览版，并可在已构建后冷启动预览。显式安装的 CLI/skill 名称分别追加 `-dev`、`-preview`，避免覆盖正式入口。此前开发版安装的旧命令需要按原入口卸载后重新安装，不自动修改全局命令。使用 `fia stop` 停止开发会话，`fia agent --preview quit` 退出预览。
+
+正式 `dist/<name>.app` 默认仍使用 `~/Library/Application Support/<identifier>`；即使产物位于另一个目录，也不会隔离正式数据。同一数据根目录与 identifier 只允许一个实例运行。开发、预览和正式三种数据目录可同时运行；本地行为调试优先使用 `dev` / `run`。
+
 `agent.command` 和 `agent.description` 为必填；`api.entry` 默认 `shared/api.ts`，`agent.instructions` 为可选业务说明 Markdown。
 
 `defineConfig` 从 `@semicoder/fia/config` 导入。`app` 包含 name、identifier、version、递增 build 和可选 icon。后端默认入口 `backend/index.ts`；前端默认 root=`frontend`、dist=`frontend/dist`。系统权限说明直接使用 Info.plist 的 `NS…UsageDescription` 键。可选 `statusItem` 配置菜单栏图标；这不会改变应用模式。
