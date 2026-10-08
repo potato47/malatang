@@ -96,6 +96,8 @@ export default definePlugin({
 
 Menu/Popover/Dialog 支持 open/onOpenChange。宿主的 UIProvider 为每个页面建立可见性和 portal 作用域；嵌套作用域继承父页面隐藏状态。隐藏时关闭弹层，重新显示不会自行重开；卸载时移除 portal 与事件资源。插件无需自行添加 document 监听、焦点陷阱或 document.body 弹层。
 
+本地未发布修复：Popover 新增 side（top/right/bottom/left）、align（start/center/end）、sideOffset 和 collisionPadding。默认保持 bottom/center、6px 触发器间距，并为视口边缘保留 12px 碰撞留白；侧栏主题菜单使用 right/end、14px 触发器间距。Select 的焦点提示改为贴合边框的 1px 细线，保留键盘可见焦点。新定位参数需更新后的宿主与 SDK，正式 0.2.0 尚不支持。
+
 公共颜色见 `src/theme.css`：`--m-bg`、`--m-surface`、`--m-text`、`--m-muted`、`--m-accent`、`--m-line`，以及 success/warning/error 的正文、背景和边框。几何 token 包括 `--m-space-1/2/3/4/6/8`、`--m-control-sm/md`、`--m-radius-sm/--m-radius/--m-radius-lg`、`--m-font/--m-font-size/--m-line-height`、`--m-shadow-popup`、`--m-motion`。宿主根元素管理 light/dark/system；插件不设置 data-theme。
 
 业务样式放 `src/*.module.css`，通过导入的 class 映射使用。不得引用 `.m-*` 或宿主页面私有类，不引入 theme.css/ui.css，不写全局 reset、:root/:global/html/body 或重定义 `--m-*`。颜色默认使用语义 token；品牌图形/数据颜色可在 package.json 顶层 `malatangStyleExceptions` 声明文件路径及理由，其他约束不能豁免。宿主 check、插件 check/build/pack 都执行样式检查。CSS Modules 是一致性约束，不是安全沙箱。

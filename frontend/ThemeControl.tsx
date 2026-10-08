@@ -18,7 +18,7 @@ export default function ThemeControl() {
   const { theme, ready, pending, error, choose } = useTheme();
   const [open, setOpen] = useState(false);
   const label = options.find(option => option.value === theme)!.label;
-  return <Popover open={open} onOpenChange={setOpen} trigger={<ActivityButton className={`activity-button ${open ? "active" : ""}`} label={`切换主题：${label}`} tooltipDisabled><ThemeIcon mode={theme} /></ActivityButton>}>
+  return <Popover open={open} onOpenChange={setOpen} side="right" align="end" sideOffset={14} trigger={<ActivityButton className={`activity-button ${open ? "active" : ""}`} label={`切换主题：${label}`} tooltipDisabled><ThemeIcon mode={theme} /></ActivityButton>}>
     <div className="theme-popover"><Field label="外观主题"><Select value={theme} disabled={!ready || pending} onChange={event => void choose(event.target.value as ThemeMode)}>{options.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</Select></Field>{pending && <p role="status">正在保存…</p>}{error && <Alert>{error}</Alert>}</div>
   </Popover>;
 }
