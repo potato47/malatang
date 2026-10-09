@@ -4,7 +4,9 @@
 
 自动更新地址继续固定为 `https://nobug.space/malatang/updates/latest.json`，更新数据不随官网迁移。发布脚本仅将该站点首页跳转至 Semicoder，保留 `updates/` 下的清单和不可变历史文件。应用支持 macOS 14+ / Apple Silicon；正式包安装时打开 DMG，将 `Malatang.app` 拖到 Applications 后启动，无需另外安装 Bun。
 
-2026-10-09 已发布 [v0.3.0 / build 3](https://github.com/potato47/malatang/releases/tag/v0.3.0)，标签固定于 `7c0f237986728d13063fd25e38e0a826738af213`。[主干 CI](https://github.com/potato47/malatang/actions/runs/37868718881) 与 [正式发布工作流](https://github.com/potato47/malatang/actions/runs/37868966391) 全部成功。
+2026-10-09 本次准备 **v0.4.0 / build 4**：接入 FIA 0.18.0 标题栏置顶按钮，固定归档直接来自 FIA 官方 v0.18.0 Release；本机 check / 69 测试 / build 与真实预览置顶、取消置顶通过。SDK 保持 0.2.1。新 Host 需要完整 DMG，账号、模型、KV 和历史保留；GitHub 正式签名公证、公开附件与更新源结果发布后补充。
+
+2026-10-09 此前已发布 [v0.3.0 / build 3](https://github.com/potato47/malatang/releases/tag/v0.3.0)，标签固定于 `7c0f237986728d13063fd25e38e0a826738af213`。[主干 CI](https://github.com/potato47/malatang/actions/runs/37868718881) 与 [正式发布工作流](https://github.com/potato47/malatang/actions/runs/37868966391) 全部成功。
 
 五项附件经匿名下载与 GitHub digest 核对；`Malatang-0.3.0-3-mac-arm64.dmg` 为 30,516,155 字节，SHA-256 `8784f623d3a97fbf2f7acc7f2e00fa098154f939209aca5503b33d35fc589145`。独立 hdiutil / stapler / Gatekeeper / codesign 与只读挂载应用、签名更新逐文件比对通过；公网清单 Ed25519 签名与全部 33 个在线文件的大小 / SHA-256 通过。runtimeId 为 `2f469910b09105865dc6df75930f16b39c8fa707ebddc31ef8a35844a259f22d`。
 
@@ -64,7 +66,9 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 ## 固定 FIA 包
 
-CI 从本仓库专用 Release 下载已验证的 FIA 框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
+0.4.0 / build 4 使用 FIA 官方 [v0.18.0](https://github.com/potato47/fia/releases/tag/v0.18.0)，归档来自正式 GitHub Actions 的同一 npm artifact，SHA-256 `faf196b9408cc2fa4b9edfb0145c592a9a87b6fbc0b0245ad6b89c6c0e7ff4e2`，源码 `85206f6f532242fb2dfcfdf2a4b608f131726bf5`。无需复制为麻辣烫的新框架预发布；旧 `fia-runtime-*` 保留供历史版本重现。官方 npm 公开消费与应用正式发行结果分别验收。
+
+CI 从 `release/runtime-lock.json` 指定的公开 Release 下载已验证的 FIA 框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
 
 0.2.0 所用归档来自 FIA dd430c851192，包含应用子命令和启动等待修复；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传至 [fia-runtime-dd430c851192](https://github.com/potato47/malatang/releases/tag/fia-runtime-dd430c851192)，不要重复创建该标签或覆盖附件。更换框架时，使用新的源码提交、归档和专用标签，以预发布且非 latest 的 Release 保存，并在说明中记录 SHA-256。
 
