@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { buildPlugin } from "./build";
 import { manifestSchema } from "./src/manifest";
 import { checkStyles, safeFile } from "./src/style-check";
+import sdkPackage from "./package.json";
 const help = `malatang plugin <create|check|build|pack> [directory] [--json]
   create <directory> [--template notes|model] [--id ID] [--name NAME]
     创建独立项目，默认 notes；不安装依赖或插件，不初始化 Git。
@@ -112,7 +113,7 @@ export async function createPlugin(directory: string, options: { template?: stri
     if (existing) await import("node:fs/promises").then(fs => fs.rmdir(root));
     await rename(temporary, root);
   } finally { await rm(temporary, { recursive: true, force: true }); }
-  return { directory: root, template, id, next: "bun install --ignore-scripts", sdkVersion: "0.2.0" };
+  return { directory: root, template, id, next: "bun install --ignore-scripts", sdkVersion: sdkPackage.version };
 }
 export async function runPluginTool(args: string[], options: { cwd?: string; sdkArchive?: string; templatesDirectory?: string } = {}) {
   const json = args.includes("--json");

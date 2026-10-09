@@ -28,13 +28,22 @@ bun install --ignore-scripts
 bun run dev
 ```
 
-本地 FIA 包由 Bun 安装到依赖目录，不是实时源码链接。修改 FIA 后先重新构建 runtime / CLI，再在麻辣烫运行 `bun install --force --ignore-scripts` 刷新依赖，最后重建应用。
+本地 FIA 包由 Bun 安装到依赖目录，不是实时源码链接。修改 FIA 后先重新构建 runtime / CLI，再在麻辣烫运行 `bun install --force --ignore-scripts` 刷新依赖，最后重建应用或重启开发进程。新 FIA Vite 插件按 SDK 文件内容更新缓存指纹，避免同版本本地包更新后继续加载旧客户端；重启后浏览器需从标题栏重新授权。
 
-会启动 FIA 桌面应用。在开发实例已运行时，获取一次性浏览器链接：
+会启动 FIA 桌面应用。从 0.3.0 开始，默认通过标题栏最右侧“在浏览器中打开”进入完整界面；开发、预览和正式构建均由 FIA 提供入口，无需第二个服务或插件 SDK 改动。
 
 ```sh
-bun run agent open --browser --url
+bun run agent open --browser
+bun run agent --preview open --browser
+# 自动化需要链接时显式使用 --url（60 秒、一次有效）
+bun run agent --preview open --browser --url
 ```
+
+浏览器与原生窗口共享模型、插件、KV、主题和持久数据，不复制未保存草稿。刷新保留当前标签页授权，后端重启 / 更新后需重新从标题栏进入；应用菜单和托盘菜单的“断开浏览器连接”立即撤销全部浏览器会话。授权失效显示 FIA 提示并停止重连。普通 IP + 端口无法直接调用受保护 API。
+
+浏览器可使用文件选择、剪贴板、窗口操作和更新界面；框架禁止直接调用钥匙串、CLI 管理、退出、屏幕捕获等高权限 Native 方法。模型凭证仍由后端管理，业务 API 和可信插件边界不变。
+
+**升级要求：** 0.3.0 使用 FIA 0.17.0 的新原生运行时；从 0.2.0 或更早版本升级须下载完整 DMG，不能仅安装代码更新。账号、模型配置、KV 和运行历史保留。
 
 使用当前 workspace FIA 构建包时，`bun run dev` 显示 `Malatang Dev` /「麻辣烫 · 开发版」，Dock 带黄色 `DEV` 标记，菜单栏也显示 `DEV`；macOS Bundle ID 为 `com.semicoder.malatang.dev`。现有 `.fia/dev/data/com.semicoder.malatang` 数据与按路径区分的 Keychain 登录项继续使用，无需搬迁。
 
@@ -42,7 +51,7 @@ bun run agent open --browser --url
 
 `bun run build` 仍生成正式身份的 `dist/Malatang.app`，默认与已安装官网版共用正式数据目录，同目录只允许一个实例。日常测试使用上述 dev / run；不要用正式构建路径判断数据已隔离。开发后端资源根目录是项目目录；预览/正式打包后是随应用分发的 backend 目录。
 
-以上开发标记和隔离 run 尚未发布，依赖本轮新的 FIA 构建包。`release/runtime-lock.json` 保留已公开固定归档，该旧归档不含这些能力，旧 `run` 仍访问正式数据。发布前需生成、验收并公开新的固定 runtime，再更新 lock 与官网来源。
+以上开发标记和隔离 run 从 0.3.0 / FIA 0.17.0 开始提供；旧 0.2.0 固定快照中的 `run` 仍访问正式数据。源码构建必须使用同一提交的 `release/runtime-lock.json`。
 
 ## 先体验
 

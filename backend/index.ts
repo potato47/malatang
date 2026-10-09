@@ -71,6 +71,7 @@ export default defineBackend({
     const mode = "mode" in app ? app.mode : undefined;
     const title = mode === "development" ? "麻辣烫 · 开发版" : mode === "preview" ? "麻辣烫 · 预览版" : "麻辣烫";
     await native.windows.update({ id: "main", title, width: 1200, height: 800 });
+    // FIA preserves its rightmost browser button when application items are empty.
     await native.windows.setTitlebar({ id: "main", items: [] });
   },
   beforeUpdate: () => ({ ready: !models.busy() && !plugins.busy() && !chatgpt.busy(), reason: "模型、插件或登录任务正在运行" }),

@@ -1,9 +1,9 @@
 {
   "repository": "potato47/malatang",
-  "tag": "fia-runtime-dd430c851192",
-  "asset": "semicoder-fia-0.16.1.tgz",
-  "sha256": "368e6ac1316bb130360817943788129bf544adc3f163aa614ac1a8d043e2184a",
-  "version": "0.16.1",
+  "tag": "fia-runtime-4689c707913c",
+  "asset": "semicoder-fia-0.17.0.tgz",
+  "sha256": "521a07c387efa5b2c7ddbb76807b5c613b5b26cdf6e9c84fb965d27a5dd536b6",
+  "version": "0.17.0",
   "source": "https://github.com/potato47/fia",
-  "commit": "dd430c851192b2e32116d50973e452a6ff2f1b72"
+  "commit": "4689c707913ca31f93b03cfe4deb61466c9e69f2"
 }

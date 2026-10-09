@@ -1,6 +1,6 @@
 # @semicoder/malatang-sdk · 0.2
 
-SDK 0.2 是破坏性更新（包版本 0.2.0、manifest sdkVersion 0.2），需要麻辣烫 0.2.0 宿主；v0.1.0 不支持。包名为 `@semicoder/malatang-sdk`，由应用 CLI 内置归档提供，npm 发布状态独立核验，模板不依赖 registry 可安装性。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。包内为 TypeScript / TSX 源码，使用 Bun 1.4.2 及以上构建插件，React 19 与 ReactDOM 19 为 peer dependency，开发依赖须精确同版本。发布流程见 [SDK npm 发布说明](https://github.com/potato47/malatang/blob/main/docs/npm-release.md)。
+当前包版本为 0.2.1，随麻辣烫 0.3.0 提供，manifest sdkVersion 保持 0.2。SDK 0.2 相对于 0.1 是破坏性更新，基础能力需要麻辣烫 0.2.0 及以上宿主；v0.1.0 不支持。包名为 `@semicoder/malatang-sdk`，由应用 CLI 内置归档提供，npm 发布状态独立核验，模板不依赖 registry 可安装性。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。包内为 TypeScript / TSX 源码，使用 Bun 1.4.2 及以上构建插件，React 19 与 ReactDOM 19 为 peer dependency，开发依赖须精确同版本。发布流程见 [SDK npm 发布说明](https://github.com/potato47/malatang/blob/main/docs/npm-release.md)。
 
 [麻辣烫官网](https://semicoder.dev/malatang) · [插件开发指南](https://semicoder.dev/malatang/docs/plugin-development) · [下载与安装](https://semicoder.dev/malatang/docs/installation)
 
@@ -96,7 +96,7 @@ export default definePlugin({
 
 Menu/Popover/Dialog 支持 open/onOpenChange。宿主的 UIProvider 为每个页面建立可见性和 portal 作用域；嵌套作用域继承父页面隐藏状态。隐藏时关闭弹层，重新显示不会自行重开；卸载时移除 portal 与事件资源。插件无需自行添加 document 监听、焦点陷阱或 document.body 弹层。
 
-本地未发布修复：Popover 新增 side（top/right/bottom/left）、align（start/center/end）、sideOffset 和 collisionPadding。默认保持 bottom/center、6px 触发器间距，并为视口边缘保留 12px 碰撞留白；侧栏主题菜单使用 right/end、14px 触发器间距。Select 的焦点提示改为贴合边框的 1px 细线，保留键盘可见焦点。新定位参数需更新后的宿主与 SDK，正式 0.2.0 尚不支持。
+SDK 0.2.1 / 麻辣烫 0.3.0：Popover 新增 side（top/right/bottom/left）、align（start/center/end）、sideOffset 和 collisionPadding。默认保持 bottom/center、6px 触发器间距，并为视口边缘保留 12px 碰撞留白；侧栏主题菜单使用 right/end、14px 触发器间距。Select 的焦点提示改为贴合边框的 1px 细线，保留键盘可见焦点。新定位参数需要 SDK 0.2.1 和麻辣烫 0.3.0 及以上版本；0.2.0 宿主不支持。
 
 公共颜色见 `src/theme.css`：`--m-bg`、`--m-surface`、`--m-text`、`--m-muted`、`--m-accent`、`--m-line`，以及 success/warning/error 的正文、背景和边框。几何 token 包括 `--m-space-1/2/3/4/6/8`、`--m-control-sm/md`、`--m-radius-sm/--m-radius/--m-radius-lg`、`--m-font/--m-font-size/--m-line-height`、`--m-shadow-popup`、`--m-motion`。宿主根元素管理 light/dark/system；插件不设置 data-theme。
 
@@ -104,7 +104,7 @@ Menu/Popover/Dialog 支持 open/onOpenChange。宿主的 UIProvider 为每个页
 
 CSS 中的相对 url 由 Bun 处理；JS 图片导入后用 `new URL(asset, import.meta.url).href`。构建自动输出 CSS 与资源，安装包需保留完整 dist。小型 CSS 图片可能被 Bun 内联。manifest stylesheet 只在页面可见时启用，卸载时移除。
 
-## 插件开发 CLI（未发布）
+## 插件开发 CLI
 
 应用自带已校验的 SDK 快照。创建项目复制到 `vendor/malatang-sdk.tgz`，以相对 `file:` 依赖消费，项目可移到 workspace 外；不依赖公开 npm SDK。
 

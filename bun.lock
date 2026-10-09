@@ -30,7 +30,7 @@
     },
     "packages/sdk": {
       "name": "@semicoder/malatang-sdk",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "postcss": "^8.5.28",
         "postcss-selector-parser": "^7.1.6",

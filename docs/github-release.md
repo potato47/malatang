@@ -54,7 +54,7 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 ## 固定 FIA 包
 
-当前 workspace 依赖包含尚未发布到 npm 的 FIA 修复。因此 CI 从本仓库专用 Release 下载已验证的框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
+CI 从本仓库专用 Release 下载已验证的 FIA 框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
 
 0.2.0 所用归档来自 FIA dd430c851192，包含应用子命令和启动等待修复；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传至 [fia-runtime-dd430c851192](https://github.com/potato47/malatang/releases/tag/fia-runtime-dd430c851192)，不要重复创建该标签或覆盖附件。更换框架时，使用新的源码提交、归档和专用标签，以预发布且非 latest 的 Release 保存，并在说明中记录 SHA-256。
 
@@ -62,17 +62,17 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 ## 发布版本
 
-`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前已发布版本为 `v0.2.0` / build 2；下一版本准备示例，在应用仓库执行：
+`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前准备版本为 `v0.3.0` / build 3，发布状态以实际 Release 为准；下一版本准备示例，在应用仓库执行：
 
 ```sh
-bun run version:app 0.2.1
+bun run version:app 0.3.1
 bun run check
 bun test tests
 bun run build
 # 审阅并提交版本和代码，将版本提交合入 main 后：
 git push origin main
-git tag -a v0.2.1 -m 'Malatang 0.2.1'
-git push origin v0.2.1
+git tag -a v0.3.1 -m 'Malatang 0.3.1'
+git push origin v0.3.1
 ```
 
 `version:app` 同时递增 build；推送标签前复核 `release` / `github-pages` 环境允许该精确标签。只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。`release/notes/<version>.md` 会追加到对应正式 Release 说明，用于记录用户可见变化和迁移步骤。应用版本不等于 SDK 或插件版本，不自动修改后者。
@@ -98,3 +98,9 @@ FIA 的 `runtimeId` 包含 `updates.downloadURL`，因此此次入口修改会�
 - 本地可用 `bun scripts/release/verify.ts dist/updates dist/Malatang.app` 验证更新签名、每个文件及安装包一致性；首发公网清单与文件已独立验收，跨版本客户端升级尚未实测，网站部署另行核实。
 
 依据：[GitHub Pages 工作流](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)、[GitHub macOS 签名证书](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)、[FIA 构建与代码更新](../node_modules/@semicoder/fia/docs/framework/README.md)。
+
+## 0.3.0 浏览器界面与运行时
+
+0.3.0 / build 3 接入 FIA 0.17.0 默认浏览器入口、独立会话与原生权限白名单，以及文件对话框连接与等待修复。`release/runtime-lock.json` 已切换到公开 [fia-runtime-4689c707913c](https://github.com/potato47/malatang/releases/tag/fia-runtime-4689c707913c)，源码提交 `4689c707913ca31f93b03cfe4deb61466c9e69f2`，归档 SHA-256 `521a07c387efa5b2c7ddbb76807b5c613b5b26cdf6e9c84fb965d27a5dd536b6`；已匿名下载并与验收包逐字节核对。旧归档保留。
+
+本次发布授权下，`github-pages` 仅新增精确 `v0.3.0` 标签许可，其他保护保持不变。Host 标题栏与菜单变化需要完整 DMG，从 0.2.0 或更早版本升级不能只安装代码更新。SDK 为 0.2.1，manifest 兼容版本仍为 0.2；SDK 与应用发行分别验收。浏览器文件选择在白名单内，不开放钥匙串、屏幕捕获或其他被拒绝的 Native 能力。
