@@ -4,7 +4,11 @@
 
 自动更新地址继续固定为 `https://nobug.space/malatang/updates/latest.json`，更新数据不随官网迁移。发布脚本仅将该站点首页跳转至 Semicoder，保留 `updates/` 下的清单和不可变历史文件。应用支持 macOS 14+ / Apple Silicon；正式包安装时打开 DMG，将 `Malatang.app` 拖到 Applications 后启动，无需另外安装 Bun。
 
-2026-10-09 本次准备 **v0.4.0 / build 4**：接入 FIA 0.18.0 标题栏置顶按钮，固定归档直接来自 FIA 官方 v0.18.0 Release；本机 check / 69 测试 / build 与真实预览置顶、取消置顶通过。SDK 保持 0.2.1。新 Host 需要完整 DMG，账号、模型、KV 和历史保留；GitHub 正式签名公证、公开附件与更新源结果发布后补充。
+2026-10-09 已发布 **[v0.4.0 / build 4](https://github.com/potato47/malatang/releases/tag/v0.4.0)**，源码标签 `620d19a450578ca98c58c3ae1b7e13b524e57368`。[主干 CI 37888908778](https://github.com/potato47/malatang/actions/runs/37888908778) 与 [正式发布 37888912203](https://github.com/potato47/malatang/actions/runs/37888912203) 成功，实际消费 FIA 官方 v0.18.0 归档；本机 check / 69 测试 / build 与原生 Dev / Preview 置顶、取消置顶通过。SDK 保持 0.2.1。`github-pages` 仅增加精确 v0.4.0 tag 规则，其余保护未改动。
+
+五项公开附件匿名下载与 digest 核对通过。DMG 为 30,513,939 字节，SHA-256 `8aca60752d1e25a28e50dbd122b03b505ed40088408d73bab0ab7077617ffef7`；独立 hdiutil / stapler / Gatekeeper DMG 与 app / codesign、安装包与签名更新逐文件比对通过。公网清单与 Release 一致，Ed25519 签名和 33 个在线文件大小 / SHA-256 通过。runtimeId `9cd13e79576bff74bb3ca30f659e0cd1e40a9d407b3b0102dd9f2895ee63dbf4`。
+
+公开 DMG 在临时独立数据目录启动，CLI 确认 0.4.0 / build 4 / FIA 0.18.0 / ready，原生 UI 实际点击置顶与取消置顶反馈通过。未操作用户正式账号或调用模型；旧版需要完整 DMG 升级，账号、模型、KV 和历史保留。跨版本代码热更新未实测。Semicoder 安装入口、介绍与置顶指南同步，官网部署单独记录。
 
 2026-10-09 此前已发布 [v0.3.0 / build 3](https://github.com/potato47/malatang/releases/tag/v0.3.0)，标签固定于 `7c0f237986728d13063fd25e38e0a826738af213`。[主干 CI](https://github.com/potato47/malatang/actions/runs/37868718881) 与 [正式发布工作流](https://github.com/potato47/malatang/actions/runs/37868966391) 全部成功。
 
@@ -70,23 +74,23 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 CI 从 `release/runtime-lock.json` 指定的公开 Release 下载已验证的 FIA 框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
 
-0.2.0 所用归档来自 FIA dd430c851192，包含应用子命令和启动等待修复；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传至 [fia-runtime-dd430c851192](https://github.com/potato47/malatang/releases/tag/fia-runtime-dd430c851192)，不要重复创建该标签或覆盖附件。更换框架时，使用新的源码提交、归档和专用标签，以预发布且非 latest 的 Release 保存，并在说明中记录 SHA-256。
+0.2.0 所用归档来自 FIA dd430c851192，包含应用子命令和启动等待修复；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传至 [fia-runtime-dd430c851192](https://github.com/potato47/malatang/releases/tag/fia-runtime-dd430c851192)，不要重复创建该标签或覆盖附件。这是旧版本的归档保存方式；后续优先锁定 FIA 官方 Release 的已验证归档，记录对应源码与 SHA-256，不重打包或覆盖旧附件。
 
 上传前核对归档 SHA-256。不要重新打包后覆盖同一附件；即使源码没变，打包 / 编译工具链也可能改变二进制哈希。更新 FIA 时发布新的固定归档和 lock（或迁移到包含修复的固定 npm 版本），再发完整安装包。旧归档保留，确保旧标签可重现。
 
 ## 发布版本
 
-`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前已发布版本为 `v0.3.0` / build 3；下一版本准备示例，在应用仓库执行：
+`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前已发布版本为 `v0.4.0` / build 4；下一版本准备示例，在应用仓库执行：
 
 ```sh
-bun run version:app 0.3.1
+bun run version:app 0.4.1
 bun run check
 bun test tests
 bun run build
 # 审阅并提交版本和代码，将版本提交合入 main 后：
 git push origin main
-git tag -a v0.3.1 -m 'Malatang 0.3.1'
-git push origin v0.3.1
+git tag -a v0.4.1 -m 'Malatang 0.4.1'
+git push origin v0.4.1
 ```
 
 `version:app` 同时递增 build；推送标签前复核 `release` / `github-pages` 环境允许该精确标签。只支持稳定版 `x.y.z`；预发布不能进入稳定更新源。`release/notes/<version>.md` 会追加到对应正式 Release 说明，用于记录用户可见变化和迁移步骤。应用版本不等于 SDK 或插件版本，不自动修改后者。
