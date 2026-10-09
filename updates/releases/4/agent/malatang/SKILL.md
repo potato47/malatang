@@ -1,0 +1,65 @@
+---
+name: malatang
+description: "Manage Malatang plugins and models, invoke plugin methods, and follow model runs."
+compatibility: macOS 14+, Apple Silicon; requires the malatang desktop application.
+metadata:
+  version: "0.4.0"
+  build: "4"
+---
+
+# Malatang
+
+Use the installed `malatang` command. The application owns its runtime; no separate Node.js or Bun install is needed.
+
+Run `malatang help` and `malatang schema --json` for the active application's API. If the build differs from this skill, use the live schema. Read [API reference](references/api.md) for details.
+
+Call a method with `malatang call METHOD --json '{...}'`. Subscribe with `malatang events EVENT --jsonl [--count N] [--timeout MS] [--match JSON]`. Match is a JSON object of top-level scalar fields (AND). Reaching count exits 0; timeout exits 124 without an error frame. Events have no replay: establish the subscription before triggering work and read current state again after waiting.
+
+Compose operations in TypeScript:
+
+```sh
+malatang exec <<'TS'
+console.log(help());
+// await app.call("method.name", { ... });
+TS
+```
+
+Scripts receive app.call(), app.on(), app.onReconnect(), and help(). Use console.log for results. Type definitions are in [agent.d.ts](agent.d.ts). Each invocation is independent. Scripts are trusted local code with file and network access, not sandboxed. The default timeout is 60 seconds; --timeout takes milliseconds, with 0 disabling it.
+
+CLI calls start the application in the background when necessary. Use `malatang open` to show the desktop UI. Do not automatically repeat a call after an execution_unknown error: effects may already have occurred. app.on(event, listener, {match}) filters events on the server. Subscription changes reconnect the shared stream and trigger onReconnect. Event reconnection does not replay history; read current state again. Long-lived business jobs must be managed through the application's API.
+
+## Malatang application workflows
+
+This is a trusted local plugin platform. The host owns model configuration and credentials. Plugins consume models and namespaced KV through the SDK. List plugins and their dynamically declared method schemas with plugins.list before invoking an unfamiliar method.
+
+With the local FIA development-identity build (not the published 0.2.0 runtime), `bun run dev` shows Malatang Dev / DEV and `bun run run` shows Malatang Preview / PREV. Use `bun run agent` for development and `bun run agent --preview` for preview. Each uses its own data directory and disables release updates; installed CLI/skill names use `malatang-dev` and `malatang-preview`. The official app remains `malatang`. A plain `dist/Malatang.app` uses production data by default, so use the isolated preview for local checks. Existing development data and path-scoped OAuth keys are retained.
+
+- Read models.list to select a configured real model. The list is empty until models are added; there is no demo model or fallback generation. Legacy run.demo marks old preview history only, and new runs always return false. models.providers lists all bundled Pi presets and their required fields; models.catalog takes providerId and returns that provider's chat models. models.save accepts preset + catalog model ID + options + apiKey; baseURL may be empty to use the model's Pi default, except Azure needs a resource URL. Omit preset (or use null) for custom OpenAI-compatible Chat Completions configuration. On edits, an omitted/empty key is retained only when provider and endpoint are unchanged; clearApiKey removes it. Never print API keys or place them in conversation logs. Model save does not verify connectivity.
+- The Settings panel contains Model services, Appearance and Application updates. Pi presets currently support API keys/tokens only; OAuth-only Codex and non-chat TypeSafe cannot be saved for text generation. Bedrock uses a bearer token + region, Vertex uses a Cloud API key, and Copilot requires a Pi-compatible token. Cloudflare needs accountId (and gatewayId for AI Gateway); Azure optionally accepts deployment and apiVersion. ChatGPT has a separate official subscription connection; other subscription login, AWS Profile/IAM, ADC/service-account flows are not implemented.
+- Bundled Pi catalog upgrades migrate known model-ID renames while retaining host model IDs, credentials and plugin preferences. A saved preset missing from the catalog remains listed with configured:false, even if hasApiKey:true; generation is rejected until the user selects a current model in Settings. Use models.catalog to inspect choices and models.save with the existing host id to repair it. Do not automatically choose another model or provider. Removed configurations and history are never deleted by catalog upgrades.
+- ChatGPT subscription: chatgpt.status returns safe connection summaries. chatgpt.signIn starts official browser OAuth and returns an attempt; omit profileId only to add a new registration, pass an existing profileId to reconnect, and consent:true only when explicitly enabling previously declined plan use. Let the user approve consent in the official browser. Observe chatgpt.changed and reread status; cancel with the attempt id. Tokens and auth URLs must never be printed, copied into conversations or imported from another app. Tokens are in macOS Keychain, isolated by app data directory.
+- For a connected ChatGPT profile with sharing:true, chatgpt.catalog fetches current account models; chatgpt.addModel takes profileId + modelId and adds a stable account-bound host model. Switching the settings account does not change existing model bindings. chatgpt.signOut stops use, attempts remote revocation and clears local tokens while keeping registration; surface its message if revocation could not be confirmed. chatgpt.manageUsage opens the official usage page. No silent fallback to API-key billing. Quota errors pause new calls until the user checks usage and refreshes models. A valid login without plan permission cannot generate.
+- Manage saved accounts with chatgpt.rename({profileId,label}) and chatgpt.remove({profileIds}). Labels are trimmed, nonempty and limited to 100 characters; model account labels follow the profile name without changing account/model identity. status.profiles exposes incomplete (never verified and no tokens) and removalBlockedReason. Cleanup selects only incomplete records with no blocker; signed-out previously verified accounts are not failed registrations. Removal is an atomic local Keychain edit, requires no tokens, bound models, running requests or pending login, and never revokes remote authorization or deletes models/history. Sign out and remove bound models separately before removing a verified registration. UI requires confirmation and retains edits on storage failure. Observe models.changed as well as chatgpt.changed to refresh removal eligibility.
+- Call plugins.invoke for plugin business methods, or models.generate for direct model use. Both return a run promptly. Subscribe to runs.changed before starting, then read runs.get for the authoritative terminal state. runs.list contains truncated summaries. Cancellation uses runs.cancel. Switching pages does not cancel work.
+- Install trusted prebuilt npm / Git / local .tgz packages with plugins.install; installation executes local plugin code after validation. The included archive can be installed with plugins.installExample. Poll plugins.jobs and distinguish saved installation, backend activation and frontend loading.
+- Enable/disable with plugins.setEnabled. Uninstall external plugins with plugins.uninstall; this retains KV and history. Active work blocks disable and removal. Reinstallation is the current upgrade path.
+- plugins.list reports keepAlive (default false): opt-in pages retain unsaved UI state while hidden in the current window. Default pages unmount on navigation. Disabling, uninstalling or replacing a plugin releases its page; reload/restart does not preserve unsaved drafts. None of these navigation policies cancels host model runs. Installed manifests are not automatically upgraded.
+- KV get/set/delete require pluginId. Missing values return null. Each value is limited to 64 KiB.
+- Read appearance.get for the saved application theme. appearance.set accepts {"theme":"system"}, {"theme":"light"} or {"theme":"dark"}; it updates native appearance, persists the preference and emits appearance.changed. UI clients reread appearance.get after changes and reconnection. This changes only Malatang, not the macOS system setting.
+- Application updates use FIA's native update flow. Users can open Settings → 应用更新 or Check for Updates in the native menu. Downloaded updates require confirmation and reload the application; save drafts first. Model, plugin and sign-in tasks block application switching. Updates do not upgrade separately installed plugins. Native runtime changes require a new installer from the download link.
+
+Events have no replay. Read snapshots initially and after reconnecting. After an unknown execution outcome, query jobs/runs/plugins before repeating a mutation. The application uses FIA's existing CLI; do not start another service or add a parallel CLI.
+
+
+## SDK 0.2 插件开发（未发布开发版）
+
+使用 `malatang plugin create <directory> [--template notes|model] [--id ID] [--name NAME]` 创建项目；开发入口为 `bun run agent plugin …`。先查看 `malatang plugin --help`。创建不安装依赖、Git 或插件，不覆盖非空目录。让开发者在项目中运行 `bun install --ignore-scripts`，再使用 check/build/pack；三个命令默认调用者 cwd，也可传路径。所有命令支持 --json，诊断在 stderr。
+
+项目随附 SDK 0.2.0 tgz 与相对 file 依赖。公共 UI 从 SDK 导入，业务用 CSS Modules。pack 重新检查构建并校验完整资源；随后继续调用现有 plugins.install，不新增安装服务。SDK 0.1 插件需迁移重建；切勿清除模型、账号、KV 或历史数据。正式 v0.1.0 和旧 FIA 归档不支持这一开发流程。
+
+
+## Application commands
+
+- `malatang plugin --help`: Create, check, build and pack SDK 0.2 plugins
+
+These commands run in supervised processes, preserve the caller's working directory, and use the active application code. Their own documentation describes any development dependencies.
