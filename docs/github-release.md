@@ -4,6 +4,16 @@
 
 自动更新地址继续固定为 `https://nobug.space/malatang/updates/latest.json`，更新数据不随官网迁移。发布脚本仅将该站点首页跳转至 Semicoder，保留 `updates/` 下的清单和不可变历史文件。应用支持 macOS 14+ / Apple Silicon；正式包安装时打开 DMG，将 `Malatang.app` 拖到 Applications 后启动，无需另外安装 Bun。
 
+2026-10-09 已发布 [v0.3.0 / build 3](https://github.com/potato47/malatang/releases/tag/v0.3.0)，标签固定于 `7c0f237986728d13063fd25e38e0a826738af213`。[主干 CI](https://github.com/potato47/malatang/actions/runs/37868718881) 与 [正式发布工作流](https://github.com/potato47/malatang/actions/runs/37868966391) 全部成功。
+
+五项附件经匿名下载与 GitHub digest 核对；`Malatang-0.3.0-3-mac-arm64.dmg` 为 30,516,155 字节，SHA-256 `8784f623d3a97fbf2f7acc7f2e00fa098154f939209aca5503b33d35fc589145`。独立 hdiutil / stapler / Gatekeeper / codesign 与只读挂载应用、签名更新逐文件比对通过；公网清单 Ed25519 签名与全部 33 个在线文件的大小 / SHA-256 通过。runtimeId 为 `2f469910b09105865dc6df75930f16b39c8fa707ebddc31ef8a35844a259f22d`。
+
+正式 DMG 另在本机临时独立数据目录启动，原生首屏 ready、标题栏入口、CLI 浏览器授权、Chromium 动态插件页面及原生文件面板打开通过；退出时面板请求取消、浏览器显示统一失效提示。文件最终选取与超过 30 秒等待、Safari 和模型流的实测证据来自此前本地同实现验收，本次没有再次操作真实模型或用户数据。
+
+0.3.0 原生 Host 已改变，从 0.2.0 或更早版本升级需完整 DMG；账号、配置、KV 和历史保留，SDK 0.2 插件继续兼容。SDK 0.2.1 已独立发布 npm，见 [SDK 发布说明](npm-release.md)。跨版本代码热更新仍未实测；官网由独立 Semicoder 主干工作流同步。
+
+以下为 0.2.0 历史发行证据，新版本不覆盖旧标签或附件：
+
 2026-10-05 已发布 [v0.2.0 / build 2](https://github.com/potato47/malatang/releases/tag/v0.2.0)，标签固定于 `c82d6adebf0f1dfe81ded21ce15ef4b7c15040be`。[正式发布工作流](https://github.com/potato47/malatang/actions/runs/37289643139) 全部成功，五项附件已匿名下载验证。DMG SHA-256 为 `5d8171ab67748b5203f1abf8a3af9938edf474acf12e4441a3370899d34c03b5`；镜像完整性、公证、Gatekeeper、应用签名及安装包与更新逐文件一致性通过。公网清单 Ed25519 签名与 33 个在线文件的 size / SHA-256 校验通过。
 
 0.2.0 使用新的 FIA runtime ID，0.1.0 用户需完整 DMG 升级；旧 SDK 插件需迁移重建，账号、模型配置、KV 和历史保留。SDK 0.2.0 已独立发布 npm，具体方式与 OIDC 验收边界见 [SDK 发布说明](npm-release.md)。跨版本代码更新仍未实测。以下配置步骤用于环境重建；后续发行必须增加版本和 build，不能重建或移动已发布标签。
@@ -62,7 +72,7 @@ CI 从本仓库专用 Release 下载已验证的 FIA 框架归档，校验 `rele
 
 ## 发布版本
 
-`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前准备版本为 `v0.3.0` / build 3，发布状态以实际 Release 为准；下一版本准备示例，在应用仓库执行：
+`package.json.version` 是版本号，`release/config.json.build` 是严格递增构建号，`fia.config.ts` 引用二者。当前已发布版本为 `v0.3.0` / build 3；下一版本准备示例，在应用仓库执行：
 
 ```sh
 bun run version:app 0.3.1

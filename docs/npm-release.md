@@ -16,19 +16,21 @@ SDK 版本独立于应用版本，当前源码 SDK 为 0.2.1，应用为 0.3.0�
 
 ## 当前发布状态
 
-2026-10-05，`@semicoder/malatang-sdk@0.2.0` 已通过维护者 npm 登录首次正式发布。发布的是 `npm:pack` 验证后的归档；registry latest 为 0.2.0，公开 tarball 与本地逐字节一致，SHA-1 为 `32d14881d97c71ffcef14cd3358305d6b7209bb5`。在 workspace 外通过 registry 安装后，模板 check/build/pack 全部通过。应用标签 `v0.2.0` 固定源码提交 `c82d6adebf0f1dfe81ded21ce15ef4b7c15040be`。
+2026-10-09，`@semicoder/malatang-sdk@0.2.1` 已通过维护者 npm 认证发布；源码为应用发布提交 `7c0f237986728d13063fd25e38e0a826738af213`，registry latest 为 0.2.1。公开 tarball 与 `npm:pack` 验收归档逐字节一致，SHA-256 `711f7f2d39cfd3b51ed937b45cf44b136f2708b54c10de6c8490630edc5ae93f`、SHA-1 `68699515091cd5a97e2ec448d5b98200858acd1b`。在 workspace 外从 registry 安装后，create 返回 SDK 0.2.1，notes 模板 check/build/pack 通过；主干 [CI 37868718881](https://github.com/potato47/malatang/actions/runs/37868718881) 也已验证归档与独立消费。
 
-此次使用本机 npm 认证，未执行远端 OIDC 发布验收；Trusted Publisher 设置仍需后续核对。不再推送 `sdk-v0.2.0` 触发重复发布；未来独立标签必须使用新版本。下面首次配置步骤用于重建发布流程，不应重复发布已有版本。
+新包增加 Popover 定位参数，要求麻辣烫 0.3.0 及以上；manifest 兼容版本保持 0.2，原 0.2 插件继续可用。CLI SDK 版本回执和内置快照检查跟随真实包版本，不再固定为 0.2.0。
+
+本次仍使用本机 npm 认证，未执行远端 OIDC；Trusted Publisher 和 `npm` Environment 后续另行配置验收。不要推送 `sdk-v0.2.1` 触发重复发布，未来独立标签必须使用新版本。旧 0.2.0 于 2026-10-05 首次本机发布，归档不改写。
 
 ## 首次配置
 
 1. 将本次源码和 `.github/workflows/publish-npm.yml` 合入 GitHub 默认分支。工作流名为 **Publish Malatang SDK**，手动运行始终只验收并上传 `.tgz`，不会发布。
 2. 创建 GitHub `npm` Environment；若限制可部署标签，允许 `sdk-v*`。
-3. SDK 尚未发布时，先用有 `@semicoder` 发布权限的 npm 账号完成首次发布。执行下面的本地验收，再发布已经验证的归档；当前版本示例：
+3. SDK 尚未发布时，先用有 `@semicoder` 发布权限的 npm 账号完成首次发布。执行下面的本地验收，再发布已经验证的归档；将 `<version>` 替换为实际尚未发布的版本：
 
    ```sh
    npm login
-   npm publish ./artifacts/npm/semicoder-malatang-sdk-0.2.0.tgz --access public --ignore-scripts --registry=https://registry.npmjs.org
+   npm publish "./artifacts/npm/semicoder-malatang-sdk-<version>.tgz" --access public --ignore-scripts --registry=https://registry.npmjs.org
    ```
 
    首次发布是实际公开操作，只有准备发布时才执行；不能用 empty placeholder 代替 SDK。已发布版本不能覆盖，也不要再推送相同版本标签尝试重复发布。
@@ -68,14 +70,14 @@ bun run npm:pack
 
 ## 后续发布
 
-以下为下一 SDK 版本的操作示例：
+以下为下一 SDK 版本的操作示例（先配置并验证 OIDC）：
 
 ```sh
-bun run version:sdk 0.2.1
+bun run version:sdk 0.2.2
 git diff -- packages/sdk/package.json bun.lock
 # 检查、提交并合入 main 后，在该提交创建标签：
-git tag -a sdk-v0.2.1 -m "Malatang SDK 0.2.1"
-git push origin sdk-v0.2.1
+git tag -a sdk-v0.2.2 -m "Malatang SDK 0.2.2"
+git push origin sdk-v0.2.2
 ```
 
 `version:sdk` 更新 SDK 的 package.json 和 Bun 锁文件，拒绝同版本、降级及非法版本，不改变应用、插件或 manifest 兼容版本，不自动提交或创建标签。跨兼容版本时仍需单独调整宿主的 SDK 兼容契约。
