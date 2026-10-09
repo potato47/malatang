@@ -24,7 +24,7 @@ export interface AgentRecord {
 export async function startAgentServer(
   api: APIServer,
   init: InitializeFrame,
-  issueBrowserURL?: () => string,
+  issueBrowserURL?: () => string | Promise<string>,
 ) {
   const directory = resolve(dirname(init.applicationSupport), "Agent");
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -104,13 +104,10 @@ export async function startAgentServer(
         });
       }
       if (path === "/browser" && request.method === "POST") {
-        if (!init.development || !issueBrowserURL)
-          return apiError(
-            new APIError("forbidden", "Browser access is only available in fia dev"),
-            403,
-          );
+        if (!issueBrowserURL)
+          return apiError(new APIError("forbidden", "Browser access is not available"), 403);
         try {
-          return Response.json({ result: { url: issueBrowserURL() } });
+          return Response.json({ result: { url: await issueBrowserURL() } });
         } catch (error) {
           return apiError(error);
         }

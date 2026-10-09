@@ -100,7 +100,9 @@ See [FIA 4 migration](docs/framework/migration-v4.md) and [framework contract](d
 
 ## Browser debugging and event waits
 
-`fia dev` prints a one-use browser URL that expires after 60 seconds. Use `fia dev --open-browser` to open it automatically, or `fia agent open --browser --url` to get a new URL for browser automation. Omit `--url` to open it in the default browser. Obtain a new URL after a backend restart; the bare Vite URL does not establish authentication. Browser debugging connects to the running native host, and is unavailable in production.
+The local source provides full browser UI in development, preview and production. Every native web window includes an Open in Browser icon at the far right; `setTitlebar([])` preserves it. Use `fia dev --open-browser`, `fia agent [--preview] open --browser`, or the packaged application's `open --browser`. Only explicit `--url` prints a one-use, 60-second authorization link. Browser tabs share backend data, keep their own unsaved state, and retain authorization across refresh until backend restart/update or Disconnect Browser Sessions in the app/tray menu.
+
+Browser sessions use independent, tab-scoped credentials and an authenticated Service Worker for resources; bare addresses grant no API access. Use `openWebSocket(path, protocols?)` from `@semicoder/fia/client` for business sockets. Browser native calls are allowlisted, with effective permissions exposed by `native.capabilities()`. See the framework contract for lifecycle and security details. Available starting with FIA 0.17.0. Upgrading an existing application requires a new complete application build because the native host changes.
 
 ```sh
 my-app events session.changed --jsonl --count 1 --timeout 30000 \

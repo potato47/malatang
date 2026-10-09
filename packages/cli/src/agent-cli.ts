@@ -261,7 +261,7 @@ export async function runAgentCLI(
               "open_failed",
               "Could not open the browser; use open --browser --url",
             );
-          emit({ url });
+          emit({ opened: true });
         }
         return 0;
       }
@@ -283,7 +283,7 @@ export async function runAgentCLI(
       if (command === "schema") emit(schema);
       else
         process.stdout.write(
-          `${app.command} — ${record.description ?? manifest.agent.description ?? manifest.app.name}\n\nCommands: help, schema --json, call METHOD --json JSON, events EVENT --jsonl [--count N] [--timeout MS] [--match JSON], exec (--file FILE | -e CODE | < stdin) [--timeout MS] [--jsonl], open [--browser [--url]], status --json, quit, install, uninstall, skill install [--dir DIRECTORY]\n\n${Object.entries(
+          `${app.command} — ${record.description ?? manifest.agent.description ?? manifest.app.name}\n\nCommands: help, schema --json, call METHOD --json JSON, events EVENT --jsonl [--count N] [--timeout MS] [--match JSON], exec (--file FILE | -e CODE | < stdin) [--timeout MS] [--jsonl], open [--browser [--url]], status --json, quit, install, uninstall, skill install [--dir DIRECTORY]\n\nBrowser: open --browser opens the main route in the default browser. Explicit --url prints a one-use 60-second link; authorization ends on backend restart or Disconnect Browsers.\n\n${Object.entries(
             extensions?.commands ?? {},
           )
             .map(([name, value]) => `${name}: ${value.description} (${app.command} ${name} --help)`)

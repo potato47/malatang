@@ -132,11 +132,13 @@ export function createNativeAPI(transport: NativeTransport) {
       openFiles: (
         input: BuiltinOpenFilesInput,
         options?: NativeCallOptions,
-      ): Promise<string[] | null> => transport.call("dialogs.openFiles", input, options),
+      ): Promise<string[] | null> =>
+        transport.call("dialogs.openFiles", input, { timeoutMs: 0, ...options }),
       saveFile: (
         input: BuiltinSaveFileInput,
         options?: NativeCallOptions,
-      ): Promise<string | null> => transport.call("dialogs.saveFile", input, options),
+      ): Promise<string | null> =>
+        transport.call("dialogs.saveFile", input, { timeoutMs: 0, ...options }),
     },
     keychain: {
       get: (input: BuiltinKeyInput, options?: NativeCallOptions): Promise<string | null> =>

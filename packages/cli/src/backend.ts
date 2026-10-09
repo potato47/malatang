@@ -181,6 +181,7 @@ interface Runtime {
   definition?: BackendDefinition;
   context?: BackendContext;
   stopping: boolean;
+  revokeBrowsers?: () => void;
   api?: APIServer;
   agent?: Awaited<ReturnType<typeof startAgentServer>>;
 }
@@ -400,6 +401,7 @@ function runtime(): Runtime | undefined {
 async function shutdown(current: Runtime): Promise<void> {
   if (current.stopping) return;
   current.stopping = true;
+  current.revokeBrowsers?.();
   try {
     if (current.context) await current.definition?.stop?.(current.context);
   } catch (error) {
@@ -490,6 +492,8 @@ export async function runBackend<Data, Paths extends string>(
     server = serve(0);
   }
   current.server = server;
+  current.revokeBrowsers = gateway.revokeBrowsers;
+  gateway.origin = "http://127.0.0.1:" + server.port;
   const origin = "http://127.0.0.1:" + server.port;
   const context: BackendContext = {
     ...api.context,
@@ -502,7 +506,12 @@ export async function runBackend<Data, Paths extends string>(
   await definition.start?.(context);
   api.ready = true;
   if (initialize.bundlePath && initialize.agentCommand && initialize.runtimeId)
-    current.agent = await startAgentServer(api, initialize, () => gateway.issueBrowserURL());
+    current.agent = await startAgentServer(api, initialize, async () => {
+      const { route } = await native.call<{ route: string }>("runtime.browserRoute", {
+        id: "main",
+      });
+      return gateway.issueBrowserURL(route);
+    });
   gateway.ready = true;
   writeFrame({ v: PROTOCOL, type: "ready", port: server.port, origin });
 }

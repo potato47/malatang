@@ -1,3 +1,5 @@
+import { browserBridge, frontendFetch, openWebSocket } from "./browser-transport.ts";
+export { openWebSocket } from "./browser-transport.ts";
 import { createNativeAPI } from "./api.ts";
 export type NativeErrorCode =
   | "invalid_request"
@@ -58,6 +60,8 @@ export interface NativeTransport {
 export interface NativeCapabilities {
   readonly protocolVersion: number;
   readonly capabilities: Readonly<Record<string, boolean>>;
+  /** Explicit native method allowlist when connected from a browser. */
+  readonly methods?: readonly string[];
 }
 
 export interface NativeResourceDescriptor {
@@ -89,19 +93,6 @@ interface PendingCall {
   readonly reject: (reason: unknown) => void;
   timer?: ReturnType<typeof setTimeout>;
   removeAbort?: () => void;
-}
-
-function nativeWebSocketURL(): URL {
-  if (typeof window === "undefined")
-    throw new NativeError({
-      code: "capability_unavailable",
-      component: "client",
-      message: "The browser Native client requires a Window environment",
-      recoverable: false,
-    });
-  const url = new URL("/_fia/native", window.location.href);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url;
 }
 
 export class NativeResource {
@@ -185,7 +176,7 @@ export class NativeResource {
   }
 
   async #fetch(): Promise<Response> {
-    return await fetch(this.#request.url, {
+    return await frontendFetch(this.#request.url, {
       credentials: this.#request.credentials,
       ...(this.#request.headers === undefined ? {} : { headers: this.#request.headers }),
     });
@@ -215,7 +206,7 @@ export class NativeClient extends EventTarget implements NativeTransport {
   /** Call after the first UI mount (included in the generated template). */
   async ready(): Promise<void> {
     const query = new URLSearchParams(window.location.search);
-    const response = await fetch("/_fia/ready", {
+    const response = await frontendFetch("/_fia/ready", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -339,71 +330,78 @@ export class NativeClient extends EventTarget implements NativeTransport {
   async #connect(): Promise<WebSocket> {
     if (this.#socket?.readyState === WebSocket.OPEN) return this.#socket;
     if (this.#connecting !== undefined) return await this.#connecting;
-    this.#connecting = new Promise<WebSocket>((resolve, reject) => {
-      const socket = new WebSocket(nativeWebSocketURL());
-      this.#socket = socket;
-      const timeout = setTimeout(() => {
-        socket.close();
-        reject(new Error("Native connection timed out"));
-      }, 5000);
-      socket.addEventListener(
-        "open",
-        () => {
-          clearTimeout(timeout);
-          if (this.#socket !== socket || this.#closed) {
-            socket.close();
-            reject(new Error("Native client closed"));
-            return;
-          }
-          this.#connecting = undefined;
-          resolve(socket);
-        },
-        { once: true },
-      );
-      socket.addEventListener(
-        "error",
-        () => {
-          clearTimeout(timeout);
-          if (this.#socket === socket) this.#connecting = undefined;
-          reject(
-            new NativeError({
-              code: "native_failure",
-              component: "client",
-              message: "Could not connect to the FIA Native Runtime",
-              recoverable: true,
-            }),
-          );
-        },
-        { once: true },
-      );
-      socket.addEventListener("message", (event) => {
-        if (this.#socket === socket) this.#receive(event.data);
-      });
-      socket.addEventListener("close", () => {
-        clearTimeout(timeout);
-        reject(new Error("Native connection closed"));
-        if (this.#socket !== socket) return;
-        this.#socket = undefined;
+    this.#connecting = openWebSocket("/_fia/native")
+      .then(
+        (socket) =>
+          new Promise<WebSocket>((resolve, reject) => {
+            this.#socket = socket;
+            const timeout = setTimeout(() => {
+              socket.close();
+              reject(new Error("Native connection timed out"));
+            }, 5000);
+            socket.addEventListener(
+              "open",
+              () => {
+                clearTimeout(timeout);
+                if (this.#socket !== socket || this.#closed) {
+                  socket.close();
+                  reject(new Error("Native client closed"));
+                  return;
+                }
+                this.#connecting = undefined;
+                resolve(socket);
+              },
+              { once: true },
+            );
+            socket.addEventListener(
+              "error",
+              () => {
+                clearTimeout(timeout);
+                if (this.#socket === socket) this.#connecting = undefined;
+                reject(
+                  new NativeError({
+                    code: "native_failure",
+                    component: "client",
+                    message: "Could not connect to the FIA Native Runtime",
+                    recoverable: true,
+                  }),
+                );
+              },
+              { once: true },
+            );
+            socket.addEventListener("message", (event) => {
+              if (this.#socket === socket) this.#receive(event.data);
+            });
+            socket.addEventListener("close", () => {
+              clearTimeout(timeout);
+              reject(new Error("Native connection closed"));
+              if (this.#socket !== socket) return;
+              this.#socket = undefined;
+              this.#connecting = undefined;
+              if (!this.#closed && !browserBridge()?.ended() && this.#listeners > 0)
+                this.#reconnect = setTimeout(() => {
+                  void this.#connect().catch(() => {});
+                }, 500);
+              for (const id of this.#pending.keys()) {
+                this.#settle(id, (pending) =>
+                  pending.reject(
+                    new NativeError({
+                      code: "native_failure",
+                      component: "client",
+                      method: pending.method,
+                      message: "The FIA Native Runtime disconnected",
+                      recoverable: true,
+                    }),
+                  ),
+                );
+              }
+            });
+          }),
+      )
+      .catch((error) => {
         this.#connecting = undefined;
-        if (!this.#closed && this.#listeners > 0)
-          this.#reconnect = setTimeout(() => {
-            void this.#connect().catch(() => {});
-          }, 500);
-        for (const id of this.#pending.keys()) {
-          this.#settle(id, (pending) =>
-            pending.reject(
-              new NativeError({
-                code: "native_failure",
-                component: "client",
-                method: pending.method,
-                message: "The FIA Native Runtime disconnected",
-                recoverable: true,
-              }),
-            ),
-          );
-        }
+        throw error;
       });
-    });
     return await this.#connecting;
   }
 

@@ -37,6 +37,8 @@ fia smoke [--json]       Check production launch and orderly shutdown
 fia icon <character> [--background #RRGGBB] [--foreground #RRGGBB] [--output directory] [--force]
 fia update keygen --output <directory>
 
+Every web window includes Open in Browser. Use fia agent [--preview] open --browser;
+add --url to print a one-use 60-second link. Packaged app CLIs support the same options.
 Configure your app in fia.config.ts. No Swift project or mode selection is required.
 `;
 export async function runCLI(args: readonly string[], cwd = process.cwd()): Promise<number> {

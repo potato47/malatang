@@ -1,3 +1,4 @@
+import { exchangeBrowser } from "./browser-helpers.ts";
 import { afterEach, expect, test } from "bun:test";
 import {
   cp,
@@ -147,7 +148,7 @@ else { console.log(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),
   const server = await startAgentServer(
     api,
     init,
-    () => "http://127.0.0.1:5173/_fia/dev/bootstrap?ticket=test",
+    () => "http://127.0.0.1:5173/_fia/browser/open#test",
   );
   cleanup.push(() => server.stop());
   const record = JSON.parse(
@@ -228,15 +229,15 @@ test("authenticated browser and CLI share one dispatcher, state and source conte
     await server.stop(true);
   });
   const origin = "http://127.0.0.1:" + server.port;
+  gateway.origin = origin;
+  const { token } = await (await exchangeBrowser(origin, gateway.issueBrowserURL())).json();
   const call = (method: string, input: unknown, cookie = true) =>
     fetch(origin + "/_fia/api/call", {
       method: "POST",
       headers: {
         origin,
         "content-type": "application/json",
-        ...(cookie
-          ? { cookie: "fia_" + f.init.sessionSecret.slice(0, 12) + "=" + f.init.sessionSecret }
-          : {}),
+        ...(cookie ? { authorization: "Bearer " + token } : {}),
       },
       body: JSON.stringify({ method, input, requestId: crypto.randomUUID() }),
     });
@@ -248,6 +249,13 @@ test("authenticated browser and CLI share one dispatcher, state and source conte
   expect(writes).toContain(7);
   expect(await readResult(await call("counter.get", {}))).toBe(7);
   expect(f.sources).toContain("ui");
+  const pending = call("wait", {});
+  await until(() => f.api.calls.size === 1);
+  gateway.revokeBrowsers();
+  await until(f.aborted);
+  expect((await pending).status).toBe(401);
+  expect((await call("counter.get", {})).status).toBe(401);
+  expect(await f.client.call("counter.get", {})).toBe(7);
 });
 test("shared API validates both directions, streams changes and protects local credentials", async () => {
   const f = await fixture();
@@ -531,13 +539,13 @@ test("CLI event waits filter, count, time out quietly and preserve cancellation"
   expect(await new Response(cancelled.stderr).text()).toContain('"cancelled"');
 });
 
-test("browser URLs require the authenticated development agent endpoint", async () => {
+test("browser URLs require the authenticated agent endpoint in every mode", async () => {
   const production = await fixture();
-  expect((await production.cli(["open", "--browser", "--url"])).exitCode).toBe(1);
+  expect((await production.cli(["open", "--browser", "--url"])).exitCode).toBe(0);
   const dev = await fixture(true);
   const result = await dev.cli(["open", "--browser", "--url"]);
   expect(result.exitCode).toBe(0);
-  expect(result.stdout.trim()).toBe("http://127.0.0.1:5173/_fia/dev/bootstrap?ticket=test");
+  expect(result.stdout.trim()).toBe("http://127.0.0.1:5173/_fia/browser/open#test");
   expect(result.stderr).toBe("");
   expect((await dev.cli(["open", "--url"])).exitCode).toBe(2);
   expect(

@@ -214,6 +214,40 @@ struct WindowTests {
     #expect(failed)
     try window.close()
   }
+  @Test func browserButtonSurvivesCustomTitlebarAndFollowsConnectionState() throws {
+    _ = NSApplication.shared
+    var opened: [String] = []
+    let window = WebWindow(options: WindowOptions(id: "browser", route: "/detail?q=1"),
+      appName: "FIA", emit: { _ in }, action: { _, _ in }, browserAction: { opened.append($0) })
+    func button() throws -> NSButton {
+      let stack = try #require(window.window.titlebarAccessoryViewControllers.first?.view.subviews.first as? NSStackView)
+      let button = try #require(stack.arrangedSubviews.last as? NSButton)
+      #expect(button.identifier?.rawValue == "fia.openInBrowser")
+      return button
+    }
+    #expect(try !button().isEnabled)
+    window.connected = true
+    try button().performClick(nil)
+    #expect(opened == ["browser"])
+    window.browserOpening = true
+    #expect(try !button().isEnabled)
+    window.setTitlebar([TitlebarItem(type: "text", id: "status", label: "Ready", symbol: nil, tooltip: nil, enabled: nil)])
+    #expect(try !button().isEnabled)
+    window.browserOpening = false
+    #expect(try button().isEnabled)
+    window.setTitlebar([])
+    #expect(window.window.titlebarAccessoryViewControllers.count == 1)
+    try button().performClick(nil)
+    #expect(opened == ["browser", "browser"])
+    window.loading()
+    #expect(try !button().isEnabled)
+    try window.close()
+    let manager = WindowManager()
+    _ = try manager.create(WindowOptions(id: "main", route: "/detail?q=1"))
+    #expect(try manager.browserRoute("main") == "/detail?q=1")
+    #expect(throws: (any Error).self) { try manager.browserRoute("missing") }
+    _ = try manager.operate("close", id: "main")
+  }
   @Test func registryCancelsNativeCallsWithoutPoisoningNextGeneration() async throws {
     let registry = NativeMethodRegistry()
     registry.register("slow", input: FIAEmpty.self, output: FIAEmpty.self) { _ in

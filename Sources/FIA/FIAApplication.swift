@@ -109,6 +109,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         let install = NSMenuItem(title: "Install Command Line Tool…", action: #selector(installCLI), keyEquivalent: "")
         install.target = self
         applicationMenu.addItem(install)
+        let disconnect = NSMenuItem(title: BrowserAccessLabels.disconnect, action: #selector(disconnectBrowsers), keyEquivalent: "")
+        disconnect.target = self
+        applicationMenu.addItem(disconnect)
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Hide \(manifest.app.name)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = applicationMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
@@ -167,6 +170,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         let install = NSMenuItem(title: "Install Command Line Tool…", action: #selector(installCLI), keyEquivalent: "")
         install.target = self
         menu.addItem(install)
+        let disconnect = NSMenuItem(title: BrowserAccessLabels.disconnect, action: #selector(disconnectBrowsers), keyEquivalent: "")
+        disconnect.target = self
+        menu.addItem(disconnect)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
@@ -195,6 +201,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
                 alert.informativeText = result.pathHint ?? result.path
                 alert.runModal()
             } catch { NSAlert(error: error).runModal() }
+        }
+    }
+    @objc private func disconnectBrowsers() {
+        Task { @MainActor in
+            do { try await runtime.disconnectBrowsers() }
+            catch { NSAlert(error: error).runModal() }
         }
     }
     @objc private func checkForUpdates() { Task { await runtime.updater.checkAndPrompt() } }

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { NativeClient, type NativeCallOptions } from "../src/client.ts";
 import { createNativeAPI } from "../src/api.ts";
 
-test("keychain interactions have no default deadline but honor explicit cancellation and timeout options", async () => {
+test("keychain and file dialogs have no default deadline but honor explicit cancellation and timeout options", async () => {
   const calls: { method: string; options?: NativeCallOptions }[] = [];
   const api = createNativeAPI({
     on: () => () => {},
@@ -18,9 +18,15 @@ test("keychain interactions have no default deadline but honor explicit cancella
   await api.keychain.get({ key: "test" });
   await api.keychain.set({ key: "test", value: "fixture" });
   await api.keychain.delete({ key: "test" });
-  expect(calls.map((call) => call.options?.timeoutMs)).toEqual([0, 0, 0]);
+  await api.dialogs.openFiles({ multiple: false });
+  await api.dialogs.saveFile({ suggestedName: "test.txt" });
+  expect(calls.map((call) => call.options?.timeoutMs)).toEqual([0, 0, 0, 0, 0]);
   const controller = new AbortController();
   await api.keychain.get({ key: "test" }, { timeoutMs: 50, signal: controller.signal });
+  expect(calls.at(-1)?.options).toEqual({ timeoutMs: 50, signal: controller.signal });
+  await api.dialogs.openFiles({ multiple: false }, { timeoutMs: 50, signal: controller.signal });
+  expect(calls.at(-1)?.options).toEqual({ timeoutMs: 50, signal: controller.signal });
+  await api.dialogs.saveFile({}, { timeoutMs: 50, signal: controller.signal });
   expect(calls.at(-1)?.options).toEqual({ timeoutMs: 50, signal: controller.signal });
 });
 
@@ -56,7 +62,7 @@ test("late socket events cannot settle requests from a replacement connection", 
     }
   }
   Object.defineProperty(globalThis, "window", {
-    value: { location: { href: "http://127.0.0.1:1234/" } },
+    value: { location: { href: "http://127.0.0.1:1234/", origin: "http://127.0.0.1:1234" } },
     configurable: true,
   });
   globalThis.WebSocket = Socket as unknown as typeof WebSocket;
@@ -64,12 +70,14 @@ test("late socket events cannot settle requests from a replacement connection", 
   try {
     const first = client.call("echo").catch((error) => error);
     const previous = Socket.all[0]!;
+    await Bun.sleep(0);
     previous.open();
     await Bun.sleep(0);
     client.close();
     expect(await first).toBeInstanceOf(Error);
     const next = client.call("echo");
     const active = Socket.all[1]!;
+    await Bun.sleep(0);
     active.open();
     await Bun.sleep(0);
     previous.dispatchEvent(new Event("close"));

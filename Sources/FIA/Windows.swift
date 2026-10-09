@@ -212,6 +212,12 @@ open class AppKitWindow: NSObject, AppWindow, NSWindowDelegate {
   @objc private func applicationChanged(_ notification: Notification) { reconcile(.application) }
 }
 
+enum BrowserAccessLabels {
+  static var isChinese: Bool { Locale.preferredLanguages.first?.hasPrefix("zh") == true }
+  static var open: String { isChinese ? "在浏览器中打开" : "Open in Browser" }
+  static var disconnect: String { isChinese ? "断开浏览器连接" : "Disconnect Browsers" }
+}
+
 public struct TitlebarItem: Codable, Sendable, Equatable {
   public let type: String
   public let id: String
@@ -247,10 +253,16 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
   private var items: [TitlebarItem] = []
   private var buttons: [NSButton] = []
   private var action: (String, String) -> Void
+  private var browserAction: ((String) -> Void)?
+  private var browserButton: NSButton?
+  var browserOpening = false { didSet { updateBrowserButton() } }
+  var browserAvailable = true { didSet { updateBrowserButton() } }
+  private func updateBrowserButton() { browserButton?.isEnabled = connected && browserAvailable && !browserOpening }
   var onContentFailure: (() -> Void)?
   var origin: URL?
   var connected = false {
     didSet {
+      updateBrowserButton()
       for (button, item) in zip(buttons, items.filter { $0.type == "button" }) {
         button.isEnabled = connected && item.enabled != false
       }
@@ -258,10 +270,12 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
   }
   public init(
     options: WindowOptions, appName: String, emit: @escaping (AppWindowEvent) -> Void,
-    action: @escaping (String, String) -> Void
+    action: @escaping (String, String) -> Void,
+    browserAction: ((String) -> Void)? = nil
   ) {
     route = options.route ?? "/"
     self.action = action
+    self.browserAction = browserAction
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .default()
     // macOS WKWebView has no public scrollView/bounces API. Disable viewport
@@ -316,7 +330,6 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
       window.removeTitlebarAccessoryViewController(
         at: window.titlebarAccessoryViewControllers.count - 1)
     }
-    guard !items.isEmpty else { return }
     let stack = NSStackView()
     stack.orientation = .horizontal
     stack.spacing = 8
@@ -343,6 +356,17 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
         stack.addArrangedSubview(space)
       }
     }
+    let browser = NSButton(title: "", target: self, action: #selector(openBrowser))
+    let description = BrowserAccessLabels.open
+    browser.identifier = NSUserInterfaceItemIdentifier("fia.openInBrowser")
+    browser.image = NSImage(systemSymbolName: "arrow.up.forward.square", accessibilityDescription: description)
+    browser.imagePosition = .imageOnly
+    browser.bezelStyle = .texturedRounded
+    browser.toolTip = description
+    browser.setAccessibilityLabel(description)
+    browserButton = browser
+    updateBrowserButton()
+    stack.addArrangedSubview(browser)
     let accessory = NSTitlebarAccessoryViewController()
     let container = NSView(
       frame: NSRect(x: 0, y: 0, width: stack.fittingSize.width + 16, height: 30))
@@ -356,6 +380,9 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
     accessory.view = container
     accessory.layoutAttribute = .right
     window.addTitlebarAccessoryViewController(accessory)
+  }
+  @objc private func openBrowser() {
+    if connected && browserAvailable && !browserOpening { browserAction?(id) }
   }
   @objc private func pressed(_ sender: NSButton) {
     if connected, let item = sender.identifier?.rawValue { action(id, item) }
@@ -406,6 +433,17 @@ public final class WindowManager {
   public var appName = "FIA"
   public var onEvent: ((AppWindowEvent) -> Void)?
   public var onAction: ((String, String) -> Void)?
+  var onBrowser: ((String) -> Void)?
+  private var browserAvailable = true
+  func setBrowserAvailable(_ available: Bool) {
+    browserAvailable = available
+    for window in instances.values { window.browserAvailable = available }
+  }
+  func setBrowserOpening(_ id: String, _ opening: Bool) { instances[id]?.browserOpening = opening }
+  func browserRoute(_ id: String) throws -> String {
+    guard let options = definitions[id] else { throw failure("Window not found: " + id) }
+    return options.route ?? "/"
+  }
   var onContentFailure: ((String) -> Void)?
   public var states: [AppWindowState] { instances.values.map(\.state).sorted { $0.id < $1.id } }
   public var registeredIDs: [String] { definitions.keys.sorted() }
@@ -445,7 +483,9 @@ public final class WindowManager {
     definitions[options.id] = options
     let window = WebWindow(
       options: options, appName: appName, emit: { [weak self] event in self?.onEvent?(event) },
-      action: { [weak self] id, item in self?.onAction?(id, item) })
+      action: { [weak self] id, item in self?.onAction?(id, item) },
+      browserAction: { [weak self] id in self?.onBrowser?(id) })
+    window.browserAvailable = browserAvailable
     instances[options.id] = window
     window.onContentFailure = { [weak self] in self?.onContentFailure?(options.id) }
     if connected, let url { window.load(url(window.id, window.route)) }

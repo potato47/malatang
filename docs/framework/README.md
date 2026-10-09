@@ -1,6 +1,6 @@
 # FIA 4 框架契约
 
-FIA 只支持一种架构：预编译 Swift Host + 必选 Bun + WebView。Swift 源码仅用于框架维护，不作为应用依赖。
+FIA 只支持一种应用架构：预编译 Swift Host + 必选 Bun + WebView，浏览器界面连接同一原生宿主与后端。Swift 源码仅用于框架维护，不作为应用依赖。
 
 ## 进程与通信
 
@@ -12,7 +12,7 @@ Host 与 Bun 使用 stdio protocol 5，JSON Lines，stdout 只能输出协议；
 
 前端与 Bun 的 Native SDK 使用 WebSocket protocol 1。系统 API 的实现仍在 Swift，Bun 只转发。Native WebSocket 与业务 WebSocket 共用一个 Bun 服务。`/_fia` 是保留路径，业务路由相对 `/api` 声明。HTTP/SSE 直接返回标准 Response，不缓冲完整响应。
 
-会话通过一次性 HMAC 引导票据建立 HttpOnly、SameSite=Strict Cookie；HTTP/WS 检查会话和 Origin，服务只监听 127.0.0.1。框架私有方法不能从前端 RPC 调用。截图等原生资源只在 stdio 中返回描述符，Bun 验证资源路径后流式读取受控临时文件。
+原生窗口通过一次性 HMAC 引导票据取得独立随机 HttpOnly、SameSite=Strict Cookie；宿主内部密钥不下发为 Cookie。浏览器使用独立的当前标签页会话，CLI 使用独立 token。HTTP/WS 检查会话、Host、Origin 与跨站标记，服务只监听 127.0.0.1。框架私有方法不能从前端 RPC 调用。截图等原生资源只在 stdio 中返回描述符，Bun 验证资源路径后流式读取受控临时文件。
 
 系统浏览器的 OAuth 重定向可通过 `http.callbacks: { "/oauth/callback": handler }` 接收，URL 使用 `start` 上下文的 `url("/api/oauth/callback")`。它复用 Bun 的实际 loopback 端口，仅接受显式完整路径上的 GET，无通配、参数路由或 WebSocket；开发期不可使用 Vite 地址。回调不要求或签发 FIA 会话，也不放开普通 `/api`、`/_fia` 路由。**应用必须自行校验有期限、单次使用的随机 state 和 PKCE 等协议参数**。框架强制 no-store / no-referrer、禁止脚本及 iframe 的 CSP，并移除 Set-Cookie；回调应返回不含凭证的简短完成页。登录开始、状态、取消等业务仍声明在共享 API 中；不要另起 HTTP 服务。
 
@@ -22,7 +22,7 @@ Host 与 Bun 使用 stdio protocol 5，JSON Lines，stdout 只能输出协议；
 
 后端通过 `api: implementAPI(contract, handlers)` 注册实现；框架启动时验证它与构建契约一致。`http` 可选。调用上下文包含 native、app、emit、source（ui/cli/script）、requestId、sessionId 和 signal。每个方法只定义一个实现，UI、CLI 和脚本调用同一分发器。方法输入和返回值、事件 payload 都必须通过 schema 校验。调用并发上限 128，JSON 消息上限 1 MiB。应用开发者应让长操作响应 signal；取消不撤销已经完成的副作用。
 
-浏览器 `createClient<typeof api>()` 提供 call/on/onReconnect/close。HTTP 入口为受 WebView 会话保护的 `/_fia/api`；CLI 使用 HTTP over Unix Socket 和独立 token，不接触内部 stdio 会话密钥。发现记录位于应用数据同级的 Agent/instance.json，目录 0700、记录和 socket 0600。连接核对应用标识、实际 bundle 路径、runtimeId、协议与进程代次。生产实例与各开发项目的数据目录和 socket 分离。
+浏览器 `createClient<typeof api>()` 提供 call/on/onReconnect/close。HTTP 入口为受原生窗口或浏览器会话保护的 `/_fia/api`；CLI 使用 HTTP over Unix Socket 和独立 token，不接触内部 stdio 会话密钥。发现记录位于应用数据同级的 Agent/instance.json，目录 0700、记录和 socket 0600。连接核对应用标识、实际 bundle 路径、runtimeId、协议与进程代次。生产实例与各开发项目的数据目录和 socket 分离。
 
 事件流不保留历史；首次建立和重新建立订阅时触发 onReconnect，客户端应重新读取状态。在途业务调用不自动重放；网络错误可能返回 execution_unknown。框架不提供业务数据库、持久任务或资源所有权模型。
 
@@ -52,7 +52,7 @@ OS Bundle ID 与逻辑应用 identifier 分开：`context.app.identifier`、已�
 
 窗口默认 main、1000×720、标准标题栏、红绿灯和下方 WKWebView。`create` 不隐式显示，使用 `open/focus` 呈现；普通前台启动自动显示 main，CLI 启动只保留配置的 tray。主窗口点击关闭按钮或按 ⌘W 只隐藏，保留 WebView 和页面状态；点击 Dock 图标或调用 `open/focus` 直接显示，不重新加载。辅助窗口的用户关闭操作和显式调用 `native.windows.close` 仍会真正关闭窗口。窗口 ID 稳定，`create` 对已有 ID 同步声明并复用，保留尺寸与打开/隐藏/关闭状态；真正关闭后 `open` 会重建窗口并加载页面。新增窗口只接受应用内 route。`update` 可显式修改 route、title、width、height、titlebar。最小化、最大化、恢复、全屏、focus/hide/close 统一由 `native.windows` 提供。
 
-标题栏 items 为 button、text、spacer；每项都有唯一 id，button/text 有 label，按钮可指定 SF Symbol、tooltip、enabled。`setTitlebar({id, items})` 更新整个声明。点击产生 `windows.titlebarAction`，携带 windowId 和 itemId。回调留在 TS，禁止序列化函数或插入 Swift/HTML 标题栏。
+标题栏 items 为 button、text、spacer；每项都有唯一 id，button/text 有 label，按钮可指定 SF Symbol、tooltip、enabled。`setTitlebar({id, items})` 仅更新应用项目；FIA 在最右侧固定提供“在浏览器中打开”图标按钮，清空或重复更新不会移除或复制它。启动、重连、更新切换和打开请求期间按钮禁用，失败通过原生提示展示。点击应用自定义按钮产生 `windows.titlebarAction`，携带 windowId 和 itemId。回调留在 TS，禁止序列化函数或插入 Swift/HTML 标题栏。
 
 WebView 默认关闭页面视口横向、纵向的边缘拉伸回弹，保留正常内容滚动和嵌套滚动区域。该默认行为由宿主在每次文档加载时设置，覆盖加载页、页面跳转和子框架，不要求业务添加 CSS。
 
@@ -167,18 +167,39 @@ export default defineBackend({
 
 `http.websocket` 的 `maxPayloadLength`、`backpressureLimit`、`closeOnBackpressureLimit`、`idleTimeout` 和 `sendPings` 等是 **Bun 服务级选项**，同时影响业务与 FIA native WebSocket。设置时应考虑两者；native 消息仍单独限制为 1 MiB，业务回调不会收到 native 消息。框架不承诺按连接隔离这些选项。
 
-## 普通浏览器调试
+## 完整浏览器界面（0.17.0）
 
-`fia dev` 启动原生宿主和 Vite 后打印一次性浏览器链接；`fia dev --open-browser` 自动打开它。链接仅可用一次、60 秒过期。需要新链接或后端重启后，执行：
+FIA 默认支持开发、隔离预览和正式构建的浏览器界面，无需应用配置。点击任意网页窗口标题栏最右侧 `arrow.up.forward.square` 按钮，系统浏览器打开该窗口配置的应用内 route；原生窗口继续保留。`fia create` 默认计数器也包含此入口。原生和浏览器共享后端与持久数据，不复制未保存的页面状态。
 
 ```sh
-fia agent open --browser --url  # 只输出 URL，适用于浏览器自动化
-fia agent open --browser       # 在默认浏览器打开
+fia dev --open-browser            # 启动后打开浏览器
+fia agent open --browser          # 当前开发实例主窗口路由
+fia agent --preview open --browser
+my-app open --browser             # 新 runtime 构建的正式应用 CLI
+my-app open --browser --url       # 显式输出授权链接，适用于自动化
 ```
 
-不要直接使用 Vite 打印的裸地址。开发票据经受保护的 Unix Socket 签发，不向前端公开宿主密钥；bootstrap 建立 HttpOnly、SameSite=Strict Cookie，生产实例不提供此入口。不要分享票据 URL。
+普通启动和打开操作不打印凭证；只有显式 `--url` 输出链接。裸 IP + 端口不授予 API 权限。票据为 256 位随机值，60 秒有效、单次消费，绑定当前实例和目标路由；仅由宿主内部通道或已鉴权 Unix Socket 签发。引导页从 fragment 读取后立即清除，通过同源 POST 兑换独立会话。会话服务端仅驻留内存，客户端仅存当前标签页 sessionStorage；刷新与 Worker 重启可恢复，后端重启、更新或菜单“断开浏览器连接”使其失效。不要分享授权链接。
 
-浏览器仍连接 `fia dev` 的真实宿主，`native.capabilities()` 报告宿主能力，原生窗口操作会作用于真实窗口。浏览器的 `native.ready()` 只验证开发会话与后端代次，不冒充原生窗口完成代码更新就绪验证。后端重启后使用新链接重新进入；这不是独立运行、无宿主的网页模式。
+框架引导脚本与 Service Worker 在 Vite 和正式静态页面自动注入。Worker 只为绑定客户端的精确同源 `/api`、`/_fia` 子资源请求附加认证，支持动态模块、CSS、资源与 SSE；不为导航、跨源请求或重定向发送凭证，不缓存业务响应。初始化失败拒绝访问；失效显示统一提示、停止重连，不自动重放写操作。应用应保留 FIA Worker，避免注册覆盖根 scope 的其他 Worker。
+
+本地 `file:` 依赖刷新后需要重启开发进程。FIA 的 Vite 插件将实际安装的 client / api 文件内容纳入依赖缓存指纹，同时更新浏览器模块 URL；即使版本号和锁文件未改变，也不会复用旧 SDK 的认证协议。文件对话框本来就在浏览器白名单内，连接失败应检查运行版本和传输，不能以关闭鉴权或放开全部 Native 方法处理。
+
+`dialogs.openFiles` / `dialogs.saveFile` 默认等待用户完成或取消，不采用普通 Native 调用的 30 秒期限；调用者仍可提供 `timeoutMs` / `signal`，浏览器会话撤销仍取消在途调用。
+
+业务 WebSocket 使用客户端助手；Native SDK 也使用该机制。浏览器先通过认证 HTTP 取得 10 秒、单次、绑定目标路径的握手票据，长期凭证不进入 WebSocket URL：
+
+```ts
+import { openWebSocket } from "@semicoder/fia/client";
+const socket = await openWebSocket("/api/stream", ["my-protocol"]);
+socket.addEventListener("open", () => socket.send("hello"));
+```
+
+`createClient()`、业务契约和 SDK 不变，请求仍为 `source: "ui"`。浏览器身份由服务端会话决定，修改参数不能冒充原生窗口，`native.ready()` 不参与原生更新健康判定。撤销会中断已建 SSE/WS、取消连接尚未完成的调用；已提交后台任务由应用管理。
+
+浏览器 Native 权限按方法白名单执行：应用信息/显示/外观，窗口 UI 操作，文件对话框，剪贴板，通知，屏幕列表，系统链接/文件定位，资源读取/释放，应用更新。钥匙串、CLI 管理、退出、全局快捷键、屏幕捕获、内部和未知方法拒绝访问。`native.capabilities()` 的 flags 和可选 `methods` 列表反映权限。原生操作作用于同一真实宿主；应用业务与可信插件仍沿用原有信任边界。
+
+此能力从 FIA 0.17.0 开始提供；旧 npm 0.16.1 和麻辣烫 dd430c851192 固定归档不包含它。宿主变化需要完整安装包，不能仅通过代码更新获得；应用须锁定并验收新 runtime 后重新构建分发。
 
 401/403 分别报告 `unauthorized`/`forbidden`；收到完整但无效的响应报告 `protocol_error`；调用输入无法序列化报告 `invalid_argument`。真正的传输中断仍可能报告 `execution_unknown`，此时不要自动重放写操作，应检查应用状态。
 

@@ -1,3 +1,5 @@
+import { request as httpRequest } from "node:http";
+import { nativeCookie, exchangeBrowser } from "./browser-helpers.ts";
 import { afterEach, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
@@ -121,7 +123,8 @@ async function fixture(development = false) {
     websocket: gateway.websocket,
   });
   const origin = "http://127.0.0.1:" + server.port;
-  const cookie = "fia_" + secret.slice(0, 12) + "=" + secret;
+  gateway.origin = origin;
+  const cookie = await nativeCookie(origin, init);
   const headers = { cookie, origin };
   cleanup.push(async () => {
     await server.stop(true);
@@ -156,7 +159,7 @@ function next(ws: WebSocket): Promise<string> {
   });
 }
 
-test("native gateway lets keychain dialogs wait without removing ordinary request deadlines", async () => {
+test("native gateway lets keychain and file dialogs wait without removing ordinary request deadlines", async () => {
   const f = await fixture();
   const ws = await socket(f.origin.replace("http:", "ws:") + "/_fia/native", f.headers);
   try {
@@ -164,13 +167,15 @@ test("native gateway lets keychain dialogs wait without removing ordinary reques
       "keychain.get",
       "keychain.set",
       "keychain.delete",
+      "dialogs.openFiles",
+      "dialogs.saveFile",
       "clipboard.readText",
     ].entries()) {
       const response = next(ws);
       ws.send(JSON.stringify({ v: 1, type: "request", id: id + 1, method, params: {} }));
       await response;
     }
-    expect(f.timeouts).toEqual([0, 0, 0, 30_000]);
+    expect(f.timeouts).toEqual([0, 0, 0, 0, 0, 30_000]);
   } finally {
     ws.close();
   }
@@ -338,47 +343,193 @@ test("SSE cancellation releases the upstream operation", async () => {
   expect(f.aborted()).toBe(true);
 });
 
-test("development browser tickets are one-use, expire and never report native window readiness", async () => {
-  const f = await fixture(true);
-  const issued = f.gateway.issueBrowserURL();
-  const url = f.origin + new URL(issued).pathname + new URL(issued).search;
-  const first = await fetch(url, { redirect: "manual" });
-  expect(first.status).toBe(302);
-  expect(first.headers.get("location")).toContain("fiaBrowser=1");
-  expect(first.headers.get("set-cookie")).toContain("HttpOnly; SameSite=Strict");
-  expect(first.headers.get("referrer-policy")).toBe("no-referrer");
-  expect((await fetch(url, { redirect: "manual" })).status).toBe(403);
-  const cookie = first.headers.get("set-cookie")!.split(";")[0]!;
-  expect((await fetch(f.origin + "/api/hello/browser", { headers: { cookie } })).status).toBe(200);
-  const ready = (generation: string) =>
-    fetch(f.origin + "/_fia/ready", {
+test("browser tickets work in production and development, expire and cannot mark native readiness", async () => {
+  for (const development of [false, true]) {
+    const f = await fixture(development);
+    const issued = f.gateway.issueBrowserURL("/page?q=one");
+    expect(new URL(issued).search).toBe("");
+    const first = await exchangeBrowser(f.origin, issued);
+    expect(first.status).toBe(200);
+    expect(first.headers.get("set-cookie")).toBeNull();
+    const session = await first.json();
+    expect(session.route).toContain("/page?q=one");
+    expect(session.token).not.toBe(f.init.sessionSecret);
+    expect((await exchangeBrowser(f.origin, issued)).status).toBe(403);
+    const headers = { authorization: "Bearer " + session.token, origin: new URL(issued).origin };
+    expect((await fetch(f.origin + "/api/hello/browser", { headers })).status).toBe(200);
+    for (const browser of [true, false, undefined]) {
+      const ready = await fetch(f.origin + "/_fia/ready", {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ browser, windowId: "main", generation: f.init.generation }),
+      });
+      expect(ready.status).toBe(200);
+    }
+    expect(f.calls).not.toContain("runtime.frontendReady");
+    const old = await fetch(f.origin + "/_fia/ready", {
       method: "POST",
-      headers: { cookie, "content-type": "application/json" },
-      body: JSON.stringify({ browser: true, generation }),
+      headers,
+      body: JSON.stringify({ generation: "old" }),
     });
-  expect((await ready(f.init.generation)).status).toBe(200);
-  expect(f.calls).not.toContain("runtime.frontendReady");
-  expect((await ready("old-generation")).status).toBe(409);
-  const second = new URL(f.gateway.issueBrowserURL());
-  const originalNow = Date.now;
-  try {
-    const now = Date.now();
-    Date.now = () => now + 60_001;
-    expect(
-      (await f.gateway.fetch(new Request(f.origin + second.pathname + second.search), f.server))
-        ?.status,
-    ).toBe(403);
-  } finally {
-    Date.now = originalNow;
+    expect(old.status).toBe(409);
+    const second = f.gateway.issueBrowserURL();
+    const originalNow = Date.now;
+    try {
+      const now = Date.now();
+      Date.now = () => now + 60_001;
+      expect((await exchangeBrowser(f.origin, second)).status).toBe(403);
+    } finally {
+      Date.now = originalNow;
+    }
+    const other = await fixture(development);
+    expect((await exchangeBrowser(other.origin, f.gateway.issueBrowserURL())).status).toBe(403);
+    f.gateway.revokeBrowsers();
+    expect((await fetch(f.origin + "/api/hello/browser", { headers })).status).toBe(401);
   }
-  const other = await fixture(true);
-  const third = new URL(f.gateway.issueBrowserURL());
+});
+
+test("browser and native credentials cannot access host controls or bypass origin checks", async () => {
+  const f = await fixture();
+  const { token } = await (await exchangeBrowser(f.origin, f.gateway.issueBrowserURL())).json();
+  const headers = { authorization: "Bearer " + token, origin: f.origin };
+  for (const route of [
+    "/api/hello/x",
+    "/_fia/health",
+    "/_fia/resources/12345678-1234-1234-1234-123456789abc",
+  ]) {
+    expect((await fetch(f.origin + route)).status).toBe(401);
+    expect(
+      (await fetch(f.origin + route, { headers: { origin: f.origin, "user-agent": "Safari" } }))
+        .status,
+    ).toBe(401);
+    expect(
+      (
+        await fetch(f.origin + route, {
+          headers: {
+            cookie: "fia_" + f.init.sessionSecret.slice(0, 12) + "=" + f.init.sessionSecret,
+          },
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (await fetch(f.origin + route, { headers: { ...headers, origin: "http://127.0.0.1:1" } }))
+        .status,
+    ).toBe(401);
+    expect(
+      (await fetch(f.origin + route, { headers: { ...headers, "sec-fetch-site": "cross-site" } }))
+        .status,
+    ).toBe(401);
+    const forgedHost = await new Promise<number | undefined>((resolve, reject) => {
+      const request = httpRequest(
+        f.origin + route,
+        { headers: { ...headers, host: "attacker.example" } },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode);
+        },
+      );
+      request.on("error", reject);
+      request.end();
+    });
+    expect(forgedHost).toBe(403);
+    expect(
+      (
+        await fetch(f.origin + route, {
+          headers: { cookie: f.cookie, authorization: "Bearer invalid" },
+        })
+      ).status,
+    ).toBe(401);
+  }
+  for (const credential of [headers, f.headers]) {
+    for (const route of ["/_fia/browser/issue", "/_fia/browser/revoke", "/_fia/update/prepare"]) {
+      expect(
+        (await fetch(f.origin + route, { method: "POST", headers: credential, body: "{}" })).status,
+      ).toBe(403);
+    }
+  }
+  expect(f.cookie).not.toContain(f.init.sessionSecret);
+  for (const route of [
+    "https://attacker.example",
+    "//attacker.example",
+    "/%2fexample",
+    "/x/../api",
+    "/api/x",
+    "/_fia/health",
+  ])
+    expect(() => f.gateway.issueBrowserURL(route)).toThrow();
   expect(
-    (await fetch(other.origin + third.pathname + third.search, { redirect: "manual" })).status,
+    (
+      await fetch(f.origin + "/_fia/browser/exchange", {
+        method: "POST",
+        headers: { origin: "https://attacker.example" },
+        body: "{}",
+      })
+    ).status,
   ).toBe(403);
-  const production = await fixture();
-  expect(() => production.gateway.issueBrowserURL()).toThrow("fia dev");
-  expect((await fetch(production.origin + third.pathname + third.search)).status).toBe(404);
-  const denied = await fetch(f.origin + "/api/hello/test");
-  expect(await denied.json()).toMatchObject({ error: { code: "unauthorized" } });
+});
+
+test("browser socket tickets are path-bound and one-use; permissions and revocation cover all streams", async () => {
+  const f = await fixture();
+  const { token } = await (await exchangeBrowser(f.origin, f.gateway.issueBrowserURL())).json();
+  const headers = {
+    authorization: "Bearer " + token,
+    origin: f.origin,
+    "content-type": "application/json",
+  };
+  const ticket = async (path: string) => {
+    const response = await fetch(f.origin + "/_fia/browser/socket", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ path }),
+    });
+    expect(response.status).toBe(200);
+    return (await response.json()).url as string;
+  };
+  const issued = await ticket("/_fia/native");
+  const ws = await socket(issued, { origin: f.origin });
+  for (const [index, method] of [
+    "keychain.get",
+    "agent.installCLI",
+    "application.quit",
+    "screen.captureRegion",
+    "globalShortcuts.set",
+    "runtime.browserRoute",
+    "unknown",
+  ].entries()) {
+    const reply = next(ws);
+    ws.send(JSON.stringify({ v: 1, type: "request", id: index + 1, method, params: {} }));
+    expect(JSON.parse(await reply).error).toBeDefined();
+    expect(f.calls).not.toContain(method);
+  }
+  const allowed = next(ws);
+  ws.send(
+    JSON.stringify({ v: 1, type: "request", id: 100, method: "clipboard.readText", params: {} }),
+  );
+  expect(JSON.parse(await allowed).error).toBeUndefined();
+  expect(f.calls).toContain("clipboard.readText");
+  await expect(socket(issued, { origin: f.origin })).rejects.toBeDefined();
+  const wrongPath = new URL(await ticket("/_fia/native"));
+  wrongPath.pathname = "/api/socket";
+  await expect(socket(wrongPath.href, { origin: f.origin })).rejects.toBeDefined();
+  const business = await socket(await ticket("/api/socket"), { origin: f.origin });
+  const echoed = next(business);
+  business.send("browser business socket");
+  expect(await echoed).toBe("browser business socket");
+  const stream = await fetch(f.origin + "/api/stream", { headers });
+  const reader = stream.body!.getReader();
+  await reader.read();
+  const closed = Promise.all(
+    [ws, business].map(
+      (socket) =>
+        new Promise<number>((resolve) => {
+          socket.onclose = (event) => resolve(event.code);
+        }),
+    ),
+  );
+  const reading = reader.read().catch(() => ({ done: true }));
+  f.gateway.revokeBrowsers();
+  expect(await closed).toEqual([4001, 4001]);
+  expect((await reading).done).toBe(true);
+  expect(f.aborted()).toBe(true);
+  expect((await fetch(f.origin + "/api/hello/x", { headers })).status).toBe(401);
 });

@@ -664,14 +664,14 @@ export async function runDevelopment(
           component: "dev",
           message: "Application ready; frontend HMR and backend restart enabled",
         });
-        const { url } = (await readResult(
-          await agentFetch(record)("/browser", { method: "POST" }),
-        )) as { url: string };
-        // Tickets are credentials: print directly, never persist them in session logs.
-        output("Browser (one use, valid for 60 seconds): " + url);
-        output("New browser link: fia agent open --browser --url");
-        if (options.openBrowser)
-          await checked(defaultRunner, ["/usr/bin/open", url], config.projectRoot);
+        output("Open in browser: use the window titlebar button or fia agent open --browser");
+        if (options.openBrowser) {
+          const { url } = (await readResult(
+            await agentFetch(record)("/browser", { method: "POST" }),
+          )) as { url: string };
+          const opened = Bun.spawn(["/usr/bin/open", url], { stdout: "ignore", stderr: "ignore" });
+          if (await opened.exited) throw new Error("The default browser could not be opened");
+        }
         watcher = watch(config.projectRoot, { recursive: true }, (_event, file) => {
           const path = file?.toString();
           if (

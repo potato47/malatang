@@ -109,7 +109,7 @@ struct RuntimeUpdateTests {
       let tray = try #require(delegate.statusItem)
       defer { NSStatusBar.system.removeStatusItem(tray) }
       let menu = try #require(tray.menu)
-      #expect(menu.items.map(\.title) == ["Show", "Install Command Line Tool…", "", "Quit"])
+      #expect(menu.items.map(\.title) == ["Show", "Install Command Line Tool…", BrowserAccessLabels.disconnect, "", "Quit"])
       #expect(menu.items.last?.action == #selector(NSApplication.terminate(_:)))
       menu.performActionForItem(at: 0)
       #expect(runtime.windows.states.contains { $0.id == "main" && $0.orderedIn })

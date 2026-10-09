@@ -84,6 +84,15 @@ public final class FIARuntime {
     windows.onAction = { [weak self] id, item in
       self?.emit("windows.titlebarAction", TitlebarAction(windowId: id, itemId: item))
     }
+    windows.onBrowser = { [weak self] id in
+      guard let self else { return }
+      self.windows.setBrowserOpening(id, true)
+      Task { @MainActor in
+        defer { self.windows.setBrowserOpening(id, false) }
+        do { try await self.openInBrowser(windowID: id) }
+        catch { NSAlert(error: error).runModal() }
+      }
+    }
     windows.onContentFailure = { [weak self] id in self?.frontendFailure = "WebView failed: " + id }
     shortcuts.onPressed = { [weak self] id in
       self?.emit("globalShortcuts.pressed", ShortcutPressed(id: id))
@@ -202,6 +211,7 @@ public final class FIARuntime {
     {
       return
     }
+    windows.setBrowserAvailable(!transitioning)
     let secret = session
     windows.connect { id, route in
       let nonce = UUID().uuidString
@@ -218,6 +228,35 @@ public final class FIARuntime {
       return components.url!
     }
   }
+  private struct BrowserReply: Decodable { let url: String? }
+  private func browserControl(_ action: String, route: String? = nil) async throws -> BrowserReply {
+    guard backendReady, !transitioning, lifecycle == .running, let origin = backendOrigin else {
+      throw UpdateError("Browser access is not available while the application is reconnecting")
+    }
+    var request = URLRequest(url: origin.appending(path: "_fia/browser/" + action))
+    request.httpMethod = "POST"
+    request.setValue(session, forHTTPHeaderField: "x-fia-session")
+    request.setValue("application/json", forHTTPHeaderField: "content-type")
+    request.httpBody = try JSONSerialization.data(withJSONObject: route.map { ["route": $0] } ?? [:])
+    request.timeoutInterval = 5
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+      throw UpdateError("Browser access could not be authorized. Try again after the application is ready.")
+    }
+    return try JSONDecoder().decode(BrowserReply.self, from: data)
+  }
+  func openInBrowser(windowID: String) async throws {
+    let reply = try await browserControl("issue", route: windows.browserRoute(windowID))
+    guard let value = reply.url, let url = URL(string: value),
+      let expected = developmentOrigin ?? backendOrigin,
+      url.scheme == expected.scheme, url.host == expected.host, url.port == expected.port,
+      url.path == "/_fia/browser/open",
+      url.fragment?.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else {
+      throw UpdateError("The application returned an invalid browser authorization")
+    }
+    guard NSWorkspace.shared.open(url) else { throw UpdateError("The default browser could not be opened") }
+  }
+  func disconnectBrowsers() async throws { _ = try await browserControl("revoke") }
   private func waitForBackend() async throws {
     // BackendSupervisor owns the startup deadline and suspends it during native dialogs.
     // An outer wall-clock deadline would incorrectly fail Keychain consent.
@@ -233,7 +272,8 @@ public final class FIARuntime {
       throw UpdateError("Runtime cannot reload now")
     }
     transitioning = true
-    defer { transitioning = false }
+    defer { transitioning = false; windows.setBrowserAvailable(backendReady) }
+    windows.setBrowserAvailable(false)
     windows.suspend()
     try await backend?.stop()
     native.cancelActive()
@@ -384,6 +424,12 @@ public final class FIARuntime {
             "native": true, "windows": true, "resources": true,
             "updates": self?.updater.isEnabled ?? false,
           ])
+      }
+    }
+    native.register("runtime.browserRoute", input: BuiltinWindowID.self, output: BrowserRoute.self) { [weak self] input in
+      try await MainActor.run {
+        guard let self else { throw CancellationError() }
+        return BrowserRoute(route: try self.windows.browserRoute(input.id))
       }
     }
     native.register("runtime.frontendReady", input: FrontendReady.self, output: FIAEmpty.self) {
@@ -644,3 +690,5 @@ struct RuntimeManifest: Codable, Sendable {
     return value
   }
 }
+
+private struct BrowserRoute: Codable, Sendable { let route: String }

@@ -1,3 +1,4 @@
+import { browserBridge, frontendFetch } from "./browser-transport.ts";
 import {
   API_MAX_BYTES,
   assertJSON,
@@ -96,6 +97,7 @@ export function createAPIClient<C extends APIContract>(
   >();
   const reconnect = new Set<() => void>();
   const lifetime = new AbortController();
+  const offBrowser = browserBridge()?.onEnd(() => lifetime.abort());
   let events: AbortController | undefined;
   let closed = false;
   const startEvents = () => {
@@ -228,6 +230,7 @@ export function createAPIClient<C extends APIContract>(
     close() {
       closed = true;
       lifetime.abort();
+      offBrowser?.();
       events?.abort();
       listeners.clear();
       reconnect.clear();
@@ -235,7 +238,5 @@ export function createAPIClient<C extends APIContract>(
   } as APIClient<C>;
 }
 export function createClient<C extends APIContract>(): APIClient<C> {
-  return createAPIClient<C>((path, init) =>
-    fetch("/_fia/api" + path, { ...init, credentials: "same-origin" }),
-  );
+  return createAPIClient<C>((path, init) => frontendFetch("/_fia/api" + path, init));
 }
