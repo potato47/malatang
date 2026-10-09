@@ -218,6 +218,11 @@ enum BrowserAccessLabels {
   static var disconnect: String { isChinese ? "断开浏览器连接" : "Disconnect Browsers" }
 }
 
+enum WindowPinLabels {
+  static var pin: String { BrowserAccessLabels.isChinese ? "置顶窗口" : "Keep Window on Top" }
+  static var unpin: String { BrowserAccessLabels.isChinese ? "取消置顶" : "Stop Keeping Window on Top" }
+}
+
 public struct TitlebarItem: Codable, Sendable, Equatable {
   public let type: String
   public let id: String
@@ -255,6 +260,8 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
   private var action: (String, String) -> Void
   private var browserAction: ((String) -> Void)?
   private var browserButton: NSButton?
+  private var pinButton: NSButton?
+  private var pinned = false
   var browserOpening = false { didSet { updateBrowserButton() } }
   var browserAvailable = true { didSet { updateBrowserButton() } }
   private func updateBrowserButton() { browserButton?.isEnabled = connected && browserAvailable && !browserOpening }
@@ -356,6 +363,14 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
         stack.addArrangedSubview(space)
       }
     }
+    let pin = NSButton(title: "", target: self, action: #selector(togglePinned))
+    pin.identifier = NSUserInterfaceItemIdentifier("fia.keepOnTop")
+    pin.setButtonType(.pushOnPushOff)
+    pin.imagePosition = .imageOnly
+    pin.bezelStyle = .texturedRounded
+    pinButton = pin
+    updatePinButton()
+    stack.addArrangedSubview(pin)
     let browser = NSButton(title: "", target: self, action: #selector(openBrowser))
     let description = BrowserAccessLabels.open
     browser.identifier = NSUserInterfaceItemIdentifier("fia.openInBrowser")
@@ -380,6 +395,20 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
     accessory.view = container
     accessory.layoutAttribute = .right
     window.addTitlebarAccessoryViewController(accessory)
+  }
+  private func updatePinButton() {
+    let description = pinned ? WindowPinLabels.unpin : WindowPinLabels.pin
+    pinButton?.image = NSImage(
+      systemSymbolName: pinned ? "pin.fill" : "pin", accessibilityDescription: description)
+    pinButton?.state = pinned ? .on : .off
+    pinButton?.contentTintColor = pinned ? .controlAccentColor : nil
+    pinButton?.toolTip = description
+    pinButton?.setAccessibilityLabel(description)
+  }
+  @objc private func togglePinned() {
+    pinned.toggle()
+    window.level = pinned ? .floating : .normal
+    updatePinButton()
   }
   @objc private func openBrowser() {
     if connected && browserAvailable && !browserOpening { browserAction?(id) }

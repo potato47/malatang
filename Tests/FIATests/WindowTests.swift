@@ -248,6 +248,48 @@ struct WindowTests {
     #expect(throws: (any Error).self) { try manager.browserRoute("missing") }
     _ = try manager.operate("close", id: "main")
   }
+  @Test func pinButtonControlsOnlyItsWindowAndSurvivesTitlebarAndBackendChanges() async throws {
+    _ = NSApplication.shared
+    let window = WebWindow(options: WindowOptions(id: "main"), appName: "FIA",
+      emit: { _ in }, action: { _, _ in Issue.record("Pin must not dispatch an application action") })
+    let other = WebWindow(options: WindowOptions(id: "other"), appName: "FIA",
+      emit: { _ in }, action: { _, _ in })
+    defer { try? window.close(); try? other.close() }
+    func button() throws -> NSButton {
+      let stack = try #require(window.window.titlebarAccessoryViewControllers.first?.view.subviews.first as? NSStackView)
+      let buttons = stack.arrangedSubviews.compactMap { $0 as? NSButton }
+        .filter { $0.identifier?.rawValue == "fia.keepOnTop" }
+      #expect(buttons.count == 1)
+      return try #require(buttons.first)
+    }
+    #expect(window.window.level == .normal)
+    #expect(try button().state == .off)
+    #expect(try button().toolTip == WindowPinLabels.pin)
+    // Pinning is a local native action and remains available before backend readiness.
+    #expect(try button().isEnabled)
+    try button().performClick(nil)
+    #expect(window.window.level == .floating)
+    #expect(other.window.level == .normal)
+    #expect(try button().state == .on)
+    #expect(try button().toolTip == WindowPinLabels.unpin)
+    window.connected = true
+    window.loading()
+    window.setTitlebar([TitlebarItem(type: "text", id: "status", label: "Ready", symbol: nil, tooltip: nil, enabled: nil)])
+    window.setTitlebar([])
+    // The Host keeps this object while hiding or reconnecting. Allow AppKit to
+    // finish the loading navigation before exercising visibility and clicks.
+    try await waitForPage(window.webView, condition: "document.readyState === 'complete'")
+    try window.show()
+    window.window.performClose(nil)
+    try window.show()
+    #expect(window.window.level == .floating)
+    #expect(try button().state == .on)
+    #expect(try button().isEnabled)
+    try button().performClick(nil)
+    #expect(window.window.level == .normal)
+    #expect(try button().state == .off)
+    #expect(try button().toolTip == WindowPinLabels.pin)
+  }
   @Test func registryCancelsNativeCallsWithoutPoisoningNextGeneration() async throws {
     let registry = NativeMethodRegistry()
     registry.register("slow", input: FIAEmpty.self, output: FIAEmpty.self) { _ in

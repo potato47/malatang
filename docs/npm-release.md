@@ -2,18 +2,26 @@
 
 GitHub 仓库：`potato47/fia`。npm 包：`@semicoder/fia`，源码在 `packages/cli`。
 
-## 0.17.0 发布记录（2026-10-09）
+## 0.18.0 GitHub 发布准备（2026-10-09）
+
+本次用户授权新建公开仓库 `potato47/fia` 并使用 GitHub Actions 发布。`origin` 已配置，默认分支为 `main`；`npm` Environment 仅允许精确 `v0.18.0` tag。npm Trusted Publisher 已创建，限定 `potato47/fia`、`publish-npm.yml` 和 `npm`，仅开启直接 `npm publish`；不使用长期 npm token。首次真实 OIDC 和公开归档验收完成后补充 run / SHA-256 证据。
+
+Swift 测试显式使用 `--no-parallel`：原生测试共享 NSApplication、菜单与系统快捷键，不能跨套件并行；发布检查须看到最终测试汇总，不能只依据进程退出码。
+
+0.18.0 新增每个原生网页窗口的标题栏置顶图标，默认项目自动包含；应用须用新 Host 完整重建。置顶只保留当前窗口生命周期，不跨应用重启。麻辣烫 0.3.0 的固定 FIA 0.17.0 不随本次框架发行改变。
+
+## 0.17.0 发布记录（2026-10-09，历史）
 
 `@semicoder/fia@0.17.0` 已通过维护者 npm 认证发布，registry latest 为 0.17.0；公开归档与本地验收包逐字节一致，SHA-256 `521a07c387efa5b2c7ddbb76807b5c613b5b26cdf6e9c84fb965d27a5dd536b6`。源码和本地 `v0.17.0` 标签为 `4689c707913ca31f93b03cfe4deb61466c9e69f2`。同一归档保存于麻辣烫 [fia-runtime-4689c707913c](https://github.com/potato47/malatang/releases/tag/fia-runtime-4689c707913c)，匿名下载一致，不重打包。
 
 本次完成 runtime 构建、完整 check / smoke、归档结构与独立默认模板检查 / 构建；新增默认浏览器界面、短期会话、Native 权限白名单、文件对话框连接修复与 Dev / Preview 隔离，也包含此前固定归档的 DMG 和应用子命令能力。原生宿主变化需完整应用安装包升级。
 
-FIA 本地仓库仍无 remote，配置目标 GitHub 仓库返回 404；本次未创建远端仓库、未执行 GitHub OIDC，不能将本机 npm 发布视为远端自动发布验收。不要再推送 v0.17.0 触发重复发布。后续工作流配置说明保留如下；官网由独立 Semicoder 发布流程同步。
+0.17.0 发布时 FIA 本地仓库无 remote，配置目标 GitHub 仓库返回 404；该次未创建远端仓库、未执行 GitHub OIDC，不能将本机 npm 发布视为远端自动发布验收。不要再推送 v0.17.0 触发重复发布。后续工作流配置说明保留如下；官网由独立 Semicoder 发布流程同步。
 
 ## 首次配置
 
 1. 将包含 `.github/workflows/publish-npm.yml` 的代码提交并推送到 GitHub 主分支。手动运行入口需要工作流先存在于默认分支。
-2. 在 GitHub 仓库 Settings → Environments 创建 `npm` 环境。若设置部署分支 / 标签限制，需要允许 `v*` 标签。是否添加人工审批由维护者决定。
+2. 在 GitHub 仓库 Settings → Environments 创建 `npm` 环境。若设置部署分支 / 标签限制，需要允许本次精确版本标签（当前为 `v0.18.0`），不要为单次发行放宽为任意标签。是否添加人工审批由维护者决定。
 3. 打开 npm 的 `@semicoder/fia` 包 Settings → Trusted publishing，添加 GitHub Actions 发布者：
 
    | 字段                 | 值                     |

@@ -122,3 +122,7 @@ Shared API requests, responses and individual events each have a 1 MiB UTF-8 lim
 自定义命令可要求自己的开发依赖；框架不会隐式安装依赖或执行包安装脚本。应用应在命令帮助中注明要求。变更通用 CLI 会改变 runtime ID，既有应用须通过完整安装包取得新运行时。
 
 带自定义命令的开发应用在后端脚本或其项目依赖变化时重新构建，避免命令继续使用旧 bundle。原生 Keychain/对话框交互期间，监督层与外层启动流程共用就绪判定；开发 CLI 同样暂停等待计时，交互结束后恢复超时约束。
+
+## Keep a window on top (0.18.0)
+
+Native web windows include a pin icon to the left of Open in Browser. Click to toggle the current window between normal and floating levels; the filled, highlighted icon indicates that it is pinned. Pinning remains available while loading or reconnecting and survives titlebar updates and hiding/reopening the main window. It resets when the window is destroyed or the app quits. This does not pin browser windows or move windows across desktops/fullscreen spaces. New projects include it automatically; existing apps must rebuild and distribute the complete application with the new native host.
