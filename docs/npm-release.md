@@ -2,13 +2,17 @@
 
 GitHub 仓库：`potato47/fia`。npm 包：`@semicoder/fia`，源码在 `packages/cli`。
 
-## 0.18.0 GitHub 发布准备（2026-10-09）
+## 0.18.0 GitHub 发布记录（2026-10-09）
 
-本次用户授权新建公开仓库 `potato47/fia` 并使用 GitHub Actions 发布。`origin` 已配置，默认分支为 `main`；`npm` Environment 仅允许精确 `v0.18.0` tag。npm Trusted Publisher 已创建，限定 `potato47/fia`、`publish-npm.yml` 和 `npm`，仅开启直接 `npm publish`；不使用长期 npm token。首次真实 OIDC 和公开归档验收完成后补充 run / SHA-256 证据。
+本次用户授权新建公开仓库 `potato47/fia` 并使用 GitHub Actions 发布。`origin` 已配置，默认分支为 `main`；`npm` Environment 仅允许精确 `v0.18.0` tag。npm Trusted Publisher 已创建，限定 `potato47/fia`、`publish-npm.yml` 和 `npm`，仅开启直接 `npm publish`；不使用长期 npm token。[手动验收 37887494256](https://github.com/potato47/fia/actions/runs/37887494256) 和 [正式标签 OIDC 发布 37887890823](https://github.com/potato47/fia/actions/runs/37887890823) 均成功。v0.18.0 固定源码 `85206f6f532242fb2dfcfdf2a4b608f131726bf5`，不移动已发布标签。
 
 Swift 测试显式使用 `--no-parallel`：原生测试共享 NSApplication、菜单与系统快捷键，不能跨套件并行；发布检查须看到最终测试汇总，不能只依据进程退出码。
 
-0.18.0 新增每个原生网页窗口的标题栏置顶图标，默认项目自动包含；应用须用新 Host 完整重建。置顶只保留当前窗口生命周期，不跨应用重启。麻辣烫 0.3.0 的固定 FIA 0.17.0 不随本次框架发行改变。
+0.18.0 新增每个原生网页窗口的标题栏置顶图标，默认项目自动包含；应用须用新 Host 完整重建。置顶只保留当前窗口生命周期，不跨应用重启。麻辣烫 0.4.0 已通过 `release/runtime-lock.json` 接入同一官方归档；旧 0.3.0 的固定 FIA 0.17.0 保留。
+
+公开 npm latest 为 0.18.0，归档带 SLSA provenance（透明日志索引 3157989242）。公开 npm tarball、正式 Actions artifact 和 [GitHub Release 附件](https://github.com/potato47/fia/releases/tag/v0.18.0) 逐字节一致：28,412,479 字节，SHA-256 `faf196b9408cc2fa4b9edfb0145c592a9a87b6fbc0b0245ad6b89c6c0e7ff4e2`。Release 同时提供 `SHA256SUMS`，无需重新打包。
+
+发布检查完整通过：73 CLI 测试 / 525 断言、48 Swift 测试 / 11 套件、运行时构建与归档验证。在 workspace 外以新缓存运行公开 `bunx @semicoder/fia@0.18.0 create`，完成 check / build / Preview 启动、counter API 和正常退出，确认 frameworkVersion 为 0.18.0。本机另通过完整 smoke 和原生按钮交互。Semicoder 安装与置顶指南已按公开产物同步，网站部署另行验收。
 
 ## 0.17.0 发布记录（2026-10-09，历史）
 
@@ -40,17 +44,17 @@ Swift 测试显式使用 `--no-parallel`：原生测试共享 NSApplication、�
 
 ## 发布新版本
 
-在 FIA 仓库内执行，以 `0.17.1` 为例；目标版本必须大于当前版本且尚未发布到 npm：
+在 FIA 仓库内执行，以 `0.18.1` 为例；目标版本必须大于当前版本且尚未发布到 npm：
 
 ```bash
 bun install --frozen-lockfile
-bun run version:npm 0.17.1
+bun run version:npm 0.18.1
 git diff
 git add package.json packages/cli/package.json packages/cli/src/metadata.ts Sources/FIACore/FIAVersion.swift bun.lock
-git commit -m "chore: release 0.17.1"
+git commit -m "chore: release 0.18.1"
 git push origin main
-git tag -a v0.17.1 -m "Release 0.17.1"
-git push origin v0.17.1
+git tag -a v0.18.1 -m "Release 0.18.1"
+git push origin v0.18.1
 ```
 
 以上示例假定版本提交已在 `main`；使用特性分支时，先将版本提交合入主分支，再在该提交打标签。仓库尚未配置 remote 时，先配置 `origin` 为 `https://github.com/potato47/fia.git`。也可不指定版本执行 `bun run version:npm`，默认递增 minor 并归零 patch。
@@ -65,7 +69,7 @@ git push origin v0.17.1
 4. 执行 `npm pack`，解包并验证 CLI 版本、SDK 入口、类型、文档、模板资源、二进制架构 / 校验和 / 可执行权限。构建不能改动受 Git 跟踪的文件。
 5. 将验证后的 `.tgz` 保存为 Actions artifact，保留 14 天；独立 Linux job 下载同一归档，以 npm `11.19.0` 和 OIDC 发布，不再构建或执行包生命周期脚本。
 
-正式版本（如 `0.17.1`）发布到 `latest`；含预发布标识的版本（如 `0.17.0-beta.1`）发布到 `next`，不会覆盖 `latest`。使用 `npm install @semicoder/fia@next` 安装预发布版。暂不支持 SemVer build metadata（`+...`），与现有版本工具一致。
+正式版本（如 `0.18.1`）发布到 `latest`；含预发布标识的版本（如 `0.17.0-beta.1`）发布到 `next`，不会覆盖 `latest`。使用 `npm install @semicoder/fia@next` 安装预发布版。暂不支持 SemVer build metadata（`+...`），与现有版本工具一致。
 
 GitHub Actions 内不执行本地的 `bun run release`：该命令会递增版本，而 CI 发布的是标签提交中已经确定的版本。本地交互式发布命令仍可使用；同一版本不能本地发布后再通过标签重复发布。
 
