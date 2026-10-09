@@ -2,6 +2,14 @@
 
 GitHub 仓库：`potato47/fia`。npm 包：`@semicoder/fia`，源码在 `packages/cli`。
 
+## 0.17.0 发布记录（2026-10-09）
+
+`@semicoder/fia@0.17.0` 已通过维护者 npm 认证发布，registry latest 为 0.17.0；公开归档与本地验收包逐字节一致，SHA-256 `521a07c387efa5b2c7ddbb76807b5c613b5b26cdf6e9c84fb965d27a5dd536b6`。源码和本地 `v0.17.0` 标签为 `4689c707913ca31f93b03cfe4deb61466c9e69f2`。同一归档保存于麻辣烫 [fia-runtime-4689c707913c](https://github.com/potato47/malatang/releases/tag/fia-runtime-4689c707913c)，匿名下载一致，不重打包。
+
+本次完成 runtime 构建、完整 check / smoke、归档结构与独立默认模板检查 / 构建；新增默认浏览器界面、短期会话、Native 权限白名单、文件对话框连接修复与 Dev / Preview 隔离，也包含此前固定归档的 DMG 和应用子命令能力。原生宿主变化需完整应用安装包升级。
+
+FIA 本地仓库仍无 remote，配置目标 GitHub 仓库返回 404；本次未创建远端仓库、未执行 GitHub OIDC，不能将本机 npm 发布视为远端自动发布验收。不要再推送 v0.17.0 触发重复发布。后续工作流配置说明保留如下；官网由独立 Semicoder 发布流程同步。
+
 ## 首次配置
 
 1. 将包含 `.github/workflows/publish-npm.yml` 的代码提交并推送到 GitHub 主分支。手动运行入口需要工作流先存在于默认分支。
@@ -24,17 +32,17 @@ GitHub 仓库：`potato47/fia`。npm 包：`@semicoder/fia`，源码在 `package
 
 ## 发布新版本
 
-在 FIA 仓库内执行，以 `0.16.2` 为例；目标版本必须大于当前版本且尚未发布到 npm：
+在 FIA 仓库内执行，以 `0.17.1` 为例；目标版本必须大于当前版本且尚未发布到 npm：
 
 ```bash
 bun install --frozen-lockfile
-bun run version:npm 0.16.2
+bun run version:npm 0.17.1
 git diff
 git add package.json packages/cli/package.json packages/cli/src/metadata.ts Sources/FIACore/FIAVersion.swift bun.lock
-git commit -m "chore: release 0.16.2"
+git commit -m "chore: release 0.17.1"
 git push origin main
-git tag -a v0.16.2 -m "Release 0.16.2"
-git push origin v0.16.2
+git tag -a v0.17.1 -m "Release 0.17.1"
+git push origin v0.17.1
 ```
 
 以上示例假定版本提交已在 `main`；使用特性分支时，先将版本提交合入主分支，再在该提交打标签。仓库尚未配置 remote 时，先配置 `origin` 为 `https://github.com/potato47/fia.git`。也可不指定版本执行 `bun run version:npm`，默认递增 minor 并归零 patch。
@@ -49,7 +57,7 @@ git push origin v0.16.2
 4. 执行 `npm pack`，解包并验证 CLI 版本、SDK 入口、类型、文档、模板资源、二进制架构 / 校验和 / 可执行权限。构建不能改动受 Git 跟踪的文件。
 5. 将验证后的 `.tgz` 保存为 Actions artifact，保留 14 天；独立 Linux job 下载同一归档，以 npm `11.19.0` 和 OIDC 发布，不再构建或执行包生命周期脚本。
 
-正式版本（如 `0.16.2`）发布到 `latest`；含预发布标识的版本（如 `0.17.0-beta.1`）发布到 `next`，不会覆盖 `latest`。使用 `npm install @semicoder/fia@next` 安装预发布版。暂不支持 SemVer build metadata（`+...`），与现有版本工具一致。
+正式版本（如 `0.17.1`）发布到 `latest`；含预发布标识的版本（如 `0.17.0-beta.1`）发布到 `next`，不会覆盖 `latest`。使用 `npm install @semicoder/fia@next` 安装预发布版。暂不支持 SemVer build metadata（`+...`），与现有版本工具一致。
 
 GitHub Actions 内不执行本地的 `bun run release`：该命令会递增版本，而 CI 发布的是标签提交中已经确定的版本。本地交互式发布命令仍可使用；同一版本不能本地发布后再通过标签重复发布。
 
