@@ -2,9 +2,9 @@
 
 基于 FIA 的本地插件应用平台。宿主提供模型、存储和统一界面组件，独立插件组合这些能力，拥有自己的应用页面。
 
-## 0.4.1 发布候选
+## 0.4.1 版本
 
-本次集中发布候选为应用 0.4.1 / build 5、SDK 0.3.0：Base UI + Tailwind CSS 4、组合式公共组件、manifest SDK 0.3、自定义主题、凭证文件及 Bun 1.4.3。公开验收完成前，官网仍提供 0.4.0 / SDK 0.2.1；状态见 [应用发布记录](docs/github-release.md) 和 [SDK 发布记录](docs/npm-release.md)。可见变化与升级要求见 [0.4.1 说明](release/notes/0.4.1.md)。
+应用 [0.4.1 / build 5](https://github.com/potato47/malatang/releases/tag/v0.4.1) 与 SDK 0.3.0 已公开发布：Base UI + Tailwind CSS 4、组合式公共组件、manifest SDK 0.3、自定义主题、凭证文件及 Bun 1.4.3。公开产物验证通过，官网内容同步部署单独验收；证据见 [应用发布记录](docs/github-release.md) 和 [SDK 发布记录](docs/npm-release.md)。可见变化与升级要求见 [0.4.1 说明](release/notes/0.4.1.md)。
 
 ## 0.4.0 版本（历史）
 
@@ -18,7 +18,7 @@
 
 官网统一位于 [Semicoder · 麻辣烫](https://semicoder.dev/malatang)，[下载与安装](https://semicoder.dev/malatang/docs/installation) 页面提供正式 DMG 下载、发行状态与安装指引。具体版本和校验信息以该页及 [GitHub Releases](https://github.com/potato47/malatang/releases) 为准；`fia-runtime-*` 预发布仅供构建，不是麻辣烫安装包。
 
-应用支持 macOS 14+ / Apple Silicon，安装后的应用自带运行时，无需另装 Bun。官网安装页的已发布 v0.4.0 源码使用固定 FIA 归档，无需编译 Swift；本开发分支的工具链要求见下文。
+应用支持 macOS 14+ / Apple Silicon，安装后的应用自带运行时，无需另装 Bun 或 Swift。0.4.1 源码从同一提交构建 FIA，需要下述 Swift 工具链；历史 v0.4.0 的固定归档构建方式仅适用于该旧标签。
 
 ## 开发运行
 
@@ -65,7 +65,7 @@ bun run agent --preview open --browser --url
 
 `bun run build` 仍生成正式身份的 `dist/Malatang.app`，默认与已安装官网版共用正式数据目录，同目录只允许一个实例。日常测试使用上述 dev / run；不要用正式构建路径判断数据已隔离。开发后端资源根目录是项目目录；预览/正式打包后是随应用分发的 backend 目录。
 
-以上开发标记和隔离 run 从 0.3.0 / FIA 0.17.0 开始提供；旧 0.2.0 固定快照中的 `run` 仍访问正式数据。已发布 v0.4.0 及更早源码仍需使用相应标签的 `release/runtime-lock.json`；本开发分支改为从同一提交构建框架。
+以上开发标记和隔离 run 从 0.3.0 / FIA 0.17.0 开始提供；旧 0.2.0 固定快照中的 `run` 仍访问正式数据。已发布 v0.4.0 及更早源码仍需使用相应标签的 `release/runtime-lock.json`；0.4.1 从同一提交构建框架。
 
 ## 版本开发与发布
 
@@ -93,7 +93,7 @@ GitHub 构建、正式签名公证发布与应用自动更新配置见 [发布�
 - 按插件 ID 划分的持久化 KV；原子文件替换和串行写入。
 - 页面与 FIA CLI 共用安装接口，接收 npm 包、Git HTTPS 来源及本地 `.tgz`；随手记本地包路径已经实测。
 
-可信本地扩展与宿主同进程执行，不构成安全沙箱。凭证不通过业务 API 返回前端。本地开发源码将 ChatGPT 账号注册、当前账号及 OAuth token 明文保存在 FIA `app.dataDirectory/chatgpt-auth.json`，其他模型 API Key 和应用设置继续保存在同目录的 `platform.json`。凭证目录权限为 0700，文件为 0600；开发 / 预览 / 正式按数据目录隔离。文件完整写入并同步后原子替换，保存成功才更新内存；不要分享包含凭证的数据目录或备份。
+可信本地扩展与宿主同进程执行，不构成安全沙箱。凭证不通过业务 API 返回前端。0.4.1 将 ChatGPT 账号注册、当前账号及 OAuth token 明文保存在 FIA `app.dataDirectory/chatgpt-auth.json`，其他模型 API Key 和应用设置继续保存在同目录的 `platform.json`。凭证目录权限为 0700，文件为 0600；开发 / 预览 / 正式按数据目录隔离。文件完整写入并同步后原子替换，保存成功才更新内存；不要分享包含凭证的数据目录或备份。
 
 **0.4.1 凭证存储变更：** 不再访问系统钥匙串，不导入、删除或回退使用旧凭证。首次切换需重新完成 ChatGPT 浏览器授权；旧订阅模型保留为未连接，需删除旧模型后从新账号目录重新添加。普通 API Key、插件、KV、外观和历史保留。凭证文件不存在时初始化；文件为空、损坏或无法读写时禁用 ChatGPT 登录并显示文件检查提示，不覆盖原文件。旧 v0.4.0 仍使用 Keychain。
 
@@ -135,7 +135,7 @@ GitHub 构建、正式签名公证发布与应用自动更新配置见 [发布�
 - `plugins/translate/`：内置前后端插件，仅经 SDK 调用模型及存储。
 - `examples/quick-notes/`：独立前端插件，打包安装后使用 KV。
 
-SDK 包名为 `@semicoder/malatang-sdk`，仓库内通过 workspace 使用；0.2.0 已于 2026-10-05 首次发布 npm，并通过独立安装验收。首次发布使用维护者 npm 登录，后续 OIDC 尚待验收。[SDK npm 发布流程](docs/npm-release.md) 使用独立的 `sdk-v*` 标签；应用 `v*` 标签继续发布 DMG 和更新源。构建脚本把插件业务依赖打入产物，并通过宿主共享 React 避免重复运行时。
+SDK 包名为 `@semicoder/malatang-sdk`，仓库内通过 workspace 使用；当前公开版本为 0.3.0 / manifest 0.3，首次 GitHub OIDC 发布、provenance、公开归档及独立插件消费已验证。SDK 0.2 及更早插件需更新重建，保持原 ID 可继续使用 KV / 历史。[SDK npm 发布流程](docs/npm-release.md) 使用独立的 `sdk-v*` 标签；应用 `v*` 标签继续发布 DMG 和更新源。构建脚本把插件业务依赖打入产物，并通过宿主共享 React 避免重复运行时。
 
 ## CLI
 

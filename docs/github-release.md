@@ -8,12 +8,12 @@
 
 2026-10-10 起采用“持续开发、集中归集、明确授权后统一发布”。普通任务完成、提交、合并或 CI 通过均不意味着发布；只有用户明确提出发布，才进入本文的发布准备流程。不按时间、提交数量或最低特性数量自动发版。
 
-| 变化 | 应用版本处理 |
-| --- | --- |
-| 日常开发、提交、合并、测试构建 | 不修改版本号和 build |
-| 一批普通功能、体验优化、性能改进和 bug 修复 | 第三位递增，例如 `0.4.0 → 0.4.1` |
-| 用户确认的大功能或产品阶段升级 | 第二位递增，第三位归零，例如 `0.4.3 → 0.5.0` |
-| 用户明确确认进入 1.0 正式阶段 | 才将第一位改为 `1` |
+| 变化                                        | 应用版本处理                                 |
+| ------------------------------------------- | -------------------------------------------- |
+| 日常开发、提交、合并、测试构建              | 不修改版本号和 build                         |
+| 一批普通功能、体验优化、性能改进和 bug 修复 | 第三位递增，例如 `0.4.0 → 0.4.1`             |
+| 用户确认的大功能或产品阶段升级              | 第二位递增，第三位归零，例如 `0.4.3 → 0.5.0` |
+| 用户明确确认进入 1.0 正式阶段               | 才将第一位改为 `1`                           |
 
 发布大小按内容判断，不按代码量、提交数量或是否需要完整 DMG 判断。涉及插件兼容或数据迁移时，发布前列出影响，由用户确认版本归类。公开发布 0.x 安装包仍处于 1.0 之前；本文的“正式发行”指公开签名安装包，不代表产品已进入 1.0。
 
@@ -28,6 +28,14 @@
 - 普通交付报告说明“已完成、已验证、尚未发布”；推送源码、应用发行、SDK npm 与官网部署分别按本次授权执行。
 
 ## 已公开发行证据
+
+2026-10-11 已发布 **[v0.4.1 / build 5](https://github.com/potato47/malatang/releases/tag/v0.4.1)**，标签固定 `4e222972c1de39a4e241cc3c0b8a2ba8af15fce0`。[主干 CI 38069368438](https://github.com/potato47/malatang/actions/runs/38069368438)、[签名手动验收 38069379373](https://github.com/potato47/malatang/actions/runs/38069379373) 和 [正式发布 38070028805](https://github.com/potato47/malatang/actions/runs/38070028805) 全部成功。框架同提交构建、独立导出消费、77 CLI / 48 Swift、85 应用测试、SDK 消费及 DMG 启动退出通过；FIA 独立 npm 继续暂停。
+
+公开五附件匿名 digest / 大小核对通过，DMG 为 35,652,251 字节，SHA-256 `17c486c7dd4b9132eb784847813aa6090047bb440da8be58c8b709684cc0201f`。本机 hdiutil、公证票据、Gatekeeper DMG / app、codesign、安装包与更新逐文件比对及隔离启动 / ready / 退出 / 进程清理通过；实际内置 Bun 为 `1.4.3+c6da4a4d3`。公网清单与 Release 一致，Ed25519 签名及全部 35 个在线文件大小 / SHA-256 通过；runtimeId `ec123685665929a602e6a12b173814d31699ff1d921332dfd1927a4e7d85fdbf`。内嵌 SDK 快照使用 Bun 打包，npm 归档使用 npm 打包，展开的 43 个文件逐字节一致。
+
+SDK 0.3.0 已首次 OIDC 独立发布，标签固定 `1a66de5`，见 [SDK 发布说明](npm-release.md)。本次需完整 DMG，ChatGPT 旧登录不迁移，需重新登录并添加订阅模型；旧 SDK 插件更新重建，普通密钥 / KV / 外观 / 历史保留。未在本轮操作真实账号、旧钥匙串或调用模型；跨版本代码热更新仍未实测。官网同步内容与部署分别验收。
+
+首个正式流程 38068339105 在测试阶段失败且无公开产物；用户明确允许修复后更新未发布应用标签，重新验收完成后才公开。旧对象保存在本地 refs/archive/v0.4.1-initial，SDK 标签及历史 Release / 更新文件未改写。以下为旧版发行证据：
 
 2026-10-09 已发布 **[v0.4.0 / build 4](https://github.com/potato47/malatang/releases/tag/v0.4.0)**，源码标签 `620d19a450578ca98c58c3ae1b7e13b524e57368`。[主干 CI 37888908778](https://github.com/potato47/malatang/actions/runs/37888908778) 与 [正式发布 37888912203](https://github.com/potato47/malatang/actions/runs/37888912203) 成功，实际消费 FIA 官方 v0.18.0 归档；本机 check / 69 测试 / build 与原生 Dev / Preview 置顶、取消置顶通过。SDK 保持 0.2.1。`github-pages` 仅增加精确 v0.4.0 tag 规则，其余保护未改动。
 
@@ -67,14 +75,14 @@
 4. 创建 `release` 和 `github-pages` Environments，核对待发布标签及手动验收分支的部署许可。首发时 `github-pages` 原先仅允许 `main`，本次保留其他保护、仅新增精确 `v0.1.0` 标签规则。0.2.0 发布经用户明确许可追加精确 `v0.2.0` 规则，其余保护不变。以后每次发布前检查对应标签的 allowlist，按该次发布授权增加必要规则，不改为允许全部分支或标签。保护发布分支及标签，发布凭据仅供可信源码使用。`gh-pages` 是生成数据分支，不将它合回 `main`。
 5. 在 `release` 环境中配置以下 Secrets，内容不要提交到 Git：
 
-| Secret | 内容 |
-| --- | --- |
-| `APPLE_CERTIFICATE_P12` | 含私钥的 **Developer ID Application** `.p12` 文件的 Base64 |
-| `APPLE_CERTIFICATE_PASSWORD` | `.p12` 导出密码 |
-| `APPLE_ID` | Apple Developer 登录邮箱 |
-| `APPLE_TEAM_ID` | Apple 团队 ID |
-| `APPLE_APP_SPECIFIC_PASSWORD` | 用于 `notarytool` 的 Apple 专用密码 |
-| `FIA_UPDATE_PRIVATE_KEY` | Ed25519 更新私钥的完整 PEM 文本 |
+| Secret                        | 内容                                                       |
+| ----------------------------- | ---------------------------------------------------------- |
+| `APPLE_CERTIFICATE_P12`       | 含私钥的 **Developer ID Application** `.p12` 文件的 Base64 |
+| `APPLE_CERTIFICATE_PASSWORD`  | `.p12` 导出密码                                            |
+| `APPLE_ID`                    | Apple Developer 登录邮箱                                   |
+| `APPLE_TEAM_ID`               | Apple 团队 ID                                              |
+| `APPLE_APP_SPECIFIC_PASSWORD` | 用于 `notarytool` 的 Apple 专用密码                        |
+| `FIA_UPDATE_PRIVATE_KEY`      | Ed25519 更新私钥的完整 PEM 文本                            |
 
 6. 在 `release` 环境 Variables 设置 `APPLE_SIGNING_IDENTITY`，值为完整身份，如 `Developer ID Application: Your Name (TEAMID)`。此名称参与运行时兼容判断；变更时需要完整安装包。
 7. 先手动运行 `Release Malatang`，确认签名、公证、smoke 和产物校验全部通过，再发布首个标签。
@@ -95,7 +103,7 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 ## 当前 FIA 构建与历史固定包
 
-当前 CI 冻结安装根 workspace，再从同一提交的 `framework/fia/` 构建运行时与 CLI。无需预先发布 FIA；框架检查和应用检查均通过后才生成 DMG / SDK 归档。来源报告记录应用提交、框架源码指纹、工具链和产物哈希并随 CI artifact 保存，缓存只用于加速。2026-10-10 已完成本地单仓构建与独立消费验收，真实 GitHub runner 上的共仓构建及正式签名发布尚未验证；签名公证、更新签名、runtimeId 兼容及既有环境保护保持不变。详见 [FIA 共仓开发与后续拆分](fia-integration.md)。
+当前 CI 冻结安装根 workspace，再从同一提交的 `framework/fia/` 构建运行时与 CLI。无需预先发布 FIA；框架检查和应用检查均通过后才生成 DMG / SDK 归档。来源报告记录提交、源码指纹、工具链和产物哈希，缓存仅用于加速。0.4.1 已在真实 GitHub runner 完成共仓构建、框架独立消费和正式签名发布；框架指纹 `6adf4f197a6dd795933c9b4e06ffc7e4ab9882660c4661aac2c074f461375186`，Bun 1.4.3 / Swift 6.3.3 / SDK 26.5。签名公证、更新签名、runtimeId 兼容及环境保护保持，详见 [共仓说明](fia-integration.md)。
 
 以下归档与 runtime lock 仅描述历史发行；保留原标签和附件供重现，不作为当前发布前置条件：
 
@@ -116,11 +124,11 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 5. 按本次授权将最终发布提交合入 `main` 并推送，在该提交创建和推送精确 `v<version>` 标签；复核 `release` / `github-pages` 环境允许该精确标签。GitHub 正式流程生成、验证并公开 DMG 和更新源。
 6. 核验公开产物与更新源，完成下述官网同步，分别记录发行和部署状态。已公开条目从待发布清单移出，保留版本说明和发行证据；其他未发布条目继续归集。官网等遗留交付项单独记录，不能因清单移出就宣称全部完成。
 
-只有明确获准发布且版本范围已确定时，才使用以下示例；`0.4.1` 是当前常规发布候选，不是现在应执行的任务。在应用仓库执行：
+只有明确获准发布且版本范围已确定时，才使用以下示例；`0.4.2` 仅是下一次常规候选，不是现在应执行的任务。在应用仓库执行：
 
 ```sh
-# 先准备 release/notes/0.4.1.md 和受影响官网内容
-bun run version:app 0.4.1
+# 先准备 release/notes/0.4.2.md 和受影响官网内容
+bun run version:app 0.4.2
 bun run release:check
 bun run check
 bun run test
@@ -128,8 +136,8 @@ bun run build
 bun run framework:verify
 # 完成其他受影响检查，审阅并提交；按授权合入 main，确认 HEAD 为已验发布提交后：
 git push origin main
-git tag -a v0.4.1 -m 'Malatang 0.4.1'
-git push origin v0.4.1
+git tag -a v0.4.2 -m 'Malatang 0.4.2'
+git push origin v0.4.2
 ```
 
 当前脚本只支持无后缀的 `x.y.z`；预发布不能进入稳定更新源。发布提交必须包含对应的 `release/notes/<version>.md`，发布脚本会将其追加到正式 Release 说明。版本分类和说明完整性由维护者按本流程核对：现有版本脚本只校验格式、递增和 build，发布脚本允许缺少说明；本次不新增脚本约束或 CI。

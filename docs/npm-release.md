@@ -4,15 +4,15 @@
 
 ## 包名与版本
 
-| 包 | 用途 | 分发方式 |
-| --- | --- | --- |
-| `@semicoder/malatang-sdk` | 插件 SDK | `sdk-v<x.y.z>` 标签触发 npm 发布 |
-| `@semicoder/malatang-plugin-translate` | 内置翻译 | 保持 `private: true`，随应用分发 |
+| 包                                        | 用途       | 分发方式                                      |
+| ----------------------------------------- | ---------- | --------------------------------------------- |
+| `@semicoder/malatang-sdk`                 | 插件 SDK   | `sdk-v<x.y.z>` 标签触发 npm 发布              |
+| `@semicoder/malatang-plugin-translate`    | 内置翻译   | 保持 `private: true`，随应用分发              |
 | `@semicoder/malatang-example-quick-notes` | 随手记示例 | 构建为本地 `.tgz`，随应用分发；本流程不发布它 |
 
 SDK 0.2.0 是随麻辣烫 0.2.0 提供的破坏性更新：manifest `sdkVersion` 为 `"0.2"`，要求 CSS Modules 和宿主共享 UI。SDK 0.1 插件须迁移并重新构建，不能直接安装或启用；原 ID、宿主标识及 KV 命名空间不变，用户数据保留。历史包名迁移与此次兼容版本升级是两次不同变更。
 
-SDK 版本独立于应用版本，当前公开 SDK 为 0.3.0，应用发布候选为 0.4.1；应用发行与 SDK npm 分别验收。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
+SDK 版本独立于应用版本，当前公开 SDK 为 0.3.0，应用为 0.4.1；应用发行与 SDK npm 分别验收。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
 
 ## 当前发布状态
 
@@ -38,15 +38,16 @@ SDK 0.3.0 对应 manifest `sdkVersion: "0.3"`，使用 Base UI / Tailwind CSS 4 
    ```
 
    首次发布是实际公开操作，只有准备发布时才执行；不能用 empty placeholder 代替 SDK。已发布版本不能覆盖，也不要再推送相同版本标签尝试重复发布。
+
 4. 在 npm 包 Settings → Trusted publishing 添加 GitHub Actions 发布者：
 
-   | 字段 | 值 |
-   | --- | --- |
-   | Organization or user | `potato47` |
-   | Repository | `malatang` |
-   | Workflow filename | `publish-npm.yml` |
-   | Environment name | `npm` |
-   | Allowed actions | `npm publish` 及 npm 必需的 `npm stage publish`；不允许 dist-tag 修改 |
+   | 字段                 | 值                                                                    |
+   | -------------------- | --------------------------------------------------------------------- |
+   | Organization or user | `potato47`                                                            |
+   | Repository           | `malatang`                                                            |
+   | Workflow filename    | `publish-npm.yml`                                                     |
+   | Environment name     | `npm`                                                                 |
+   | Allowed actions      | `npm publish` 及 npm 必需的 `npm stage publish`；不允许 dist-tag 修改 |
 
 工作流采用 OIDC，使用 Node 24、npm 11.19.0、Bun 1.4.3。只有 publish job 申请 `id-token: write`，不配置 `NPM_TOKEN` / `NODE_AUTH_TOKEN`。仅目标仓库的 SDK 标签可以进入发布 job；手动验收不需要 npm 认证。公开包、公开仓库经 OIDC 发布时 npm 自动生成 provenance。依据：[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)。
 
