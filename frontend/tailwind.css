@@ -1,0 +1,39 @@
+@import "tailwindcss" source(none);
+@import "../packages/sdk/src/tailwind.css";
+@source "./";
+@layer base {
+  body {
+    font-family: var(--m-font);
+    font-size: var(--m-font-size);
+    line-height: var(--m-line-height);
+    color: var(--m-text);
+    background: var(--m-bg);
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled,
+  input:disabled,
+  textarea:disabled,
+  [data-disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  ::selection {
+    background: var(--m-selection);
+    color: var(--m-text);
+  }
+  :focus-visible {
+    outline: 2px solid var(--m-focus);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+}

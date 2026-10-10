@@ -11,4 +11,7 @@ Declare shared operations and events in shared/api.ts. Implement them in backend
 - 官网在独立 Semicoder 仓库的 `content/projects/malatang/`，workspace 入口为 `../semicoder/`。可见行为、SDK、安装与发布变化需在同一任务检查对应页面，并在网站 `docs/project-sources.md` 记录来源。网站不是应用运行/构建依赖。
 - 每次应用或 SDK 版本发布必须同步官网安装、插件开发及受影响指南，并记录版本证据和网站部署状态；两种发行不能互相代替。
 - 应用 `v*`、SDK `sdk-v*` 与网站主干部署分别管理；应用更新源由应用发布流程维护，不因官网迁入个人网站而更换。未发布变更与公开固定快照分开说明，普通开发不自动推送或发布。
+- 应用采用“持续开发、集中归集、明确授权后统一发布”：日常开发、提交、合并和测试构建不改版本或 build。普通功能、优化和修复集中递增第三位；用户确认的大功能或产品阶段升级才递增第二位并将第三位归零；进入 1.0 必须由用户明确确认。完整 DMG 的需要不决定版本级别，兼容或迁移影响须在发布前说明。
+- 每次完成改动更新 [待发布清单](release/notes/unreleased.md)，记录来源提交、验证和官网影响；未完成需求留在待办。沿用短期 `codex/` 分支，不新增长期 `develop`；日常体验用 Dev / Preview 和来源报告区分开发产物。
+- 只有用户明确提出发布，才按 [发布手册](docs/github-release.md) 归集范围、生成对应版本说明、执行一次 `version:app` 并验收；重复验收不反复升号。应用、SDK、插件和 FIA 版本独立管理，共仓期 FIA npm 继续暂停。严重线上修复也需明确发布要求，遵循手册的临时修复分支与回主干流程。
 - workspace 内遵守根 `docs/agent/development.md`。以上 check/build 要求适用于实现修改；仅文档/规范修改按 workspace 规则检查事实、链接、格式与差异，不启动应用或运行无关完整测试。

@@ -1,6 +1,8 @@
-# @semicoder/malatang-sdk · 0.2
+# @semicoder/malatang-sdk · 开发契约 0.3
 
-当前包版本为 0.2.1，随麻辣烫 0.3.0 提供，manifest sdkVersion 保持 0.2。SDK 0.2 相对于 0.1 是破坏性更新，基础能力需要麻辣烫 0.2.0 及以上宿主；v0.1.0 不支持。包名为 `@semicoder/malatang-sdk`，由应用 CLI 内置归档提供，npm 发布状态独立核验，模板不依赖 registry 可安装性。插件为可信本地代码；SDK 命名空间用于组织数据，不是安全隔离。包内为 TypeScript / TSX 源码，使用 Bun 1.4.2 及以上构建插件，React 19 与 ReactDOM 19 为 peer dependency，开发依赖须精确同版本。发布流程见 [SDK npm 发布说明](https://github.com/potato47/malatang/blob/main/docs/npm-release.md)。
+本仓库的未发布开发版本使用 **Base UI 1.9 + Tailwind CSS 4.3**，manifest `sdkVersion` 为 `0.3`。应用与 SDK 包版本字符串暂未递增；它们不代表本地源码等同于公开麻辣烫 0.4.0 / SDK 0.2.1。使用开发宿主内置快照创建插件，不从当前公开 npm 安装新契约。
+
+插件为可信本地代码，命名空间和 CSS 作用域不是安全沙箱。使用 Bun >=1.4.2；React 与 ReactDOM 19 必须精确同版本。宿主提供唯一的 React、Base UI 和公共组件实现。此轮不提供旧 API 或插件兼容层，数据存储键保持不变。
 
 [麻辣烫官网](https://semicoder.dev/malatang) · [插件开发指南](https://semicoder.dev/malatang/docs/plugin-development) · [下载与安装](https://semicoder.dev/malatang/docs/installation)
 
@@ -19,7 +21,7 @@
     "description": "一句话介绍",
     "icon": "文",
     "color": "#cf633c",
-    "sdkVersion": "0.2",
+    "sdkVersion": "0.3",
     "frontend": "dist/client.js",
     "styles": "dist/client.css",
     "backend": "dist/backend.js",
@@ -30,7 +32,7 @@
 
 `frontend: dist/client.js` 与 `styles: dist/client.css` 必需；存在 `src/backend.ts` 时声明 `backend: dist/backend.js`，否则省略。入口须在包内；浏览器资源放在 `dist/`，不通过资源路由公开后端入口。`id` 是 2–64 位小写字母、数字和连字符，首位为字母；`models` / `plugins` / `settings` 为宿主保留。ID 同时定义持久数据命名空间，勿随意更改。版本不兼容或重复 ID 会拒绝安装。
 
-`keepAlive` 是可选布尔值，默认 `false`。仅需要保留页面实例的插件声明为 `true`；现有未声明的插件仍在切页时卸载。schemaVersion / sdkVersion 为 1 / 0.2。SDK 0.1 插件在新宿主中明确报错，需迁移源码并重新构建安装；KV、模型、账号和历史不清除。
+`keepAlive` 是可选布尔值，默认 `false`。仅需要保留页面实例的插件声明为 `true`；现有未声明的插件仍在切页时卸载。schemaVersion / sdkVersion 为 1 / 0.3。KV、模型、账号和历史不清除。
 
 ## 前端
 
@@ -63,7 +65,7 @@ KV 每值最多 64 KiB。不存在的键返回 null。读写只接受 JSON，值
 - 保留仅限当前窗口运行期间，无自动淘汰。刷新或重启不恢复未保存草稿，需持久化的数据继续使用 KV。翻译、随手记显式开启，应用中心与设置面板（含各设置分类）由宿主保留以避免切页丢失表单。
 - 页面卸载不等于后端插件停用，不取消宿主模型任务，也不保证回收已导入的 JS 模块缓存或插件自行泄漏的全局对象。不要把“切页”当作任务取消信号。
 
-`plugins.list` 返回归一化的 `keepAlive` 布尔值。已经安装的旧随手记归档不会被宿主隐式修改；SDK 0.1 插件需重新构建安装，卸载重装仍保留原有 KV。
+`plugins.list` 返回归一化的 `keepAlive` 布尔值。已经安装的旧随手记归档不会被宿主隐式修改；插件须使用当前开发契约构建，卸载重装仍保留原有 KV。
 
 ## 可选后端
 
@@ -81,28 +83,70 @@ export default definePlugin({
 
 ## UI 约定
 
-宿主拥有主题、48px 图标侧栏、React、JSX、ReactDOM 与 SDK UI。插件拥有完整内容页面，通过 `@semicoder/malatang-sdk/ui` 导入同一份实现；不重复打包 React、Radix 或公共样式。`ModelSelect` 使用宿主模型能力，与纯展示组件分开实现。
+统一从 `@semicoder/malatang-sdk/ui` 导入；宿主拥有主题、48px 侧栏和共享实现。插件不直接依赖 Base UI、Lucide 或宿主私有类。需要的图标也从 UI 入口导入。
 
-| 组件 | 主要约定 |
+| 分类 | 组件 |
 | --- | --- |
-| Button / IconButton | variant 为 primary/secondary/ghost/danger；size 为 sm/md（28px/36px）；loading 同时禁用。IconButton 必填 label；Button 默认 type=button，表单提交显式 type=submit |
-| Input / Select / Textarea | 继承原生属性与键盘语义；Input/Select 支持 sm/md；保留 required、disabled、aria-invalid |
-| Field | label、hint、error；内放一个 SDK 控件，自动关联 id / htmlFor / aria-describedby；自定义 id 使用 Field.id |
-| Checkbox / Switch | 原生复选框、button role=switch；Switch 使用 checked/onCheckedChange，Space/Enter 可操作 |
-| Badge / Alert / Loading | tone 为 neutral/success/warning/error；Alert 具有 alert/status 语义；Loading 提供可访问 label |
-| Page / PageHeader / Panel | 页面容器与标题；PanelHeader/PanelContent/PanelFooter 统一区域边距 |
-| EmptyState / ModelSelect | 空状态；模型选择与 ChatGPT 用量入口 |
-| Menu / Popover / Dialog / Tooltip | 基于 Radix，外观由 SDK 定义。trigger 使用 Button 等可转发 ref 的单个元素；Menu 子项使用 MenuItem；Dialog 必填 title、description；Tooltip 使用 children/content |
+| 基础与表单 | Button、IconButton、Input、Textarea、SearchInput、InputGroup、Field、Checkbox、RadioGroup/Radio、Switch、NumberField、Slider、Select、Combobox |
+| 布局 | Page、PageHeader、Panel/Header/Content/Footer、SettingsGroup/SettingsRow、Tabs/List/Trigger/Content、Accordion/Item/Trigger/Content、Separator、ScrollArea |
+| 浮层 | Dialog、AlertDialog、Popover、Tooltip、Menu、ContextMenu；配套 Trigger/Content、标题、描述、关闭与页脚；菜单支持分组、勾选、单选和子菜单 |
+| 反馈 | Alert、Badge、Loading、EmptyState、Skeleton、Progress、Avatar、Kbd、useToast |
+| 业务 | ModelSelect：搜索和服务商分组、不可用模型及订阅用量入口 |
 
-Menu/Popover/Dialog 支持 open/onOpenChange。宿主的 UIProvider 为每个页面建立可见性和 portal 作用域；嵌套作用域继承父页面隐藏状态。隐藏时关闭弹层，重新显示不会自行重开；卸载时移除 portal 与事件资源。插件无需自行添加 document 监听、焦点陷阱或 document.body 弹层。
+Button 默认 `type="button"`；variant 为 primary/secondary/ghost/danger，size 为 sm/md/lg（28/36/40px），loading 同时禁用。IconButton 必填 label。Input 保留原生事件；Select/Combobox 使用 `value/onValueChange`，Checkbox/Switch 使用 `checked/onCheckedChange`。Field 内放一个控件，自动关联标签、说明和错误；组合选择控件的关联落在 Trigger/Input。
 
-SDK 0.2.1 / 麻辣烫 0.3.0：Popover 新增 side（top/right/bottom/left）、align（start/center/end）、sideOffset 和 collisionPadding。默认保持 bottom/center、6px 触发器间距，并为视口边缘保留 12px 碰撞留白；侧栏主题菜单使用 right/end、14px 触发器间距。Select 的焦点提示改为贴合边框的 1px 细线，保留键盘可见焦点。新定位参数需要 SDK 0.2.1 和麻辣烫 0.3.0 及以上版本；0.2.0 宿主不支持。
+```tsx
+import { Button, Dialog, DialogTrigger, DialogContent, DialogTitle,
+  DialogDescription, DialogFooter, DialogClose, Field, Input,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+  useToast } from "@semicoder/malatang-sdk/ui";
 
-公共颜色见 `src/theme.css`：`--m-bg`、`--m-surface`、`--m-text`、`--m-muted`、`--m-accent`、`--m-line`，以及 success/warning/error 的正文、背景和边框。几何 token 包括 `--m-space-1/2/3/4/6/8`、`--m-control-sm/md`、`--m-radius-sm/--m-radius/--m-radius-lg`、`--m-font/--m-font-size/--m-line-height`、`--m-shadow-popup`、`--m-motion`。宿主根元素管理 light/dark/system；插件不设置 data-theme。
+export function Example() {
+  const toast = useToast();
+  return <Dialog>
+    <DialogTrigger render={<Button />}>编辑</DialogTrigger>
+    <DialogContent>
+      <DialogTitle>编辑内容</DialogTitle>
+      <DialogDescription>更改当前页面的显示设置。</DialogDescription>
+      <Field label="名称"><Input /></Field>
+      <Field label="语言"><Select defaultValue="zh">
+        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectContent><SelectItem value="zh">中文</SelectItem>
+          <SelectItem value="en">English</SelectItem></SelectContent>
+      </Select></Field>
+      <DialogFooter><DialogClose render={<Button variant="secondary" />}>取消</DialogClose>
+        <Button onClick={() => toast.add({ title: "保存完成" })}>保存</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+```
 
-业务样式放 `src/*.module.css`，通过导入的 class 映射使用。不得引用 `.m-*` 或宿主页面私有类，不引入 theme.css/ui.css，不写全局 reset、:root/:global/html/body 或重定义 `--m-*`。颜色默认使用语义 token；品牌图形/数据颜色可在 package.json 顶层 `malatangStyleExceptions` 声明文件路径及理由，其他约束不能豁免。宿主 check、插件 check/build/pack 都执行样式检查。CSS Modules 是一致性约束，不是安全沙箱。
+浮层支持 `open/onOpenChange`；使用 `render` 组合元素，自定义触发器须透传 props 和 ref。Popup 定位参数放在 Content：side、align、sideOffset、collisionPadding。SelectContent 默认与触发器同宽；Select 可通过 `items` 显式提供显示标签，也会读取直接组合的 SelectItem 标签。ModelSelect 使用字符串模型 ID、`onValueChange(id)`。
 
-CSS 中的相对 url 由 Bun 处理；JS 图片导入后用 `new URL(asset, import.meta.url).href`。构建自动输出 CSS 与资源，安装包需保留完整 dist。小型 CSS 图片可能被 Bun 内联。manifest stylesheet 只在页面可见时启用，卸载时移除。
+宿主 UIProvider 建立 Portal、通知和可见性作用域。隐藏页面关闭浮层、取消通知；恢复时不重开，不向隐藏触发器恢复焦点。插件不要将浮层放入 document.body；使用 SDK 的 Content。Toast 由 `useToast().add({title, description})` 发起，Provider 自动渲染并清理。
+
+## Tailwind 与局部样式
+
+模板的 `src/styles.css` 仅包含以下入口，由 CLI 处理；不要直接导入 Tailwind 全局 reset：
+
+```css
+@import "@semicoder/malatang-sdk/tailwind.css";
+```
+
+```tsx
+import "./styles.css";
+// 类名必须完整、静态可扫描；不要拼接 `p:bg-${tone}`。
+<div className="p:flex p:gap-4 p:rounded-xl p:bg-surface p:text-foreground">内容</div>
+```
+
+CLI 只扫描本插件 src，在构建阶段编译 `p:` 工具类。宿主使用普通类，SDK 内部使用 `ui:`。语义颜色包括 background/surface/hover/popup/foreground/muted/border/primary/on-primary/error/success/warning/focus。基础值由 `--m-*` token 提供，light/dark/system 共用几何与字体。
+
+复杂局部样式仍用 `.module.css` 与语义 token；禁止全局选择器、主题重定义、引用 `.m-*`/`ui:` 私有类或导入公共 CSS。品牌/数据颜色可用 `malatangStyleExceptions` 按 CSS 文件注明理由。插件工具类不要使用任意颜色覆盖公共视觉。
+
+编译结果按插件 ID 作用域化；Tailwind 内部变量、`@property` 与动画名也隔离。不要在 JS 中引用编译器内部变量或动画名。页面和 Portal 具有相同作用域；样式仅在页面可见时启用，卸载时移除。宿主只加载一次 Preflight 和公共 UI CSS，运行时不编译 Tailwind。
+
+CSS 相对 url 由 Bun 处理；JS 图片使用 `new URL(asset, import.meta.url).href`。安装包保留完整 dist。SDK 归档内 `ui.css` 已预编译，`tailwind.css` 只是构建映射，不能作为插件全局样式注入。
 
 ## 插件开发 CLI
 
@@ -151,3 +195,7 @@ await buildPlugin(".");
 `ModelInfo.kind` 增加 `chatgpt`，`chatgptProfileId` 是宿主账号引用；不包含邮箱、token 或授权 URL。模型固定绑定该账号，设置页切换账号不会改变已有模型。插件继续通过 `models.list/start` 调用，SDK 的 `ModelSelect` 自动显示订阅用量标识；自行绘制选择器时应同样标明使用 ChatGPT plan。宿主负责登录、实时模型目录、刷新、限额和退出，不会悄悄改用 API Key 计费。`configured: false` 表示需回设置恢复登录或订阅授权。
 
 当前订阅模型仍使用 MVP 文本请求接口；宿主以官方 public Responses HTTP/SSE 发送 `instructions` 和输入，仅显式完成事件才算成功，断流保留部分文本但标为失败。其他 Pi provider 沿用现有 API Key 适配。
+
+### 自定义主题继承（未发布）
+
+宿主可在运行时覆盖 `--m-*` 配色，分别保存浅色和深色主题；`theme.css` 提供默认值，`tailwind.css` 的语义工具类引用这些变量。SDK 组件、插件页面及同作用域 Portal 自动继承，不需重新构建。插件不得重定义主题 token；固定品牌色和数据颜色仍使用明确的样式例外。主题设置和预览由宿主管理，原生标题栏只跟随明暗模式。

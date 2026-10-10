@@ -1,10 +1,10 @@
 {
   "name": "@semicoder/malatang-example-quick-notes",
   "version": "0.1.0",
-  "type": "module",
   "files": [
     "dist"
   ],
+  "type": "module",
   "devDependencies": {
     "@semicoder/malatang-sdk": "workspace:*"
   },
@@ -15,7 +15,7 @@
     "description": "给灵感一个落脚点。使用宿主 KV 保存的独立示例插件。",
     "icon": "记",
     "color": "#6e8169",
-    "sdkVersion": "0.2",
+    "sdkVersion": "0.3",
     "frontend": "dist/client.js",
     "keepAlive": true,
     "styles": "dist/client.css"

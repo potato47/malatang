@@ -1,7 +1,13 @@
 import { UIProvider } from "@semicoder/malatang-sdk/ui";
 import React, { Component, createRef } from "react";
 
-type Props = { visible: boolean; keepAlive: boolean; label: string; children: React.ReactNode };
+type Props = {
+  pluginId?: string;
+  visible: boolean;
+  keepAlive: boolean;
+  label: string;
+  children: React.ReactNode;
+};
 
 /** Owns a page's lifetime and scroll position, independently of navigation. */
 export default class PageSlot extends Component<Props, { visited: boolean }> {
@@ -32,7 +38,19 @@ export default class PageSlot extends Component<Props, { visited: boolean }> {
   render() {
     const { visible, keepAlive, label, children } = this.props;
     if (!visible && (!keepAlive || !this.state.visited)) return null;
-    return <section ref={this.container} className="page-scroll" aria-label={label}
-      hidden={!visible} inert={!visible} aria-hidden={!visible || undefined}><UIProvider visible={visible}>{children}</UIProvider></section>;
+    return (
+      <section
+        ref={this.container}
+        className="page-scroll"
+        aria-label={label}
+        hidden={!visible}
+        inert={!visible}
+        aria-hidden={!visible || undefined}
+      >
+        <UIProvider visible={visible} pluginId={this.props.pluginId}>
+          {children}
+        </UIProvider>
+      </section>
+    );
   }
 }

@@ -363,20 +363,16 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
         stack.addArrangedSubview(space)
       }
     }
-    let pin = NSButton(title: "", target: self, action: #selector(togglePinned))
+    let pin = TitlebarIconButton(title: "", target: self, action: #selector(togglePinned))
     pin.identifier = NSUserInterfaceItemIdentifier("fia.keepOnTop")
     pin.setButtonType(.pushOnPushOff)
-    pin.imagePosition = .imageOnly
-    pin.bezelStyle = .texturedRounded
     pinButton = pin
     updatePinButton()
     stack.addArrangedSubview(pin)
-    let browser = NSButton(title: "", target: self, action: #selector(openBrowser))
+    let browser = TitlebarIconButton(title: "", target: self, action: #selector(openBrowser))
     let description = BrowserAccessLabels.open
     browser.identifier = NSUserInterfaceItemIdentifier("fia.openInBrowser")
     browser.image = NSImage(systemSymbolName: "arrow.up.forward.square", accessibilityDescription: description)
-    browser.imagePosition = .imageOnly
-    browser.bezelStyle = .texturedRounded
     browser.toolTip = description
     browser.setAccessibilityLabel(description)
     browserButton = browser
@@ -401,7 +397,6 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
     pinButton?.image = NSImage(
       systemSymbolName: pinned ? "pin.fill" : "pin", accessibilityDescription: description)
     pinButton?.state = pinned ? .on : .off
-    pinButton?.contentTintColor = pinned ? .controlAccentColor : nil
     pinButton?.toolTip = description
     pinButton?.setAccessibilityLabel(description)
   }
@@ -449,6 +444,63 @@ public final class WebWindow: AppKitWindow, WKNavigationDelegate {
     }
     if ["http", "https", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
     decisionHandler(.cancel)
+  }
+}
+
+/// Framework controls share neutral chrome; application titlebar items keep their own style.
+@MainActor
+private final class TitlebarIconButton: NSButton {
+  private var hoverTracking: NSTrackingArea?
+  private var hovered = false { didSet { updateTint() } }
+
+  override var state: NSControl.StateValue { didSet { updateTint() } }
+  override var isEnabled: Bool { didSet { updateTint() } }
+
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    isBordered = false
+    imagePosition = .imageOnly
+    focusRingType = .exterior
+    // Draw feedback ourselves so neither press nor toggle falls back to an accent-colored bezel.
+    if let buttonCell = cell as? NSButtonCell {
+      buttonCell.highlightsBy = []
+      buttonCell.showsStateBy = []
+    }
+    translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      widthAnchor.constraint(equalToConstant: 28),
+      heightAnchor.constraint(equalToConstant: 24),
+    ])
+    updateTint()
+  }
+
+  required init?(coder: NSCoder) { super.init(coder: coder) }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let hoverTracking { removeTrackingArea(hoverTracking) }
+    let tracking = NSTrackingArea(rect: .zero,
+      options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self, userInfo: nil)
+    addTrackingArea(tracking)
+    hoverTracking = tracking
+  }
+
+  override func mouseEntered(with event: NSEvent) { hovered = true }
+  override func mouseExited(with event: NSEvent) { hovered = false }
+
+  private func updateTint() {
+    contentTintColor = !isEnabled ? .disabledControlTextColor
+      : (hovered || state == .on ? .labelColor : .secondaryLabelColor)
+    needsDisplay = true
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    if isEnabled && (hovered || state == .on || cell?.isHighlighted == true) {
+      let pressed = state == .on || cell?.isHighlighted == true
+      NSColor.labelColor.withAlphaComponent(pressed ? 0.1 : 0.06).setFill()
+      NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6).fill()
+    }
+    super.draw(dirtyRect)
   }
 }
 

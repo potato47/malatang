@@ -1,4 +1,10 @@
-export type JSONValue = null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue };
+export type JSONValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JSONValue[]
+  | { [key: string]: JSONValue };
 
 export interface ModelInfo {
   id: string;
@@ -64,7 +70,7 @@ export interface PluginManifest {
   description: string;
   icon: string;
   color: string;
-  sdkVersion: "0.2";
+  sdkVersion: "0.3";
   frontend: string;
   backend?: string;
   styles: string;
@@ -103,7 +109,11 @@ export interface InstallJob {
 export interface PluginContext {
   readonly pluginId: string;
   models: { list(): ModelInfo[]; start(input: ModelRequest): Promise<ModelRun> };
-  kv: { get(key: string): JSONValue | null; set(key: string, value: JSONValue): Promise<void>; delete(key: string): Promise<void> };
+  kv: {
+    get(key: string): JSONValue | null;
+    set(key: string, value: JSONValue): Promise<void>;
+    delete(key: string): Promise<void>;
+  };
 }
 
 export interface PluginMethod {

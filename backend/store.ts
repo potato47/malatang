@@ -2,12 +2,14 @@ import { mkdir, rename, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "@semicoder/fia/api";
 import { run, themeMode } from "../shared/api";
+import { colorThemeSchema, defaultColorTheme } from "../shared/theme";
 import type { JSONValue } from "@semicoder/malatang-sdk/types";
 import { migratePresetModel } from "./model-migrations";
 
 const stateSchema = z.object({
   version: z.literal(1),
   theme: themeMode.default("system"),
+  colorTheme: colorThemeSchema.default(defaultColorTheme),
   models: z.array(z.object({ id: z.string(), name: z.string(), provider: z.string(), model: z.string(), baseURL: z.string(), apiKey: z.string(), preset: z.string().nullable().default(null), chatgptProfileId: z.string().optional(), options: z.record(z.string(), z.string()).default({}) })),
   plugins: z.array(z.object({ id: z.string(), root: z.string(), installation: z.string(), source: z.string() })),
   disabled: z.array(z.string()),
@@ -19,7 +21,7 @@ export type ModelConfig = State["models"][number];
 
 /** One serial writer: persist an immutable candidate before making it visible. */
 export class Store {
-  private state: State = { version: 1, theme: "system", models: [], plugins: [], disabled: [], kv: {}, runs: [] };
+  private state: State = { version: 1, theme: "system", colorTheme: defaultColorTheme(), models: [], plugins: [], disabled: [], kv: {}, runs: [] };
   private queue: Promise<unknown> = Promise.resolve();
   constructor(readonly directory: string) {}
   get value(): Readonly<State> { return this.state; }

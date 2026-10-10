@@ -17,7 +17,7 @@ let plugins: Plugins;
 export default defineBackend({
   api: implementAPI(api, {
     "appearance.get": () => appearance.get(),
-    "appearance.set": ({ theme }) => appearance.set(theme),
+    "appearance.set": input => appearance.set(input),
     "chatgpt.status": () => chatgpt.status(),
     "chatgpt.signIn": ({ profileId, consent }) => chatgpt.signIn(profileId, consent),
     "chatgpt.cancel": ({ id }) => chatgpt.cancel(id),
@@ -53,7 +53,7 @@ export default defineBackend({
   async start({ app, native, emit, url }) {
     store = new Store(app.dataDirectory);
     await store.open();
-    appearance = new Appearance(store, mode => native.application.setAppearance({ mode }), theme => emit("appearance.changed", { theme }));
+    appearance = new Appearance(store, mode => native.application.setAppearance({ mode }), value => emit("appearance.changed", value));
     await appearance.restore();
     let revision = 0;
     const key = "chatgpt.oauth." + createHash("sha256").update(app.dataDirectory).digest("hex");

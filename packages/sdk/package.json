@@ -2,30 +2,26 @@
   "name": "@semicoder/malatang-sdk",
   "version": "0.2.1",
   "description": "Model, storage, UI and plugin build SDK for Malatang",
-  "type": "module",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/potato47/malatang.git",
-    "directory": "packages/sdk"
-  },
   "homepage": "https://semicoder.dev/malatang",
   "bugs": {
     "url": "https://github.com/potato47/malatang/issues"
   },
-  "engines": {
-    "bun": ">=1.4.2"
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/potato47/malatang.git",
+    "directory": "packages/sdk"
   },
   "files": [
     "src",
     "build.ts",
     "README.md",
     "plugin.ts",
-    "templates"
+    "templates",
+    "styles.ts",
+    "create.ts",
+    "dist"
   ],
+  "type": "module",
   "exports": {
     "./types": "./src/types.ts",
     "./client": "./src/client.ts",
@@ -33,18 +29,30 @@
     "./runtime": "./src/runtime.ts",
     "./build": "./build.ts",
     "./theme.css": "./src/theme.css",
-    "./ui.css": "./src/ui.css",
+    "./ui.css": "./dist/ui.css",
     "./plugin": "./plugin.ts",
-    "./manifest": "./src/manifest.ts"
+    "./manifest": "./src/manifest.ts",
+    "./tailwind.css": "./src/tailwind.css"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "lucide-react": "^1.55.0",
     "postcss": "^8.5.28",
     "postcss-selector-parser": "^7.1.6",
-    "radix-ui": "^1.6.7",
+    "postcss-value-parser": "^4.2.0",
+    "tailwindcss": "^4.3.3",
     "zod": "4.6.5"
   },
   "peerDependencies": {
     "react": ">=19 <20",
     "react-dom": ">=19 <20"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
   }
 }

@@ -1,17 +1,17 @@
-# SDK 0.2 与插件开发 CLI
+# SDK 0.3 开发契约与插件 CLI（未发布）
 
-麻辣烫 0.2.0 提供统一 UI、CSS Modules 和 `malatang plugin create/check/build/pack`。随应用携带的 SDK 版本为 0.2.0，manifest.sdkVersion 为 0.2。正式 v0.1.0 应用、已发布 FIA npm 0.16.1 和旧固定归档均不因此获得新能力。
+当前源码采用 Base UI + Tailwind CSS 4，manifest.sdkVersion 为 0.3，无旧 API 兼容层。应用 0.4.0 / build 4、SDK 包版本 0.2.1 暂未升号；公开版本不包含本轮 UI。新接口、组合示例和完整组件清单见 [SDK README](../packages/sdk/README.md)。
 
-开发者安装 Bun >=1.4.2。开发宿主先运行 `bun run dev`，再使用 `bun run agent plugin create /tmp/my-plugin --template notes`；安装应用 CLI 后同样可运行 `malatang plugin create …`。项目创建后执行 `bun install --ignore-scripts`。模板内脚本与应用 CLI 使用同一 SDK 实现。选项、组件、资源与生命周期见 [SDK README](../packages/sdk/README.md)。
+开发者使用 Bun >=1.4.2。先运行 `bun run dev`，再运行 `bun run agent plugin create /tmp/my-plugin --template notes`（或 model）。进入生成目录执行 `bun install --ignore-scripts`、`bun run check`、`bun run build`、`bun run pack`。项目携带 SDK 归档，支持仓库外开发。
 
-应用构建通过 `scripts/sdk-snapshot.ts` 生成并解包验证 SDK 快照，将其和模板作为后端资源嵌入。独立消费验证使用 `bun run npm:pack`。客户端共享 React、JSX、ReactDOM、UI 模块；模板锁定 React/ReactDOM 为同一版本，避免工具依赖加载时报版本不匹配。
+## 构建与职责
 
-`plugin check` 验证清单、类型、CSS 和资源；`build` 失败清除 dist；`pack` 只输出 package.json 和完整 dist 并解包比对资源。SDK 0.1 安装/恢复时清晰提示重新构建；旧 KV、模型、账号与历史保留。
+- `sdk:styles` 编译 SDK 公共 CSS；plugins:build、sdk:snapshot、npm:pack 在打包前准备样式。SDK 归档包含源码、编译 CSS、主题映射、CLI 与两种模板。
+- 插件 Tailwind 扫描自身 src，使用 p: 前缀；AST 处理选择器、内部变量、@property 和动画名，隔离页面和 Portal。其余自定义 CSS 使用 Modules。
+- 宿主 Vite 集成官方 Tailwind 插件，只加载一次 Preflight；前端共享 React/ReactDOM/Base UI 与 SDK 组件。禁止插件直接导入底层实现。
+- 应用命令仅导入轻量 create/help；check/build/pack 使用开发项目里的 SDK 和 Bun，Tailwind 编译器不会作为应用运行依赖。
+- build 失败清除 dist，pack 只输出清单和完整 dist 并解包验收；模型、账号、KV、历史的标识和数据不迁移。
 
-开发设置增加组件样例页，用于主题、两档控件尺寸、loading/disabled/error、标签、键盘与嵌套弹层验收。发布构建不显示此入口。公共弹层随 PageSlot/UIProvider 隐藏而关闭；内置翻译与随手记的业务样式已移回插件。
+开发设置的基础组件页覆盖主题、三档尺寸、表单、菜单、对话框、通知和隐藏页面生命周期；正式构建隐藏入口。`bun run npm:pack` 验证真实归档的独立消费。
 
-## 框架及发布边界
-
-FIA 使用 agent.commands 声明自定义命令。执行跟随当前代码，沿用脚本监督、取消与更新占用；上下文提供 args、cwd、assetsDirectory。FIA 源码先完成 check/runtime:build/cli:build，然后应用 `bun install --force --ignore-scripts` 刷新本地包。
-
-新 CLI 改变 runtimeId，从 v0.1.0 升级需要完整安装包。历史 v0.2.0 固定 FIA dd430c851192 归档；当前开发分支改为共仓源码构建 FIA，详见[共仓开发](fia-integration.md)。SDK 快照由应用内置，npm 首次发布状态独立于应用 Release，创建项目不依赖 SDK registry 可用性。
+FIA 仅提供运行时和受管命令，沿用[共仓开发](fia-integration.md)。这次 UI 重构不要求修改框架契约，不自动发布应用、SDK、FIA 或网站。

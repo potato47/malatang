@@ -1,8 +1,7 @@
 import { defineAPI, z } from "@semicoder/fia/api";
 import { chatGPTStatus, chatGPTModel, chatGPTLabel } from "./chatgpt";
-export const themeMode = z.enum(["system", "light", "dark"]);
-export type ThemeMode = z.infer<typeof themeMode>;
-const appearance = z.strictObject({ theme: themeMode });
+import { appearanceSchema as appearance, appearanceUpdate } from "./theme";
+export { themeMode, type ThemeMode } from "./theme";
 const modelOptions = z.record(z.string().max(60), z.string().trim().max(300));
 export const modelInfo = z.strictObject({ id: z.string(), name: z.string(), provider: z.string(), model: z.string(), baseURL: z.string(), kind: z.enum(["openai-compatible", "pi", "chatgpt"]), configured: z.boolean(), preset: z.string().nullable(), hasApiKey: z.boolean(), chatgptProfileId: z.string().optional(), options: modelOptions });
 export const modelInput = z.strictObject({ id: z.string().optional(), name: z.string().trim().min(1).max(100), provider: z.string().trim().min(1).max(100), model: z.string().trim().min(1).max(200), baseURL: z.string().trim().max(2000), apiKey: z.string().max(2000).optional(), clearApiKey: z.boolean().optional(), preset: z.string().nullable().optional(), options: modelOptions.optional() });
@@ -18,7 +17,7 @@ const selection = z.strictObject({ pluginId, runId: z.string() });
 export default defineAPI({
   methods: {
     "appearance.get": { description: "Read the saved application theme preference.", input: empty, output: appearance },
-    "appearance.set": { description: "Persist light, dark or system theme and apply it to native windows and plugin pages.", input: appearance, output: appearance },
+    "appearance.set": { description: "Save appearance changes. Mode controls native windows; colorTheme controls host and plugin content only. Omitted fields are retained.", input: appearanceUpdate, output: appearance },
     "chatgpt.status": { description: "Read saved ChatGPT connection summaries without credentials.", input: empty, output: chatGPTStatus },
     "chatgpt.signIn": { description: "Start official ChatGPT OAuth in the system browser; returns promptly. Omit profileId only to register a new account.", input: z.strictObject({ profileId: z.string().optional(), consent: z.boolean().optional() }), output: chatGPTStatus },
     "chatgpt.cancel": { description: "Cancel an outstanding ChatGPT sign-in attempt.", input: z.strictObject({ id: z.string() }), output: chatGPTStatus },

@@ -1,0 +1,20 @@
+/* Build-time mapping only. The host owns the values of these semantic tokens. */
+@theme inline {
+  --color-*: initial;
+  --color-background: var(--m-bg);
+  --color-surface: var(--m-surface);
+  --color-hover: var(--m-surface-hover);
+  --color-popup: var(--m-popup);
+  --color-foreground: var(--m-text);
+  --color-muted: var(--m-muted);
+  --color-border: var(--m-line);
+  --color-primary: var(--m-accent);
+  --color-on-primary: var(--m-on-accent);
+  --color-error: var(--m-error);
+  --color-success: var(--m-success);
+  --color-warning: var(--m-warning);
+  --color-focus: var(--m-focus);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --font-sans: var(--m-font);
+}

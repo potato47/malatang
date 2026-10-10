@@ -1,7 +1,9 @@
-# 麻辣烫 SDK 0.2 插件开发
+# 麻辣烫 SDK 0.3 插件开发（未发布）
 
-先阅读 README。使用公共 SDK 的 client、types、runtime、ui 入口。不要导入宿主私有类、Radix 或全局 CSS，不复制 React 或公共组件。业务 CSS 必须为 .module.css；优先使用语义 token。控件使用 sm(28px)/md(36px)。Field 内使用一个 SDK 控件以关联标签和错误。
+先阅读 README。公共能力从 SDK 的 client、types、runtime、ui 入口导入；不直接导入 Base UI、Radix、Lucide 或宿主私有样式，不复制 React 和公共组件。
 
-插件拥有完整页面；用 Page、PageHeader、PanelHeader/Content/Footer 组织内容。弹层用 Menu、Popover、Dialog、Tooltip；UIProvider 的页面作用域由宿主管理。清理事件订阅和异步回调。backend.ts 存在时声明 manifest.backend 为 dist/backend.js。
+使用 p: 前缀的完整静态 Tailwind 类名与语义颜色。src/styles.css 只导入 SDK tailwind.css 映射，由 CLI 构建；其他业务样式用 CSS Modules。禁止全局 reset、主题覆盖和宿主私有类。控件尺寸 sm/md/lg 为 28/36/40px。
 
-修改后运行 bun run check、bun run build、bun run pack；在麻辣烫中安装归档验证。不要自动安装依赖、发布或改写用户项目外文件。
+浮层使用组合式 Trigger/Content 与 render。Select/Combobox 使用 value/onValueChange；Checkbox/Switch 使用 checked/onCheckedChange。Field 内放一个控件。UIProvider 和 Portal 由宿主管理；清理订阅及异步回调。backend.ts 存在时同步声明清单。
+
+修改后运行 bun run check、bun run build、bun run pack，并在开发宿主安装归档验收。不要自动发布或修改项目外文件。

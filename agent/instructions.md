@@ -15,14 +15,14 @@ With the local FIA development-identity build (not the published 0.2.0 runtime),
 - Enable/disable with plugins.setEnabled. Uninstall external plugins with plugins.uninstall; this retains KV and history. Active work blocks disable and removal. Reinstallation is the current upgrade path.
 - plugins.list reports keepAlive (default false): opt-in pages retain unsaved UI state while hidden in the current window. Default pages unmount on navigation. Disabling, uninstalling or replacing a plugin releases its page; reload/restart does not preserve unsaved drafts. None of these navigation policies cancels host model runs. Installed manifests are not automatically upgraded.
 - KV get/set/delete require pluginId. Missing values return null. Each value is limited to 64 KiB.
-- Read appearance.get for the saved application theme. appearance.set accepts {"theme":"system"}, {"theme":"light"} or {"theme":"dark"}; it updates native appearance, persists the preference and emits appearance.changed. UI clients reread appearance.get after changes and reconnection. This changes only Malatang, not the macOS system setting.
+- Read appearance.get for {theme, colorTheme}. appearance.set accepts a partial update: theme is system/light/dark and controls native appearance; colorTheme is {preset: "default" | "github" | "custom", custom: {light: {accent, background, foreground}, dark: {accent, background, foreground}}} and affects host/plugin content only. Colors use six-digit HEX; foreground/background contrast must be at least 4.5:1. Omitted fields are retained. Changes persist and emit the full appearance.changed snapshot; reread after reconnect. The native titlebar only follows mode; macOS global settings are unchanged. UI palette edits preview locally until saved, and cancel when leaving appearance settings.
 - Application updates use FIA's native update flow. Users can open Settings → 应用更新 or Check for Updates in the native menu. Downloaded updates require confirmation and reload the application; save drafts first. Model, plugin and sign-in tasks block application switching. Updates do not upgrade separately installed plugins. Native runtime changes require a new installer from the download link.
 
 Events have no replay. Read snapshots initially and after reconnecting. After an unknown execution outcome, query jobs/runs/plugins before repeating a mutation. The application uses FIA's existing CLI; do not start another service or add a parallel CLI.
 
 
-## SDK 0.2 插件开发（未发布开发版）
+## SDK 0.3 插件开发（未发布）
 
-使用 `malatang plugin create <directory> [--template notes|model] [--id ID] [--name NAME]` 创建项目；开发入口为 `bun run agent plugin …`。先查看 `malatang plugin --help`。创建不安装依赖、Git 或插件，不覆盖非空目录。让开发者在项目中运行 `bun install --ignore-scripts`，再使用 check/build/pack；三个命令默认调用者 cwd，也可传路径。所有命令支持 --json，诊断在 stderr。
+使用开发宿主的 plugin create/check/build/pack，生成项目附带本地 SDK 快照。组合式 UI 从 @semicoder/malatang-sdk/ui 导入，Tailwind 使用 p: 前缀和语义颜色，复杂局部样式使用 CSS Modules。完整接口见 packages/sdk/README.md。应用运行时不加载 Tailwind 编译器。
 
-项目随附 SDK 0.2.0 tgz 与相对 file 依赖。公共 UI 从 SDK 导入，业务用 CSS Modules。pack 重新检查构建并校验完整资源；随后继续调用现有 plugins.install，不新增安装服务。SDK 0.1 插件需迁移重建；切勿清除模型、账号、KV 或历史数据。正式 v0.1.0 和旧 FIA 归档不支持这一开发流程。
+新源码不支持旧插件协议，不清除账号、模型、KV 或历史。公开应用与 npm 尚不包含本轮契约；本地包版本字符串不能代替发行证据。
