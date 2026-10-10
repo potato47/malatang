@@ -15,6 +15,7 @@ export const uiExports = [
   "ArrowRight",
   "Avatar",
   "Badge",
+  "Blocks",
   "Button",
   "Check",
   "Checkbox",

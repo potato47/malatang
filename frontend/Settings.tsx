@@ -1,5 +1,5 @@
 import ComponentGallery from "./ComponentGallery";
-import { SlidersHorizontal, Sun, RefreshCw, Button } from "@semicoder/malatang-sdk/ui";
+import { SlidersHorizontal, Sun, RefreshCw, Blocks, Button } from "@semicoder/malatang-sdk/ui";
 import React, { useState } from "react";
 import AppearanceSettings from "./AppearanceSettings";
 import ModelSettings from "./ModelSettings";
@@ -46,6 +46,7 @@ export default function Settings({ visible = true }: { visible?: boolean }) {
             aria-current={section === "components" ? "page" : undefined}
             onClick={() => setSection("components")}
           >
+            <Blocks aria-hidden="true" />
             组件样例
           </Button>
         )}

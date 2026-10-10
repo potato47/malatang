@@ -42,6 +42,7 @@ export {
   Moon,
   Monitor,
   Package,
+  Blocks,
   MoreHorizontal,
   Trash2,
   Pencil,
