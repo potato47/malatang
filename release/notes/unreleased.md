@@ -8,6 +8,8 @@ UI、主题与标题栏的最终代码已通过完整 check（含 77 项 FIA CLI
 
 ## 新增与改进
 
+- **组件样例导航图标**：开发设置页的「组件样例」左侧补充 `Blocks` 拼块图标，与应用中心的 `Package` 立方体图区分，沿用其他分类的尺寸、颜色和间距，装饰图标不参与无障碍朗读。SDK UI 入口与共享导出清单同步新增 `Blocks`。来源：`c168dae` 的 `frontend/Settings.tsx`、`packages/sdk/src/{ui.tsx,shared-modules.ts}`。验证：更换图标后的 `bun run check`（沙箱外完成本地端口测试）、`bun run build`、SDK 导出一致性测试（1 项 / 10 断言）及差异格式检查通过；本次未做 UI 目视验收。官网影响：已检查设置及插件指南，现有统一 UI 图标导入约定适用，无需修改使用说明或安装入口；版本不变，尚未发布。
+
 - **原生标题栏按钮样式**：置顶与浏览器入口移除固定边框和蓝色图标，改用随明暗外观变化的中性色；悬停/按下提供淡底色，置顶保留实心图钉和选中状态。来源：`ad9a587` 的 `framework/fia/Sources/FIA/Windows.swift`。验证及交付状态见 workspace `docs/agent/sessions/2026-10-10-titlebar-buttons.md`。官网指南按按钮位置及实心图标描述，操作/API 无变化；本次仅在来源记录说明未发布样式。原生运行时变更，未来发行需完整安装包；本轮不升版。
 
 - **内容区自定义主题**：默认 / GitHub / 自定义配色，浅深色分别设置强调色、背景和前景；即时预览、保存、取消与恢复默认，宿主 / 插件 / Portal 自动继承。原生标题栏仅跟随明暗模式，不新增 FIA 契约。来源：`ad9a587`。验证：完整 check、75 项测试和主题 DOM 回归；最终构建、原生与文档结果见 workspace `docs/agent/sessions/2026-10-10-custom-theme.md`。官网外观指南已注明未发布。
