@@ -15,11 +15,13 @@ struct BackendSupervisorTests {
             webRoot: "/tmp/web", resourceDirectory: "/tmp/resources", version: "1.0.0", build: 1, automaticallyRestart: false
         )
         var states: [BackendSupervisor.State] = []
-        var releaseNative = false
+        let nativeResponse = AsyncStream<Void>.makeStream()
+        defer { nativeResponse.continuation.finish() }
         let supervisor = try BackendSupervisor(
             configuration: configuration, applicationSupportDirectory: FileManager.default.temporaryDirectory,
             onRequest: { _, _ in
-                while !releaseNative { try await Task.sleep(for: .milliseconds(20)) }
+                for await _ in nativeResponse.stream { }
+                try Task.checkCancellation()
                 if denied { throw FIAError(code: .nativeFailure, component: "keychain", message: "Denied") }
                 return nil
             }, onState: { states.append($0) }
@@ -33,7 +35,7 @@ struct BackendSupervisorTests {
         try await Task.sleep(for: .milliseconds(200))
         #expect(supervisor.waitingOnNative)
         #expect(!states.contains(where: { if case .failed = $0 { true } else { false } }))
-        releaseNative = true
+        nativeResponse.continuation.finish()
         let deadline = ContinuousClock.now + .seconds(2)
         while !states.contains(.ready(port: 45_683)), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(states.contains(.ready(port: 45_683)))
