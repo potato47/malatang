@@ -38,6 +38,7 @@ const ignored = new Set([
   "node_modules",
   "dist",
   "target",
+  "artifacts",
   ".DS_Store",
 ]);
 

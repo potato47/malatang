@@ -16,7 +16,9 @@ export async function withCommandCancellation<T>(action: () => Promise<T>) {
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
   try {
-    return await action();
+    const result = await action();
+    controller.signal.throwIfAborted();
+    return result;
   } finally {
     cancellation = previous;
     process.off("SIGINT", stop);

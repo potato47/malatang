@@ -8,7 +8,7 @@ export function parseDevelopmentOptions(args: readonly string[]) {
     if (arg === "--open-browser") openBrowser = true;
     else if (arg === "--watch-ignore") {
       const path = args[++index];
-      if (!path || !safeRelative(path) || path.startsWith("-"))
+      if (!path || !safeRelative(path) || /[*\[\]{}]/u.test(path) || path.startsWith("-"))
         throw new Error(
           "--watch-ignore requires a safe project-relative directory (no glob or parent traversal)",
         );
