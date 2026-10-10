@@ -21,7 +21,7 @@ With the local FIA development-identity build (not the published 0.2.0 runtime),
 Events have no replay. Read snapshots initially and after reconnecting. After an unknown execution outcome, query jobs/runs/plugins before repeating a mutation. The application uses FIA's existing CLI; do not start another service or add a parallel CLI.
 
 
-## SDK 0.3 插件开发（未发布）
+## SDK 0.3 插件开发（麻辣烫 0.4.1）
 
 使用开发宿主的 plugin create/check/build/pack，生成项目附带本地 SDK 快照。组合式 UI 从 @semicoder/malatang-sdk/ui 导入，Tailwind 使用 p: 前缀和语义颜色，复杂局部样式使用 CSS Modules。完整接口见 packages/sdk/README.md。应用运行时不加载 Tailwind 编译器。
 

@@ -12,9 +12,11 @@
 
 SDK 0.2.0 是随麻辣烫 0.2.0 提供的破坏性更新：manifest `sdkVersion` 为 `"0.2"`，要求 CSS Modules 和宿主共享 UI。SDK 0.1 插件须迁移并重新构建，不能直接安装或启用；原 ID、宿主标识及 KV 命名空间不变，用户数据保留。历史包名迁移与此次兼容版本升级是两次不同变更。
 
-SDK 版本独立于应用版本，当前源码 SDK 为 0.2.1，应用为 0.3.0；应用发行不代表 SDK 已发布 npm。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
+SDK 版本独立于应用版本，当前候选 SDK 为 0.3.0，应用为 0.4.1；应用发行不代表 SDK 已发布 npm。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
 
 ## 当前发布状态
+
+2026-10-10，用户授权发布 SDK 0.3.0 与麻辣烫 0.4.1 / build 5，当前处于发布验收，尚未公开。SDK 0.3.0 对应 manifest `sdkVersion: "0.3"`，使用 Base UI / Tailwind CSS 4 的组合式组件；旧 SDK 0.2 及更早插件须更新并重新构建，插件 ID / KV / 历史保留。当前公开 npm 基线仍是下述 0.2.1，最终 OIDC / 归档 / 独立消费证据完成后再记录。
 
 2026-10-09，`@semicoder/malatang-sdk@0.2.1` 已通过维护者 npm 认证发布；源码为应用发布提交 `7c0f237986728d13063fd25e38e0a826738af213`，registry latest 为 0.2.1。公开 tarball 与 `npm:pack` 验收归档逐字节一致，SHA-256 `711f7f2d39cfd3b51ed937b45cf44b136f2708b54c10de6c8490630edc5ae93f`、SHA-1 `68699515091cd5a97e2ec448d5b98200858acd1b`。在 workspace 外从 registry 安装后，create 返回 SDK 0.2.1，notes 模板 check/build/pack 通过；主干 [CI 37868718881](https://github.com/potato47/malatang/actions/runs/37868718881) 也已验证归档与独立消费。
 
@@ -73,11 +75,11 @@ bun run npm:pack
 以下为下一 SDK 版本的操作示例（先配置并验证 OIDC）：
 
 ```sh
-bun run version:sdk 0.2.2
+bun run version:sdk <尚未发布的新版本>
 git diff -- packages/sdk/package.json bun.lock
 # 检查、提交并合入 main 后，在该提交创建标签：
-git tag -a sdk-v0.2.2 -m "Malatang SDK 0.2.2"
-git push origin sdk-v0.2.2
+git tag -a sdk-v<version> -m "Malatang SDK <version>"
+git push origin sdk-v<version>
 ```
 
 `version:sdk` 更新 SDK 的 package.json 和 Bun 锁文件，拒绝同版本、降级及非法版本，不改变应用、插件或 manifest 兼容版本，不自动提交或创建标签。跨兼容版本时仍需单独调整宿主的 SDK 兼容契约。

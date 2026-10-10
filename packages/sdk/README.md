@@ -1,6 +1,6 @@
 # @semicoder/malatang-sdk · 开发契约 0.3
 
-本仓库的未发布开发版本使用 **Base UI 1.9 + Tailwind CSS 4.3**，manifest `sdkVersion` 为 `0.3`。应用与 SDK 包版本字符串暂未递增；它们不代表本地源码等同于公开麻辣烫 0.4.0 / SDK 0.2.1。使用开发宿主内置快照创建插件，不从当前公开 npm 安装新契约。
+SDK 0.3.0 使用 **Base UI 1.9 + Tailwind CSS 4.3**，manifest `sdkVersion` 为 `0.3`，需要麻辣烫 0.4.1 或以上宿主。0.2 及更早版本插件需迁移并重建；应用与 SDK 独立发行，公开状态见 [npm 发布记录](../../docs/npm-release.md)。CLI 使用随应用提供的固定 SDK 归档创建插件。
 
 插件为可信本地代码，命名空间和 CSS 作用域不是安全沙箱。使用 Bun >=1.4.2；React 与 ReactDOM 19 必须精确同版本。宿主提供唯一的 React、Base UI 和公共组件实现。此轮不提供旧 API 或插件兼容层，数据存储键保持不变。
 
@@ -196,6 +196,6 @@ await buildPlugin(".");
 
 当前订阅模型仍使用 MVP 文本请求接口；宿主以官方 public Responses HTTP/SSE 发送 `instructions` 和输入，仅显式完成事件才算成功，断流保留部分文本但标为失败。其他 Pi provider 沿用现有 API Key 适配。
 
-### 自定义主题继承（未发布）
+### 自定义主题继承（麻辣烫 0.4.1）
 
 宿主可在运行时覆盖 `--m-*` 配色，分别保存浅色和深色主题；`theme.css` 提供默认值，`tailwind.css` 的语义工具类引用这些变量。SDK 组件、插件页面及同作用域 Portal 自动继承，不需重新构建。插件不得重定义主题 token；固定品牌色和数据颜色仍使用明确的样式例外。主题设置和预览由宿主管理，原生标题栏只跟随明暗模式。

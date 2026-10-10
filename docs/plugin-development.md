@@ -1,6 +1,6 @@
-# SDK 0.3 开发契约与插件 CLI（未发布）
+# SDK 0.3 开发契约与插件 CLI
 
-当前源码采用 Base UI + Tailwind CSS 4，manifest.sdkVersion 为 0.3，无旧 API 兼容层。应用 0.4.0 / build 4、SDK 包版本 0.2.1 暂未升号；公开版本不包含本轮 UI。新接口、组合示例和完整组件清单见 [SDK README](../packages/sdk/README.md)。
+麻辣烫 0.4.1 / build 5 与 SDK 0.3.0 采用 Base UI + Tailwind CSS 4，manifest.sdkVersion 为 0.3，无旧 API 兼容层。新接口、组合示例和完整组件清单见 [SDK README](../packages/sdk/README.md)；应用与 SDK 的公开发行状态分别见 [应用](github-release.md) 和 [SDK](npm-release.md) 发布记录。
 
 开发者使用 Bun >=1.4.2。先运行 `bun run dev`，再运行 `bun run agent plugin create /tmp/my-plugin --template notes`（或 model）。进入生成目录执行 `bun install --ignore-scripts`、`bun run check`、`bun run build`、`bun run pack`。项目携带 SDK 归档，支持仓库外开发。
 
