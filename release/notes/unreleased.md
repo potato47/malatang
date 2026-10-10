@@ -31,7 +31,7 @@ UI、主题与标题栏的最终代码已通过完整 check（含 77 项 FIA CLI
 
 ## 内部工程
 
-- **原生启动测试同步**：真实 runner 暴露旧 Swift 回归固定等待 100ms 的竞态；改为有期限的状态等待，并由测试控制原生响应，明确验证等待跨过启动期限后仍不失败。来源：发布验收工作树 `framework/fia/Tests/FIAMacOSTests/BackendSupervisorTests.swift`。不改运行时或应用行为；对应套件与十轮重复回归通过，最终完整检查和真实 runner 重新验收后发布，无新增官网操作说明。
+- **原生启动测试同步**：真实 runner 暴露固定观察等待、150ms 进程启动预算及 fixture 自然退出的竞态；改为有期限的状态等待、2 秒测试启动预算和明确关闭信号。由测试控制原生返回及取消，等待超过该预算仍不失败，并验证请求结束后恢复超时；生产 15 秒预算不变。来源：`38b65d5`、`506c7fe`、`1a66de5` 及本次发布验收工作树 `framework/fia/Tests/FIAMacOSTests/BackendSupervisorTests.swift`。不改运行时或应用行为；最终完整检查和真实 runner 重新验收后发布，无新增官网操作说明。
 
 - **内置 Bun 1.4.3**：活跃 FIA 的 `BUNDLED_BUN_VERSION`、共仓 / 框架 CI 和开发要求升级，应用、SDK、FIA 发行版本不变。来源：本轮工作树 `framework/fia/packages/cli/src/metadata.ts` 与工作流。验证：77 项 CLI / 48 项 Swift 检查、框架独立源码 / 归档 / 应用消费通过；生产应用内实际版本为 1.4.3，revision `c6da4a4d3010e5553438c60f6bd76d981976867c`，内置二进制签名校验通过。官网仅修改未发布共仓工具链说明，公开 FIA 0.18.0 / 麻辣烫 0.4.0 的 Bun 1.4.2 事实保留。正式发行需完整安装包，不能通过代码更新替换 Bun。
 

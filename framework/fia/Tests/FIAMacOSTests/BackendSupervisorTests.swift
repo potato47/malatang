@@ -26,17 +26,17 @@ struct BackendSupervisorTests {
                 return nil
             }, onState: { states.append($0) }
         )
-        supervisor.readinessTimeout = .milliseconds(150)
+        supervisor.readinessTimeout = .seconds(2)
         supervisor.start()
-        let nativeDeadline = ContinuousClock.now + .seconds(2)
+        let nativeDeadline = ContinuousClock.now + .seconds(5)
         while !supervisor.waitingOnNative, ContinuousClock.now < nativeDeadline { try await Task.sleep(for: .milliseconds(20)) }
-        #expect(supervisor.waitingOnNative)
+        try #require(supervisor.waitingOnNative)
         // Keep the native response pending beyond the readiness timeout.
-        try await Task.sleep(for: .milliseconds(200))
+        try await Task.sleep(for: .milliseconds(2_200))
         #expect(supervisor.waitingOnNative)
         #expect(!states.contains(where: { if case .failed = $0 { true } else { false } }))
         nativeResponse.continuation.finish()
-        let deadline = ContinuousClock.now + .seconds(2)
+        let deadline = ContinuousClock.now + .seconds(5)
         while !states.contains(.ready(port: 45_683)), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(states.contains(.ready(port: 45_683)))
         #expect(!supervisor.waitingOnNative)
@@ -46,7 +46,7 @@ struct BackendSupervisorTests {
 
     @Test(arguments: [false, true]) func startupTimeoutResumesAfterNativeReturnOrCancellation(cancelled: Bool) async throws {
         let script = cancelled
-            ? #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"request","id":1,"method":"keychain.get","params":{}}'; sleep 0.3; printf '%s\n' '{"v":5,"type":"cancel","id":1}'; IFS= read -r response; IFS= read -r shutdown"#
+            ? #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"request","id":1,"method":"keychain.get","params":{}}'; IFS= read -r cancelEvent; printf '%s\n' '{"v":5,"type":"cancel","id":1}'; IFS= read -r response; IFS= read -r shutdown"#
             : #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"request","id":1,"method":"keychain.get","params":{}}'; IFS= read -r response; IFS= read -r shutdown"#
         let configuration = FIABunConfiguration(
             development: true, appName: "Stalled", appIdentifier: "com.example.stalled.\(UUID().uuidString)",
@@ -56,17 +56,28 @@ struct BackendSupervisorTests {
         )
         var failed = false
         var finishedNative = false
+        let nativeResponse = AsyncStream<Void>.makeStream()
+        defer { nativeResponse.continuation.finish() }
         let supervisor = try BackendSupervisor(
             configuration: configuration, applicationSupportDirectory: FileManager.default.temporaryDirectory,
             onRequest: { _, _ in
                 defer { finishedNative = true }
-                try await Task.sleep(for: cancelled ? .seconds(30) : .milliseconds(400))
+                for await _ in nativeResponse.stream { }
+                try Task.checkCancellation()
                 return nil
             }, onState: { if case .failed = $0 { failed = true } }
         )
-        supervisor.readinessTimeout = .milliseconds(150)
+        supervisor.readinessTimeout = .seconds(2)
         supervisor.start()
-        let deadline = ContinuousClock.now + .seconds(2)
+        let nativeDeadline = ContinuousClock.now + .seconds(5)
+        while !supervisor.waitingOnNative, ContinuousClock.now < nativeDeadline { try await Task.sleep(for: .milliseconds(20)) }
+        try #require(supervisor.waitingOnNative)
+        try await Task.sleep(for: .milliseconds(2_200))
+        #expect(!failed)
+        #expect(!finishedNative)
+        if cancelled { supervisor.sendEvent("test.cancel-native") }
+        else { nativeResponse.continuation.finish() }
+        let deadline = ContinuousClock.now + .seconds(5)
         while !failed, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(finishedNative)
         #expect(failed)

@@ -12,22 +12,24 @@
 
 SDK 0.2.0 是随麻辣烫 0.2.0 提供的破坏性更新：manifest `sdkVersion` 为 `"0.2"`，要求 CSS Modules 和宿主共享 UI。SDK 0.1 插件须迁移并重新构建，不能直接安装或启用；原 ID、宿主标识及 KV 命名空间不变，用户数据保留。历史包名迁移与此次兼容版本升级是两次不同变更。
 
-SDK 版本独立于应用版本，当前候选 SDK 为 0.3.0，应用为 0.4.1；应用发行不代表 SDK 已发布 npm。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
+SDK 版本独立于应用版本，当前公开 SDK 为 0.3.0，应用发布候选为 0.4.1；应用发行与 SDK npm 分别验收。应用 `v*` 标签继续发布 DMG / 更新源；SDK `sdk-v*` 标签只发布 SDK，不执行 Apple 签名、公证或部署 Pages。当前只支持稳定 `x.y.z`，不支持预发布和 build metadata。
 
 ## 当前发布状态
 
-2026-10-10，用户授权发布 SDK 0.3.0 与麻辣烫 0.4.1 / build 5，当前处于发布验收，尚未公开。SDK 0.3.0 对应 manifest `sdkVersion: "0.3"`，使用 Base UI / Tailwind CSS 4 的组合式组件；旧 SDK 0.2 及更早插件须更新并重新构建，插件 ID / KV / 历史保留。当前公开 npm 基线仍是下述 0.2.1，最终 OIDC / 归档 / 独立消费证据完成后再记录。
+2026-10-11，SDK 0.3.0 已由 [GitHub OIDC 发布 38068339338](https://github.com/potato47/malatang/actions/runs/38068339338) 首次实际发布，`sdk-v0.3.0` 固定源码 `1a66de5cca8c59267add5dfab9223679ac2eeb00`。registry latest 为 0.3.0，公开 tarball 与 Actions 唯一验收归档逐字节一致，SHA-256 `1434489308c6fcd22942a4ff1fd497edf413d87a1e86881773361b642a4b3375`；[npm provenance](https://registry.npmjs.org/-/npm/v1/attestations/@semicoder%2fmalatang-sdk@0.3.0) 已生成。新缓存独立目录从 registry 安装，两种模板 create / check / build / pack 及运行时 / UI / 独立插件构建通过。未使用长期 npm token 或本机 publish。
+
+SDK 0.3.0 对应 manifest `sdkVersion: "0.3"`，使用 Base UI / Tailwind CSS 4 的组合式组件，要求麻辣烫 0.4.1。旧 SDK 0.2 及更早插件须更新并重新构建，插件 ID / KV / 历史保留。应用与官网发布状态单独记录，不把 SDK 已发布视为应用和官网已上线。
 
 2026-10-09，`@semicoder/malatang-sdk@0.2.1` 已通过维护者 npm 认证发布；源码为应用发布提交 `7c0f237986728d13063fd25e38e0a826738af213`，registry latest 为 0.2.1。公开 tarball 与 `npm:pack` 验收归档逐字节一致，SHA-256 `711f7f2d39cfd3b51ed937b45cf44b136f2708b54c10de6c8490630edc5ae93f`、SHA-1 `68699515091cd5a97e2ec448d5b98200858acd1b`。在 workspace 外从 registry 安装后，create 返回 SDK 0.2.1，notes 模板 check/build/pack 通过；主干 [CI 37868718881](https://github.com/potato47/malatang/actions/runs/37868718881) 也已验证归档与独立消费。
 
 新包增加 Popover 定位参数，要求麻辣烫 0.3.0 及以上；manifest 兼容版本保持 0.2，原 0.2 插件继续可用。CLI SDK 版本回执和内置快照检查跟随真实包版本，不再固定为 0.2.0。
 
-本次仍使用本机 npm 认证，未执行远端 OIDC；Trusted Publisher 和 `npm` Environment 后续另行配置验收。不要推送 `sdk-v0.2.1` 触发重复发布，未来独立标签必须使用新版本。旧 0.2.0 于 2026-10-05 首次本机发布，归档不改写。
+0.2.1 当次使用本机 npm 认证，未执行远端 OIDC；该历史边界已由上述 0.3.0 真实 OIDC 验收替代。不要推送 `sdk-v0.2.1` 触发重复发布，未来独立标签必须使用新版本。旧 0.2.0 于 2026-10-05 首次本机发布，归档不改写。
 
 ## 首次配置
 
 1. 将本次源码和 `.github/workflows/publish-npm.yml` 合入 GitHub 默认分支。工作流名为 **Publish Malatang SDK**，手动运行始终只验收并上传 `.tgz`，不会发布。
-2. 创建 GitHub `npm` Environment；若限制可部署标签，允许 `sdk-v*`。
+2. 创建 GitHub `npm` Environment；仅追加当次获授权的精确标签，本次为 `sdk-v0.3.0`，不放宽现有保护。
 3. SDK 尚未发布时，先用有 `@semicoder` 发布权限的 npm 账号完成首次发布。执行下面的本地验收，再发布已经验证的归档；将 `<version>` 替换为实际尚未发布的版本：
 
    ```sh
@@ -44,13 +46,13 @@ SDK 版本独立于应用版本，当前候选 SDK 为 0.3.0，应用为 0.4.1�
    | Repository | `malatang` |
    | Workflow filename | `publish-npm.yml` |
    | Environment name | `npm` |
-   | Allowed actions | 允许直接 `npm publish` |
+   | Allowed actions | `npm publish` 及 npm 必需的 `npm stage publish`；不允许 dist-tag 修改 |
 
 工作流采用 OIDC，使用 Node 24、npm 11.19.0、Bun 1.4.3。只有 publish job 申请 `id-token: write`，不配置 `NPM_TOKEN` / `NODE_AUTH_TOKEN`。仅目标仓库的 SDK 标签可以进入发布 job；手动验收不需要 npm 认证。公开包、公开仓库经 OIDC 发布时 npm 自动生成 provenance。依据：[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)。
 
 ## 本地验收
 
-先准备应用依赖（沿用应用的本地 FIA 或固定归档流程），在麻辣烫根目录执行：
+先准备应用根 workspace 依赖，FIA 从同一提交构建；旧标签重现仍沿用其固定归档。在麻辣烫根目录执行：
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
