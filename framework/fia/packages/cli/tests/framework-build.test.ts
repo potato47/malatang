@@ -12,11 +12,16 @@ test("build fingerprints detect edits, additions, deletions and executable bit c
     const file = resolve(root, "src/a.ts");
     await writeFile(file, "one");
     const second = await fingerprint(root, ["src"]);
+    const revision = await fingerprint(root, ["src"], true);
     expect(second).not.toBe(first);
     expect(await fingerprint(root, ["src"])).toBe(second);
     await writeFile(file, "two");
     const third = await fingerprint(root, ["src"]);
     expect(third).not.toBe(second);
+    await writeFile(file, "one");
+    expect(await fingerprint(root, ["src"])).toBe(second);
+    expect(await fingerprint(root, ["src"], true)).not.toBe(revision);
+    await writeFile(file, "two");
     await chmod(file, 0o755);
     expect(await fingerprint(root, ["src"])).not.toBe(third);
     await rm(file);
