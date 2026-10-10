@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "allowArbitraryExtensions": true,
+    "lib": ["ESNext", "DOM"],
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2023",
+    "types": ["bun"]
+  },
+  "include": ["packages/**/*.ts", "prototype/**/*.ts", "tools/**/*.ts", "types/**/*.d.ts"],
+  "exclude": ["packages/cli/templates/**"]
+}

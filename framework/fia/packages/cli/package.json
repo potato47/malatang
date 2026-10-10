@@ -1,0 +1,72 @@
+{
+  "name": "@semicoder/fia",
+  "version": "0.18.0",
+  "description": "Build macOS applications for humans and agents with a shared API, UI and CLI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/potato47/fia.git",
+    "directory": "packages/cli"
+  },
+  "bin": {
+    "fia": "bin/fia"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "templates",
+    "assets",
+    "README.md",
+    "docs/framework"
+  ],
+  "type": "module",
+  "exports": {
+    "./api": {
+      "types": "./dist/business-api.d.ts",
+      "import": "./dist/business-api.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "default": "./dist/client.js"
+    },
+    "./backend": {
+      "types": "./dist/backend.d.ts",
+      "import": "./dist/backend.js",
+      "default": "./dist/backend.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js",
+      "default": "./dist/vite.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "test": "bun run build && bun test tests",
+    "prepack": "bun run build && bun -e 'await import(\"./src/artifacts.ts\").then(m => m.verifyAssets())'"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "json-schema-to-typescript": "^15.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "vite": "^7.1.3"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  }
+}

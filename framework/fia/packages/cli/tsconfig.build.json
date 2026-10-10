@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": [
+    "src/client.ts",
+    "src/backend.ts",
+    "src/vite.ts",
+    "src/config.ts",
+    "src/business-api.ts"
+  ]
+}
