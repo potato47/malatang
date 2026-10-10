@@ -26,20 +26,19 @@ const originals = new Map(
 const logs: string[] = [];
 const pids = new Set<number>();
 const results: string[] = [];
-const child = Bun.spawn(
-  [process.execPath, resolve(repositoryRoot, "tools/develop-app.ts"), project],
-  {
+const spawnSupervisor = () =>
+  Bun.spawn([process.execPath, resolve(repositoryRoot, "tools/develop-app.ts"), project], {
     cwd: project,
     detached: true,
     stdout: "pipe",
     stderr: "pipe",
     stdin: "ignore",
-  },
-);
+  });
+let child = spawnSupervisor();
 const drain = async (stream: ReadableStream<Uint8Array>) => {
   for await (const bytes of stream) logs.push(new TextDecoder().decode(bytes));
 };
-const drains = Promise.all([drain(child.stdout), drain(child.stderr)]);
+let drains = Promise.all([drain(child.stdout), drain(child.stderr)]);
 const wait = async <T>(label: string, probe: () => Promise<T | undefined>, timeout = 90_000) => {
   const end = Date.now() + timeout;
   while (Date.now() < end) {
@@ -119,6 +118,15 @@ try {
   );
   if (child.exitCode !== 75) throw new Error("Dependency change did not request a restart");
   results.push("dependency declaration: supervisor exits with instructions");
+  await drains;
+  child = spawnSupervisor();
+  drains = Promise.all([drain(child.stdout), drain(child.stderr)]);
+  await ready();
+  child.kill("SIGINT");
+  await wait("Ctrl-C exits supervisor", async () => (child.exitCode !== null ? true : undefined));
+  if (child.exitCode !== 130 || (await status()).running)
+    throw new Error("Ctrl-C did not stop the supervised application");
+  results.push("Ctrl-C: supervisor and application stop together");
 } finally {
   await stopDevelopmentChild(child);
   await drains;
