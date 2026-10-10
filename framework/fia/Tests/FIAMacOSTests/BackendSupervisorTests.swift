@@ -111,10 +111,10 @@ struct BackendSupervisorTests {
     }
 
     @Test func rejectsDuplicateRequestIDsAndConcurrencyOverflow() async throws {
-        let duplicate = #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"ready","port":45680,"origin":"http://127.0.0.1:45680"}'; printf '%s\n' '{"v":5,"type":"request","id":1,"method":"dialogs.openFile","params":{}}' '{"v":5,"type":"request","id":1,"method":"dialogs.openFile","params":{}}'; sleep 2"#
+        let duplicate = #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"ready","port":45680,"origin":"http://127.0.0.1:45680"}'; printf '%s\n' '{"v":5,"type":"request","id":1,"method":"dialogs.openFile","params":{}}' '{"v":5,"type":"request","id":1,"method":"dialogs.openFile","params":{}}'; IFS= read -r shutdown"#
         try await expectProtocolRestart(script: duplicate, identifier: "com.example.duplicate")
 
-        let overflow = #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"ready","port":45681,"origin":"http://127.0.0.1:45681"}'; i=1; while [ "$i" -le 129 ]; do printf '{"v":5,"type":"request","id":%s,"method":"dialogs.openFile","params":{}}\n' "$i"; i=$((i + 1)); done; sleep 2"#
+        let overflow = #"IFS= read -r initialize; printf '%s\n' '{"v":5,"type":"ready","port":45681,"origin":"http://127.0.0.1:45681"}'; i=1; while [ "$i" -le 129 ]; do printf '{"v":5,"type":"request","id":%s,"method":"dialogs.openFile","params":{}}\n' "$i"; i=$((i + 1)); done; IFS= read -r shutdown"#
         try await expectProtocolRestart(script: overflow, identifier: "com.example.overflow")
     }
 
