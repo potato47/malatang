@@ -49,12 +49,20 @@ export async function developApplication(projectRoot: string, args: string[]) {
       : [];
   let stopped = false;
   let child: Bun.Subprocess | undefined;
+  let preparing = false;
   let applied: string | undefined;
   let failed: string | undefined;
   const initial = await developmentInputs(projectRoot);
   const stop = () => {
     stopped = true;
     child?.kill("SIGTERM");
+    if (preparing && child) {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        /* exited */
+      }
+    }
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
@@ -90,15 +98,18 @@ export async function developApplication(projectRoot: string, args: string[]) {
         }
         applied = undefined;
         console.log("framework: preparing latest sources");
+        preparing = true;
         child = spawn(
           [process.execPath, resolve(repositoryRoot, "tools/prepare.ts")],
           repositoryRoot,
         );
         const code = await child.exited;
+        preparing = false;
         child = undefined;
         if (stopped) break;
         const latest = await developmentInputs(projectRoot);
-        if (latest.build !== input.build || latest.control !== initial.control) continue;
+        if (latest.build !== input.build || latest.control !== initial.control || code === 75)
+          continue;
         if (code !== 0) {
           failed = input.build;
           console.error("framework: build failed; Dev is stopped. Fix framework sources to retry");

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { watch } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile, rename, lstat } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { verifyAssets } from "../packages/cli/src/artifacts.ts";
@@ -131,115 +132,155 @@ export interface BuildReport {
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
+export class SourcesChangedError extends Error {}
+
 export async function prepareLocked(): Promise<BuildReport> {
   if (process.platform !== "darwin" || process.arch !== "arm64")
     throw new Error("FIA source builds require Apple Silicon macOS");
   if (Bun.version !== BUNDLED_BUN_VERSION) throw new Error("Use Bun " + BUNDLED_BUN_VERSION);
   const workspace = await findWorkspace();
-  const toolchain: BuildReport["toolchain"] = {
-    bun: Bun.version,
-    bunSHA256: createHash("sha256")
-      .update(await readFile(process.execPath))
-      .digest("hex"),
-    swift: (await run(["swift", "--version"], { quiet: true })).trim(),
-    sdk: (await run(["xcrun", "--sdk", "macosx", "--show-sdk-version"], { quiet: true })).trim(),
-    sdkPath: (await run(["xcrun", "--sdk", "macosx", "--show-sdk-path"], { quiet: true })).trim(),
-    platform: process.platform,
-    architecture: process.arch,
-  };
-  const lockHash = createHash("sha256")
-    .update(await readFile(workspace.lock))
-    .digest("hex");
-  const nativeInput = digest([await fingerprint(repositoryRoot, nativeInputs), toolchain]);
-  const cliInput = digest([
-    await fingerprint(repositoryRoot, cliInputs),
-    lockHash,
-    toolchain.bun,
-    toolchain.bunSHA256,
-  ]);
-  const previousNative = (await Bun.file(resolve(buildStateDirectory, "native.json"))
-    .json()
-    .catch(() => null)) as BuildRecord | null;
-  const previousCLI = (await Bun.file(resolve(buildStateDirectory, "cli.json"))
-    .json()
-    .catch(() => null)) as BuildRecord | null;
-  const assetPath = "packages/cli/assets/darwin-arm64";
-  const cliOutputPaths = ["packages/cli/dist", "packages/cli/docs/framework"];
-  let nativeOutput = await fingerprint(repositoryRoot, [assetPath]);
-  let cliOutput = await fingerprint(repositoryRoot, cliOutputPaths);
-  const rebuildNative =
-    previousNative?.input !== nativeInput || previousNative?.output !== nativeOutput;
-  const rebuildCLI = previousCLI?.input !== cliInput || previousCLI?.output !== cliOutput;
-  // Invalidate before writing any output. An interrupted/failed build must never be reused.
-  if (rebuildNative || rebuildCLI) await rm(reportPath, { force: true });
-  if (rebuildNative) {
-    await rm(resolve(buildStateDirectory, "native.json"), { force: true });
-    console.log("framework: building native runtime");
-    await run([process.execPath, "tools/build-runtime.ts"]);
-    nativeOutput = await fingerprint(repositoryRoot, [assetPath]);
-    await verifyAssets();
-    if (nativeInput === digest([await fingerprint(repositoryRoot, nativeInputs), toolchain]))
-      await writeFile(
-        resolve(buildStateDirectory, "native.json"),
-        JSON.stringify({ input: nativeInput, output: nativeOutput }),
-      );
-  }
-  if (rebuildCLI) {
-    await rm(resolve(buildStateDirectory, "cli.json"), { force: true });
-    console.log("framework: building CLI and SDK");
-    await run([process.execPath, "packages/cli/scripts/build.ts"]);
-    cliOutput = await fingerprint(repositoryRoot, cliOutputPaths);
-  }
-  await verifyAssets();
-  // Reject a build whose sources changed while a compiler was reading them.
-  if (
-    nativeInput !== digest([await fingerprint(repositoryRoot, nativeInputs), toolchain]) ||
-    cliInput !==
-      digest([
-        await fingerprint(repositoryRoot, cliInputs),
-        createHash("sha256")
-          .update(await readFile(workspace.lock))
-          .digest("hex"),
-        toolchain.bun,
-        toolchain.bunSHA256,
-      ])
-  ) {
-    await rm(reportPath, { force: true });
-    throw new Error("Framework sources changed during the build; rebuild the latest sources");
-  }
-  await writeFile(
-    resolve(buildStateDirectory, "cli.json"),
-    JSON.stringify({ input: cliInput, output: cliOutput }),
-  );
-  const commit = await run(["git", "rev-parse", "HEAD"], { cwd: workspace.root, quiet: true })
-    .then((x) => x.trim())
-    .catch(() => null);
-  const dirty = commit
-    ? await run(["git", "status", "--porcelain"], { cwd: workspace.root, quiet: true }).then(
-        (x) => !!x.trim(),
+  let nativeTouched = false;
+  let cliTouched = false;
+  const matches = (path: string, inputs: string[]) =>
+    inputs.some((input) => path === input || path.startsWith(input + "/"));
+  const sourceWatcher = watch(repositoryRoot, { recursive: true }, (_event, file) => {
+    const path = file?.toString();
+    if (!path) {
+      nativeTouched = true;
+      cliTouched = true;
+      return;
+    }
+    if (matches(path, nativeInputs)) nativeTouched = true;
+    if (matches(path, cliInputs)) cliTouched = true;
+  });
+  const lockWatcher = watch(workspace.root, (_event, file) => {
+    if (!file || file.toString() === "bun.lock") cliTouched = true;
+  });
+  try {
+    const toolchain: BuildReport["toolchain"] = {
+      bun: Bun.version,
+      bunSHA256: createHash("sha256")
+        .update(await readFile(process.execPath))
+        .digest("hex"),
+      swift: (await run(["swift", "--version"], { quiet: true })).trim(),
+      sdk: (await run(["xcrun", "--sdk", "macosx", "--show-sdk-version"], { quiet: true })).trim(),
+      sdkPath: (await run(["xcrun", "--sdk", "macosx", "--show-sdk-path"], { quiet: true })).trim(),
+      platform: process.platform,
+      architecture: process.arch,
+    };
+    const lockHash = createHash("sha256")
+      .update(await readFile(workspace.lock))
+      .digest("hex");
+    const nativeInput = digest([await fingerprint(repositoryRoot, nativeInputs), toolchain]);
+    const cliInput = digest([
+      await fingerprint(repositoryRoot, cliInputs),
+      lockHash,
+      toolchain.bun,
+      toolchain.bunSHA256,
+    ]);
+    const previousNative = (await Bun.file(resolve(buildStateDirectory, "native.json"))
+      .json()
+      .catch(() => null)) as BuildRecord | null;
+    const previousCLI = (await Bun.file(resolve(buildStateDirectory, "cli.json"))
+      .json()
+      .catch(() => null)) as BuildRecord | null;
+    const assetPath = "packages/cli/assets/darwin-arm64";
+    const cliOutputPaths = ["packages/cli/dist", "packages/cli/docs/framework"];
+    let nativeOutput = await fingerprint(repositoryRoot, [assetPath]);
+    let cliOutput = await fingerprint(repositoryRoot, cliOutputPaths);
+    const rebuildNative =
+      previousNative?.input !== nativeInput || previousNative?.output !== nativeOutput;
+    const rebuildCLI = previousCLI?.input !== cliInput || previousCLI?.output !== cliOutput;
+    // Invalidate before writing any output. An interrupted/failed build must never be reused.
+    if (rebuildNative || rebuildCLI) await rm(reportPath, { force: true });
+    if (rebuildNative) {
+      await rm(resolve(buildStateDirectory, "native.json"), { force: true });
+      console.log("framework: building native runtime");
+      await run([process.execPath, "tools/build-runtime.ts"]);
+      nativeOutput = await fingerprint(repositoryRoot, [assetPath]);
+      await verifyAssets();
+      if (
+        !nativeTouched &&
+        nativeInput === digest([await fingerprint(repositoryRoot, nativeInputs), toolchain])
       )
-    : null;
-  const report: BuildReport = {
-    schema: 1,
-    source: { commit, dirty, framework: await sourceFingerprint(), lock: lockHash },
-    toolchain,
-    native: { input: nativeInput, output: nativeOutput },
-    cli: { input: cliInput, output: cliOutput },
-  };
-  const temporary = reportPath + "." + process.pid + ".tmp";
-  await writeFile(temporary, JSON.stringify(report, null, 2) + "\n");
-  await rename(temporary, reportPath);
-  const publicReport = resolve(workspace.root, "artifacts/fia/build-report.json");
-  await mkdir(resolve(workspace.root, "artifacts/fia"), { recursive: true });
-  await writeFile(publicReport, JSON.stringify(report, null, 2) + "\n");
-  console.log(
-    "framework: " +
-      (rebuildNative || rebuildCLI ? "ready" : "verified cached outputs") +
-      " (" +
-      relative(workspace.root, reportPath) +
-      ")",
-  );
-  return report;
+        await writeFile(
+          resolve(buildStateDirectory, "native.json"),
+          JSON.stringify({ input: nativeInput, output: nativeOutput }),
+        );
+    }
+    if (rebuildCLI) {
+      await rm(resolve(buildStateDirectory, "cli.json"), { force: true });
+      console.log("framework: building CLI and SDK");
+      await run([process.execPath, "packages/cli/scripts/build.ts"]);
+      cliOutput = await fingerprint(repositoryRoot, cliOutputPaths);
+    }
+    await verifyAssets();
+    // Reject a build whose sources changed while a compiler was reading them.
+    if (
+      nativeTouched ||
+      cliTouched ||
+      nativeInput !== digest([await fingerprint(repositoryRoot, nativeInputs), toolchain]) ||
+      cliInput !==
+        digest([
+          await fingerprint(repositoryRoot, cliInputs),
+          createHash("sha256")
+            .update(await readFile(workspace.lock))
+            .digest("hex"),
+          toolchain.bun,
+          toolchain.bunSHA256,
+        ])
+    ) {
+      await rm(reportPath, { force: true });
+      if (nativeTouched) await rm(resolve(buildStateDirectory, "native.json"), { force: true });
+      throw new SourcesChangedError(
+        "Framework sources changed during the build; rebuild the latest sources",
+      );
+    }
+    const commit = await run(["git", "rev-parse", "HEAD"], { cwd: workspace.root, quiet: true })
+      .then((x) => x.trim())
+      .catch(() => null);
+    const dirty = commit
+      ? await run(["git", "status", "--porcelain"], { cwd: workspace.root, quiet: true }).then(
+          (x) => !!x.trim(),
+        )
+      : null;
+    const report: BuildReport = {
+      schema: 1,
+      source: { commit, dirty, framework: await sourceFingerprint(), lock: lockHash },
+      toolchain,
+      native: { input: nativeInput, output: nativeOutput },
+      cli: { input: cliInput, output: cliOutput },
+    };
+    await new Promise<void>((done) => setImmediate(done));
+    if (nativeTouched || cliTouched) {
+      await rm(reportPath, { force: true });
+      if (nativeTouched) await rm(resolve(buildStateDirectory, "native.json"), { force: true });
+      throw new SourcesChangedError(
+        "Framework sources changed while verifying build provenance; retry latest sources",
+      );
+    }
+    await writeFile(
+      resolve(buildStateDirectory, "cli.json"),
+      JSON.stringify({ input: cliInput, output: cliOutput }),
+    );
+    const temporary = reportPath + "." + process.pid + ".tmp";
+    await writeFile(temporary, JSON.stringify(report, null, 2) + "\n");
+    await rename(temporary, reportPath);
+    const publicReport = resolve(workspace.root, "artifacts/fia/build-report.json");
+    await mkdir(resolve(workspace.root, "artifacts/fia"), { recursive: true });
+    await writeFile(publicReport, JSON.stringify(report, null, 2) + "\n");
+    console.log(
+      "framework: " +
+        (rebuildNative || rebuildCLI ? "ready" : "verified cached outputs") +
+        " (" +
+        relative(workspace.root, reportPath) +
+        ")",
+    );
+    return report;
+  } finally {
+    sourceWatcher.close();
+    lockWatcher.close();
+  }
 }
 export const prepareFramework = () => withBuildLock(prepareLocked);
 
@@ -248,6 +289,6 @@ if (import.meta.main) {
     await prepareFramework();
   } catch (error) {
     console.error(error);
-    process.exitCode = 1;
+    process.exitCode = error instanceof SourcesChangedError ? 75 : 1;
   }
 }

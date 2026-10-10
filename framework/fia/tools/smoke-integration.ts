@@ -93,6 +93,19 @@ try {
   if (count("building native runtime") !== nativeBuilds)
     throw new Error("CLI failure invalidated native cache");
   results.push("compile error: stopped, recovered, native cache retained");
+  const buildCount = count("building CLI and SDK");
+  const readyCount = count("Application ready");
+  await writeFile(client, originals.get(client)! + "\n// save during compilation 1\n");
+  await wait("compiler started", async () =>
+    count("building CLI and SDK") > buildCount ? true : undefined,
+  );
+  await writeFile(client, originals.get(client)! + "\n// save during compilation 2\n");
+  pid = await ready(pid);
+  await Bun.sleep(1500);
+  if (count("Application ready") !== readyCount + 1)
+    throw new Error("Intermediate build started an application");
+  results.push("save during compilation: only final inputs start the application");
+
   await writeFile(addition, "export const integrationProbe = true;\n");
   pid = await ready(pid);
   await rm(addition);
