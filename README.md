@@ -8,7 +8,7 @@
 
 ## 0.2 版本（历史）
 
-0.2.0 使用 **SDK 0.2.0 / manifest 0.2** 的统一 UI 与 `malatang plugin create/check/build/pack`。需要新的 FIA 应用子命令 runtime；旧归档和 v0.1.0 不包含这些能力。升级请完整安装新 DMG，旧插件迁移后重新构建，模型、账号、KV 和历史保留。固定 runtime 以 `release/runtime-lock.json` 为准；下载状态以官网和 Release 为准。
+0.2.0 使用 **SDK 0.2.0 / manifest 0.2** 的统一 UI 与 `malatang plugin create/check/build/pack`。需要新的 FIA 应用子命令 runtime；旧归档和 v0.1.0 不包含这些能力。升级请完整安装新 DMG，旧插件迁移后重新构建，模型、账号、KV 和历史保留。该旧版本的固定 runtime 以对应 Git 标签中的 `release/runtime-lock.json` 为准；下载状态以官网和 Release 为准。
 
 ## 下载与安装
 
