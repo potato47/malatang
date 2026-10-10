@@ -1,5 +1,7 @@
 # npm 自动发布
 
+> 当前共仓开发阶段：在宿主仓库内禁用 FIA npm 发布，仅执行框架归档与独立消费验收。以下独立仓库发布流程保留供将来拆出后使用；现有 Trusted Publisher 未迁移。
+
 GitHub 仓库：`potato47/fia`。npm 包：`@semicoder/fia`，源码在 `packages/cli`。
 
 ## 0.18.0 GitHub 发布记录（2026-10-09）

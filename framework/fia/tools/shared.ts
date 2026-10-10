@@ -7,6 +7,23 @@ export const generatedRoot = resolve(repositoryRoot, ".fia/generated");
 export const generatedUIPath = resolve(generatedRoot, "ui/index.txt");
 export const defaultAppPath = resolve(repositoryRoot, "dist/FIAPrototype.app");
 
+let cancellation: AbortSignal | undefined;
+export async function withCommandCancellation<T>(action: () => Promise<T>) {
+  const controller = new AbortController();
+  const previous = cancellation;
+  cancellation = controller.signal;
+  const stop = () => controller.abort(new Error("Framework command interrupted"));
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  try {
+    return await action();
+  } finally {
+    cancellation = previous;
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
+}
+
 export interface RunOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;
@@ -23,6 +40,7 @@ export async function runInteractive(
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
+    signal: cancellation,
   });
   const exitCode = await child.exited;
   if (exitCode !== 0) {
@@ -38,6 +56,7 @@ export async function run(command: readonly string[], options: RunOptions = {}):
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
+    signal: cancellation,
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(process.stdout).text(),

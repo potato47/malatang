@@ -1,3 +1,4 @@
+import { standaloneLockFixture } from "./workspace.fixture.ts";
 import { expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -49,9 +50,15 @@ for (const scenario of [
   test(`release workflow: ${scenario}`, async () => {
     const directory = await mkdtemp(resolve(tmpdir(), "fia-release-"));
     try {
-      for (const path of [...versionedPaths, "tools/publish-npm.ts", "tools/version-npm.ts"]) {
+      for (const path of [
+        ...versionedPaths,
+        "tools/publish-npm.ts",
+        "tools/version-npm.ts",
+        "tools/workspace.ts",
+      ]) {
         await mkdir(dirname(resolve(directory, path)), { recursive: true });
-        await cp(resolve(repository, path), resolve(directory, path));
+        if (path === "bun.lock") await writeFile(resolve(directory, path), standaloneLockFixture());
+        else await cp(resolve(repository, path), resolve(directory, path));
       }
       const before = await Promise.all(
         versionedPaths.map((path) => readFile(resolve(directory, path), "utf8")),
@@ -119,7 +126,9 @@ export async function runInteractive(command: string[]) {
       const publishes = commands.filter((command) => command[0] === "npm");
       if (prepare) {
         for (const contents of after) expect(contents).toContain(target);
-        expect(commands).toEqual([[process.execPath, "install", "--lockfile-only"]]);
+        expect(commands).toEqual([
+          [process.execPath, "install", "--lockfile-only", "--ignore-scripts"],
+        ]);
         expect(publishes).toHaveLength(0);
         expect(stdout).toContain(`tagging v${target}`);
       } else if (scenario === "publish" || scenario === "explicit") {

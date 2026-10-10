@@ -1,3 +1,4 @@
+import { standaloneLockFixture } from "./workspace.fixture.ts";
 import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,7 +22,10 @@ test("release metadata validates all version sources and routes prereleases to n
   try {
     for (const path of paths) {
       await mkdir(dirname(resolve(directory, path)), { recursive: true });
-      const source = await readFile(resolve(import.meta.dir, "../../..", path), "utf8");
+      const source =
+        path === "bun.lock"
+          ? standaloneLockFixture()
+          : await readFile(resolve(import.meta.dir, "../../..", path), "utf8");
       await writeFile(
         resolve(directory, path),
         source.replaceAll(`"${cli.version}"`, `"${version}"`),

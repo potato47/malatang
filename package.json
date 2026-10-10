@@ -7,30 +7,35 @@
   "workspaces": [
     "packages/*",
     "plugins/*",
-    "examples/*"
+    "examples/*",
+    "framework/fia/packages/*"
   ],
   "scripts": {
-    "dev": "bun run plugins:build && fia dev",
+    "dev": "bun run plugins:build && bun framework/fia/tools/develop-app.ts .",
     "agent": "fia agent",
-    "run": "bun run plugins:build && fia run",
-    "build": "bun run plugins:build && fia build",
-    "release": "bun run plugins:build && fia release",
-    "release:update": "fia release --update",
+    "run": "bun run plugins:build && bun framework/fia/tools/application-command.ts run",
+    "build": "bun run plugins:build && bun framework/fia/tools/application-command.ts build",
+    "release": "bun run plugins:build && bun framework/fia/tools/application-command.ts release",
+    "release:update": "bun framework/fia/tools/application-command.ts release --update",
     "version:app": "bun scripts/release/version.ts",
     "version:sdk": "bun scripts/npm/version.ts",
     "npm:check": "bun scripts/npm/check.ts",
     "npm:pack": "bun scripts/npm/pack.ts",
     "release:check": "bun scripts/release/check.ts",
-    "check": "bun run styles:check && bun run plugins:build && fia check",
+    "check": "bun run framework:check && bun run styles:check && bun run plugins:build && fia check",
     "test": "bun test tests",
     "plugins:build": "bun scripts/build-plugins.ts && bun run sdk:snapshot",
     "sdk:snapshot": "bun scripts/sdk-snapshot.ts",
-    "styles:check": "bun scripts/check-styles.ts"
+    "styles:check": "bun scripts/check-styles.ts",
+    "framework:prepare": "bun framework/fia/tools/prepare.ts",
+    "framework:check": "bun framework/fia/tools/task.ts check",
+    "framework:pack": "bun framework/fia/tools/task.ts pack",
+    "framework:verify": "bun framework/fia/tools/verify-standalone.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.0.2",
     "@semicoder/malatang-sdk": "workspace:*",
-    "@semicoder/fia": "file:../fia/packages/cli",
+    "@semicoder/fia": "workspace:*",
     "jose": "^6",
     "react": "19.2.7",
     "react-dom": "19.2.7"
@@ -41,6 +46,8 @@
     "@types/react-dom": "19.2.3",
     "typescript": "7.0.2",
     "vite": "^7.1.3",
-    "@vitejs/plugin-react": "^5.0.0"
+    "@vitejs/plugin-react": "^5.0.0",
+    "oxfmt": "^0.61.0",
+    "oxlint": "^1.76.0"
   }
 }

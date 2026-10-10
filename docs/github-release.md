@@ -72,7 +72,7 @@ GitHub runner 使用临时钥匙串，最后恢复默认钥匙串并删除私钥
 
 0.4.0 / build 4 使用 FIA 官方 [v0.18.0](https://github.com/potato47/fia/releases/tag/v0.18.0)，归档来自正式 GitHub Actions 的同一 npm artifact，SHA-256 `faf196b9408cc2fa4b9edfb0145c592a9a87b6fbc0b0245ad6b89c6c0e7ff4e2`，源码 `85206f6f532242fb2dfcfdf2a4b608f131726bf5`。无需复制为麻辣烫的新框架预发布；旧 `fia-runtime-*` 保留供历史版本重现。官方 npm 公开消费与应用正式发行结果分别验收。
 
-CI 从 `release/runtime-lock.json` 指定的公开 Release 下载已验证的 FIA 框架归档，校验 `release/runtime-lock.json` 的 SHA-256，并放入相邻 `fia/packages/cli`，继续使用现有冻结锁文件。不是每次编译框架，也不以 Actions cache 充当永久依赖。
+当前开发分支 CI 冻结安装根 workspace，再从同一提交的 `framework/fia/` 构建运行时与 CLI。无需预先发布 FIA；框架检查和应用检查均通过后才生成 DMG / SDK 归档。来源报告记录应用提交、框架源码指纹、工具链和产物哈希并随 CI artifact 保存，缓存只用于加速。此流程尚未在 GitHub runner 验证；签名公证、更新签名、runtimeId 兼容及既有环境保护保持不变。历史 v0.4.0 及更早标签继续使用各自的固定 runtime lock，不修改历史产物。
 
 0.2.0 所用归档来自 FIA dd430c851192，包含应用子命令和启动等待修复；源码提交、附件名、专用标签及 SHA-256 均在 runtime lock 中。`0.16.1` 是本地包版本，不表示它与 npm 同版本包内容相同。归档已上传至 [fia-runtime-dd430c851192](https://github.com/potato47/malatang/releases/tag/fia-runtime-dd430c851192)，不要重复创建该标签或覆盖附件。这是旧版本的归档保存方式；后续优先锁定 FIA 官方 Release 的已验证归档，记录对应源码与 SHA-256，不重打包或覆盖旧附件。
 

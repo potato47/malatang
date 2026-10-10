@@ -1,5 +1,6 @@
 import { run, runInteractive, repositoryRoot } from "./shared.ts";
 import { CLI_VERSION } from "../packages/cli/src/metadata.ts";
+import { findWorkspace } from "./workspace.ts";
 import cli from "../packages/cli/package.json";
 import root from "../package.json";
 import { nextMinorVersion, requireIncreasingVersion, updateNPMVersion } from "./version-npm.ts";
@@ -35,6 +36,10 @@ export async function releaseNPM(args: readonly string[]): Promise<void> {
     console.log("Usage: bun run release [version] [--dry-run]\nDefault: increment minor version.");
     return;
   }
+  if (!options.dryRun && (await findWorkspace()).root !== repositoryRoot)
+    throw new Error(
+      "FIA npm publishing is disabled inside a parent workspace; extract the framework before publishing",
+    );
   const target = options.version ?? nextMinorVersion(cli.version);
   requireIncreasingVersion(cli.version, target);
   if (cli.version !== CLI_VERSION || root.version !== CLI_VERSION)

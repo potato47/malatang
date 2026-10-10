@@ -21,12 +21,13 @@ import { smokeApplication } from "./smoke.ts";
 import { generateUpdateKeys } from "./updates.ts";
 import { CLI_VERSION } from "./metadata.ts";
 import { localProfile } from "./local-profile.ts";
+import { parseDevelopmentOptions } from "./development-options.ts";
 
 export const help = `FIA ${CLI_VERSION} — macOS applications for humans and agents
 
 fia create [name] [--yes] [--git|--no-git] [--install|--no-install] [--local]
 fia agent [--preview] <args> Call this project's development or preview application
-fia dev [--open-browser] Vite HMR and supervised Bun restart
+fia dev [--open-browser] [--watch-ignore directory] Vite HMR and supervised Bun restart
 fia run                 Build and run an isolated Preview .app (no HMR)
 fia build [--dmg]        Assemble an application; optionally package and test a DMG
 fia release [--update]   Notarized installer or signed frontend/backend update
@@ -139,6 +140,7 @@ export async function runCLI(args: readonly string[], cwd = process.cwd()): Prom
           ". Run fia --help; FIA 2 modes and generators have been removed.",
       );
     if (
+      command !== "dev" &&
       rest.some(
         (arg) =>
           !(command === "release" && arg === "--update") &&
@@ -151,7 +153,7 @@ export async function runCLI(args: readonly string[], cwd = process.cwd()): Prom
     const config = await loadProjectConfig(cwd);
     switch (command) {
       case "dev":
-        await runDevelopment(config, console.log, { openBrowser: rest.includes("--open-browser") });
+        await runDevelopment(config, console.log, parseDevelopmentOptions(rest));
         break;
       case "run":
         return await runApplication(config);

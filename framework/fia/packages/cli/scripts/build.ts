@@ -1,5 +1,5 @@
 import { cp, mkdir, rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 await rm(resolve(root, "dist"), { recursive: true, force: true });
@@ -26,7 +26,7 @@ for (const name of [
 const tsc = Bun.spawn(
   [
     process.execPath,
-    resolve(root, "../../node_modules/typescript/bin/tsc"),
+    resolve(dirname(Bun.resolveSync("typescript/package.json", root)), "bin/tsc"),
     "-p",
     resolve(root, "tsconfig.build.json"),
   ],

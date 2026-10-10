@@ -30,6 +30,7 @@ import { createSession } from "./session.ts";
 import { readInspection, waitUntil, smokeApplication } from "./smoke.ts";
 import { writeSignedRelease } from "./updates.ts";
 import { localProfile } from "./local-profile.ts";
+import { isIgnoredDevelopmentPath } from "./development-options.ts";
 
 export interface RunSettings {
   cwd: string;
@@ -489,6 +490,12 @@ export async function releaseApplication(config: ResolvedFIAConfig, update = fal
 }
 export async function runApplication(config: ResolvedFIAConfig) {
   const built = await buildApplication(config, { preview: true });
+  return launchPreview(config, built);
+}
+export async function launchPreview(
+  config: ResolvedFIAConfig,
+  built: Awaited<ReturnType<typeof buildApplication>>,
+) {
   const profile = localProfile(config, "preview");
   const child = Bun.spawn([built.executable], {
     cwd: config.projectRoot,
@@ -521,7 +528,7 @@ export function isDevelopmentServerReady(port: number): Promise<boolean> {
 export async function runDevelopment(
   initial: ResolvedFIAConfig,
   output: (message: string) => void = console.log,
-  options: { openBrowser?: boolean } = {},
+  options: { openBrowser?: boolean; watchIgnore?: readonly string[] } = {},
 ) {
   let stop = false;
   let control = "";
@@ -676,7 +683,7 @@ export async function runDevelopment(
           const path = file?.toString();
           if (
             !path ||
-            /^(node_modules|\.git|\.fia|dist)\//u.test(path) ||
+            isIgnoredDevelopmentPath(path, options.watchIgnore) ||
             path.startsWith(config.web.root + "/")
           )
             return;

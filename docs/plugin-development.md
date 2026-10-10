@@ -14,4 +14,4 @@
 
 FIA 使用 agent.commands 声明自定义命令。执行跟随当前代码，沿用脚本监督、取消与更新占用；上下文提供 args、cwd、assetsDirectory。FIA 源码先完成 check/runtime:build/cli:build，然后应用 `bun install --force --ignore-scripts` 刷新本地包。
 
-新 CLI 改变 runtimeId，从 v0.1.0 升级需要完整安装包。`release/runtime-lock.json` 固定 FIA dd430c851192 归档及 SHA-256，CI 按锁下载；不能使用旧归档代替。SDK 快照由应用内置，npm 首次发布状态独立于应用 Release，创建项目不依赖 SDK registry 可用性。
+新 CLI 改变 runtimeId，从 v0.1.0 升级需要完整安装包。历史 v0.2.0 固定 FIA dd430c851192 归档；当前开发分支改为共仓源码构建 FIA，详见[共仓开发](fia-integration.md)。SDK 快照由应用内置，npm 首次发布状态独立于应用 Release，创建项目不依赖 SDK registry 可用性。

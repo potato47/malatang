@@ -14,25 +14,31 @@
 
 官网统一位于 [Semicoder · 麻辣烫](https://semicoder.dev/malatang)，[下载与安装](https://semicoder.dev/malatang/docs/installation) 页面提供正式 DMG 下载、发行状态与安装指引。具体版本和校验信息以该页及 [GitHub Releases](https://github.com/potato47/malatang/releases) 为准；`fia-runtime-*` 预发布仅供构建，不是麻辣烫安装包。
 
-应用支持 macOS 14+ / Apple Silicon，安装后的应用自带运行时，无需另装 Bun。当前可按官网安装页使用公开应用源码与固定 FIA 归档构建，无需编译 Swift。
+应用支持 macOS 14+ / Apple Silicon，安装后的应用自带运行时，无需另装 Bun。官网安装页的已发布 v0.4.0 源码使用固定 FIA 归档，无需编译 Swift；本开发分支的工具链要求见下文。
 
 ## 开发运行
 
-开发需要 Bun（当前验证版本 1.4.2）。
+当前开发分支把 FIA 完整源码及历史放在 `framework/fia/`，与麻辣烫共用根 workspace 和锁文件。麻辣烫是 FIA 的第一个正式应用；待产品稳定后再独立拆出框架。本次重构尚未发布，版本字符串仍为应用 0.4.0 / FIA 0.18.0，不能据此视为已发布产物相同。
 
-以下是 FIA 与麻辣烫的联合开发路径：通过 `file:../fia/packages/cli` 使用相邻 FIA 源码的构建产物，以接入原生外观切换和系统浏览器登录回调；首次需先构建框架（需要 Swift 工具链）。
+源码开发需要 Apple Silicon macOS、Bun 1.4.2 和 Swift 6 工具链（可通过 Xcode / Command Line Tools 提供）。在本仓库根目录执行：
 
 ```sh
-cd ../fia
-bun install --ignore-scripts
-bun run runtime:build
-bun run cli:build
-cd ../malatang
-bun install --ignore-scripts
+bun install --frozen-lockfile --ignore-scripts
 bun run dev
 ```
 
-本地 FIA 包由 Bun 安装到依赖目录，不是实时源码链接。修改 FIA 后先重新构建 runtime / CLI，再在麻辣烫运行 `bun install --force --ignore-scripts` 刷新依赖，最后重建应用或重启开发进程。新 FIA Vite 插件按 SDK 文件内容更新缓存指纹，避免同版本本地包更新后继续加载旧客户端；重启后浏览器需从标题栏重新授权。
+首次启动自动构建 FIA 原生运行时和 CLI；以后按源码、工具链及产物哈希复用。FIA 的 TypeScript 或 Swift/C 源码修改会自动停止当前 Dev 实例、重建并启动；构建失败时保持停止，修复后自动恢复。麻辣烫前端继续 HMR，后端沿用受控重载。重启会清除未保存页面状态并使浏览器授权失效，持久数据保留。依赖清单、锁文件或联调工具自身变化时，终端提示重新安装依赖或重启 dev，不自动安装依赖。
+
+`bun run run`、`build`、`check`、`release` 自动准备同一份框架。框架专用命令：
+
+```sh
+bun run framework:prepare  # 校验或构建原生运行时与 CLI
+bun run framework:check    # 框架 lint / format / TypeScript / CLI / Swift
+bun run framework:pack     # 构建并验证实际 FIA 归档，不发布
+bun run framework:verify   # 导出到仓库外，独立安装、检查、打包和应用消费
+```
+
+不再需要相邻 FIA checkout、force install 或先发布 FIA。框架构建使用互斥锁，冲突会报错；进程正常退出会清理锁，异常中断后须确认原进程已退出才清理提示的锁目录。构建来源、工具链和哈希报告位于 `framework/fia/.fia/framework-build/report.json`。详见[框架迁入与拆分](docs/fia-integration.md)。
 
 会启动 FIA 桌面应用。从 0.3.0 开始，默认通过标题栏最右侧“在浏览器中打开”进入完整界面；开发、预览和正式构建均由 FIA 提供入口，无需第二个服务或插件 SDK 改动。
 
@@ -55,7 +61,7 @@ bun run agent --preview open --browser --url
 
 `bun run build` 仍生成正式身份的 `dist/Malatang.app`，默认与已安装官网版共用正式数据目录，同目录只允许一个实例。日常测试使用上述 dev / run；不要用正式构建路径判断数据已隔离。开发后端资源根目录是项目目录；预览/正式打包后是随应用分发的 backend 目录。
 
-以上开发标记和隔离 run 从 0.3.0 / FIA 0.17.0 开始提供；旧 0.2.0 固定快照中的 `run` 仍访问正式数据。源码构建必须使用同一提交的 `release/runtime-lock.json`。
+以上开发标记和隔离 run 从 0.3.0 / FIA 0.17.0 开始提供；旧 0.2.0 固定快照中的 `run` 仍访问正式数据。已发布 v0.4.0 及更早源码仍需使用相应标签的 `release/runtime-lock.json`；本开发分支改为从同一提交构建框架。
 
 ## 先体验
 

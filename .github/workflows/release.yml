@@ -13,7 +13,7 @@ jobs:
   build:
     if: github.repository == 'potato47/malatang'
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
     environment: release
     defaults:
       run:
@@ -32,8 +32,9 @@ jobs:
           bun-version: "1.4.2"
       - name: Check release source
         run: bun run release:check
-      - run: bun scripts/release/prepare-runtime.ts
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Build framework from this source revision
+        run: bun run framework:prepare
       - run: bun run check && bun test tests
       - name: Prepare signing credentials
         env:
@@ -56,6 +57,7 @@ jobs:
         with:
           name: malatang-release
           path: |
+            malatang/artifacts/fia/build-report.json
             malatang/dist/*.dmg
             malatang/dist/*.sha256
             malatang/dist/*.report.json

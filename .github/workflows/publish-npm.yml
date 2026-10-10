@@ -17,7 +17,7 @@ jobs:
   build:
     if: github.repository == 'potato47/malatang'
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: malatang
@@ -41,8 +41,9 @@ jobs:
       - name: Check SDK metadata and release tag
         id: release
         run: bun run npm:check --release
-      - run: bun scripts/release/prepare-runtime.ts
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Build framework from this source revision
+        run: bun run framework:prepare
       - run: bun run check && bun test tests
       - name: Pack and verify SDK in a standalone consumer
         run: |
@@ -52,7 +53,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: malatang-sdk-npm
-          path: malatang/artifacts/npm/${{ steps.release.outputs.filename }}
+          path: |
+            malatang/artifacts/npm/${{ steps.release.outputs.filename }}
+            malatang/artifacts/fia/build-report.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 14

@@ -2,19 +2,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import cliPackage from "../packages/cli/package.json";
 import { repositoryRoot, requireBunVersion, run } from "./shared.ts";
+import { findWorkspace } from "./workspace.ts";
 
 const PACKAGE_PATH = resolve(repositoryRoot, "packages/cli/package.json");
 const ROOT_PACKAGE_PATH = resolve(repositoryRoot, "package.json");
 const METADATA_PATH = resolve(repositoryRoot, "packages/cli/src/metadata.ts");
 const SWIFT_VERSION_PATH = resolve(repositoryRoot, "Sources/FIACore/FIAVersion.swift");
-const LOCK_PATH = resolve(repositoryRoot, "bun.lock");
-const VERSIONED_PATHS = [
-  PACKAGE_PATH,
-  ROOT_PACKAGE_PATH,
-  METADATA_PATH,
-  SWIFT_VERSION_PATH,
-  LOCK_PATH,
-] as const;
 
 interface ParsedVersion {
   readonly core: readonly [number, number, number];
@@ -117,8 +110,8 @@ export function replaceSwiftFrameworkVersion(
   );
 }
 
-export function readWorkspaceVersionFromLock(source: string): string {
-  const start = source.indexOf('"packages/cli":');
+export function readWorkspaceVersionFromLock(source: string, packagePath = "packages/cli"): string {
+  const start = source.indexOf(JSON.stringify(packagePath) + ":");
   const remaining = start < 0 ? "" : source.slice(start);
   const boundary = /\n\s*"packages"\s*:/.exec(remaining);
   if (start < 0 || boundary?.index === undefined)
@@ -128,10 +121,15 @@ export function readWorkspaceVersionFromLock(source: string): string {
   return match[1]!;
 }
 
-function replaceLockVersion(source: string, current: string, target: string): string {
-  if (readWorkspaceVersionFromLock(source) !== current)
+function replaceLockVersion(
+  source: string,
+  current: string,
+  target: string,
+  packagePath: string,
+): string {
+  if (readWorkspaceVersionFromLock(source, packagePath) !== current)
     throw new Error("bun.lock workspace version does not match package version");
-  const start = source.indexOf('"packages/cli":');
+  const start = source.indexOf(JSON.stringify(packagePath) + ":");
   const boundary = /\n\s*"packages"\s*:/.exec(source.slice(start))!;
   const end = start + boundary.index;
   return (
@@ -150,8 +148,17 @@ export async function updateNPMVersion(target: string): Promise<() => Promise<vo
   requireBunVersion();
   const current = cliPackage.version;
   requireIncreasingVersion(current, target);
+  const workspace = await findWorkspace();
+  const LOCK_PATH = workspace.lock;
+  const versionedPaths = [
+    PACKAGE_PATH,
+    ROOT_PACKAGE_PATH,
+    METADATA_PATH,
+    SWIFT_VERSION_PATH,
+    LOCK_PATH,
+  ];
   const snapshots: Snapshot[] = await Promise.all(
-    VERSIONED_PATHS.map(async (path) => ({ path, contents: await readFile(path) })),
+    versionedPaths.map(async (path) => ({ path, contents: await readFile(path) })),
   );
   const restore = async () => {
     await Promise.all(snapshots.map((snapshot) => writeFile(snapshot.path, snapshot.contents)));
@@ -175,7 +182,12 @@ export async function updateNPMVersion(target: string): Promise<() => Promise<vo
       current,
       target,
     );
-    const lock = replaceLockVersion(await readFile(LOCK_PATH, "utf8"), current, target);
+    const lock = replaceLockVersion(
+      await readFile(LOCK_PATH, "utf8"),
+      current,
+      target,
+      workspace.packagePath,
+    );
     await Promise.all([
       writeFile(PACKAGE_PATH, `${JSON.stringify(packageValue, null, 2)}\n`),
       writeFile(ROOT_PACKAGE_PATH, `${JSON.stringify(rootPackageValue, null, 2)}\n`),
@@ -183,7 +195,9 @@ export async function updateNPMVersion(target: string): Promise<() => Promise<vo
       writeFile(SWIFT_VERSION_PATH, swiftVersion),
       writeFile(LOCK_PATH, lock),
     ]);
-    await run([process.execPath, "install", "--lockfile-only"]);
+    await run([process.execPath, "install", "--lockfile-only", "--ignore-scripts"], {
+      cwd: workspace.root,
+    });
     return restore;
   } catch (error) {
     await restore();

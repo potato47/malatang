@@ -5,7 +5,8 @@ Declare shared operations and events in shared/api.ts. Implement them in backend
 ## 麻辣烫项目协作
 
 - 先阅读 README、SDK 与相关发布文档，检查 Git 状态。模型、插件平台、SDK/UI 与业务工作流由本仓库维护；通用 GUI/原生/构建问题先在 FIA 修复并验证，再接入应用。
-- workspace 中的 FIA 是共同开发项目。框架重建后执行 `bun install --force --ignore-scripts` 刷新本地包，验证实际消费的产物；应用依赖新能力时同时检查 `release/runtime-lock.json` 的源码提交与归档 SHA-256。仅凭同版本号不能确认一致。
+- FIA 活跃源码位于 `framework/fia/`，通过 workspace 包与本应用共同开发，稳定后再独立拆出。框架目录自己的规范仍有效；禁止反向依赖麻辣烫业务。根目录安装依赖，只有一份有效 `bun.lock`。
+- `dev` 自动准备并监听 FIA；`run/build/check/release` 自动准备产物。以构建报告的源码指纹、工具链和哈希核实消费内容；不再刷新相邻包或下载 runtime lock。保留包/API/独立模板边界，发布前仍验证框架可导出和独立消费。
 - 修改业务 API、模型、插件契约时，核对 `shared/api.ts`、`agent/instructions.md`、`packages/sdk/README.md`、内置/示例插件及根 README；模型目录升级同时维护迁移与不可用状态说明。
 - 官网在独立 Semicoder 仓库的 `content/projects/malatang/`，workspace 入口为 `../semicoder/`。可见行为、SDK、安装与发布变化需在同一任务检查对应页面，并在网站 `docs/project-sources.md` 记录来源。网站不是应用运行/构建依赖。
 - 每次应用或 SDK 版本发布必须同步官网安装、插件开发及受影响指南，并记录版本证据和网站部署状态；两种发行不能互相代替。
