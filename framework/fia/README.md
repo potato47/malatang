@@ -83,7 +83,7 @@ my-app open
 
 ```bash
 bun install
-bun run runtime:build  # 使用固定版本 Bun 1.4.2，生成 Host、Bun 和校验清单
+bun run runtime:build  # 使用固定版本 Bun 1.4.3，生成 Host、Bun 和校验清单
 bun run cli:build
 bun run check
 bun run smoke
@@ -111,6 +111,6 @@ GitHub 自动发布：先执行 `bun run version:npm <version>` 同步版本，�
 
 ## 框架与首个应用共同开发（未发布）
 
-FIA 活跃源码现位于麻辣烫仓库的 `framework/fia/`，保留独立 API、模板、测试与打包边界；麻辣烫稳定后再拆回独立仓库。公开 npm 0.18.0 不包含本次联调工具。普通消费已发布 npm 包的应用仍不需要 Swift；维护共仓源码需要 Bun 1.4.2 和 Swift 6 工具链。框架维护流程见 [共同开发](docs/co-development.md)。
+FIA 活跃源码现位于麻辣烫仓库的 `framework/fia/`，保留独立 API、模板、测试与打包边界；麻辣烫稳定后再拆回独立仓库。公开 npm 0.18.0 不包含本次联调工具或 Bun 1.4.3 运行时。普通消费已发布 npm 包的应用仍不需要 Swift；维护共仓源码需要 Bun 1.4.3 和 Swift 6 工具链。框架维护流程见 [共同开发](docs/co-development.md)。
 
 开发 CLI 新增可重复的 `fia dev --watch-ignore <相对目录>`，按目录边界排除指定子树，不影响相似前缀的其他目录。该参数仅供外层工具已经负责构建/重启的目录；默认生成应用无需设置。嵌套的 node_modules、.git、.fia、.build、dist 也不会触发后端重载。

@@ -66,7 +66,7 @@ git push origin v0.18.1
 推送 `v*` 标签后，GitHub Actions 会：
 
 1. 校验标签精确等于 `v<package.version>`，且五处版本一致。
-2. 在 `macos-26` Apple Silicon runner 使用固定 Bun `1.4.2`、Node `24` 和 Swift 工具链构建 Host 与 Bun 运行时。runner 架构再次检查为 `arm64`；macOS 最低运行版本仍由 `Package.swift` 声明为 14。
+2. 在 `macos-26` Apple Silicon runner 使用固定 Bun `1.4.3`、Node `24` 和 Swift 工具链构建 Host 与 Bun 运行时。runner 架构再次检查为 `arm64`；macOS 最低运行版本仍由 `Package.swift` 声明为 14。
 3. 使用冻结锁文件安装依赖，执行 `runtime:build` 和完整 `check`（lint、格式、TypeScript、CLI 测试、Swift 测试）。
 4. 执行 `npm pack`，解包并验证 CLI 版本、SDK 入口、类型、文档、模板资源、二进制架构 / 校验和 / 可执行权限。构建不能改动受 Git 跟踪的文件。
 5. 将验证后的 `.tgz` 保存为 Actions artifact，保留 14 天；独立 Linux job 下载同一归档，以 npm `11.19.0` 和 OIDC 发布，不再构建或执行包生命周期脚本。

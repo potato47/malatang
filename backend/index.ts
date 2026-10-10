@@ -1,6 +1,6 @@
 import { defineBackend, implementAPI } from "@semicoder/fia/backend";
-import { createHash } from "node:crypto";
 import { ChatGPT } from "./chatgpt";
+import { ChatGPTStorage } from "./chatgpt-storage";
 import { CHATGPT_USAGE_URL } from "../shared/chatgpt";
 import api from "../shared/api";
 import { Appearance } from "./appearance";
@@ -56,10 +56,10 @@ export default defineBackend({
     appearance = new Appearance(store, mode => native.application.setAppearance({ mode }), value => emit("appearance.changed", value));
     await appearance.restore();
     let revision = 0;
-    const key = "chatgpt.oauth." + createHash("sha256").update(app.dataDirectory).digest("hex");
+    const credentials = new ChatGPTStorage(app.dataDirectory);
     const modelChanged = () => emit("models.changed", { revision: ++revision });
     chatgpt = new ChatGPT({ redirectURI: url("/api/oauth/openai/callback").href,
-      readSecret: () => native.keychain.get({ key }), writeSecret: value => native.keychain.set({ key, value }), openURL: url => native.system.openURL({ url }),
+      readSecret: () => credentials.readSecret(), writeSecret: value => credentials.writeSecret(value), openURL: url => native.system.openURL({ url }),
       changed: () => { emit("chatgpt.changed", { revision: ++revision }); modelChanged(); },
       modelCount: profileId => store.value.models.filter(model => model.chatgptProfileId === profileId).length,
     });

@@ -85,16 +85,16 @@ export class ChatGPT {
   }
   private async persist(candidate: Vault) {
     try { await this.services.writeSecret(JSON.stringify(candidate)); }
-    catch { throw new Error("无法保存 ChatGPT 账号信息，请检查系统钥匙串后重试。"); }
+    catch { throw new Error("无法保存 ChatGPT 账号信息，请检查数据目录权限和磁盘空间后重试。"); }
     this.vault = candidate; this.services.changed();
   }
   async open() {
     try {
       const saved = await this.services.readSecret();
-      if (saved) this.vault = vaultSchema.parse(JSON.parse(saved));
+      if (saved !== null) this.vault = vaultSchema.parse(JSON.parse(saved));
       else await this.persist({ ...this.vault, hostId: "urn:uuid:" + crypto.randomUUID() });
       this.available = true;
-    } catch { this.message = "无法读取或初始化 ChatGPT 凭证，请检查系统钥匙串并重启应用。"; }
+    } catch { this.message = "无法读取或初始化 ChatGPT 凭证文件，请检查文件内容、数据目录权限和磁盘空间后重启应用。"; }
   }
   status(): ChatGPTStatus {
     return { available: this.available, activeProfileId: this.vault.activeProfileId,
@@ -118,7 +118,7 @@ export class ChatGPT {
     return `ChatGPT 账号 ${number}`;
   }
   private assertEditable() {
-    if (!this.available || this.stopped) throw new Error("ChatGPT 账号暂不可编辑，请检查钥匙串或重启应用");
+    if (!this.available || this.stopped) throw new Error("ChatGPT 账号暂不可编辑，请检查凭证文件和数据目录权限后重启应用");
     if (this.pending) throw new Error("请先完成或取消正在进行的登录。");
   }
   async rename(id: string, label: string) {
@@ -151,7 +151,7 @@ export class ChatGPT {
   }
   async signIn(profileId?: string, consent = false) {
     return this.serial(async () => {
-      if (!this.available || this.stopped) throw new Error("ChatGPT 登录暂不可用，请检查钥匙串或重启应用");
+      if (!this.available || this.stopped) throw new Error("ChatGPT 登录暂不可用，请检查凭证文件和数据目录权限后重启应用");
       if (this.pending) throw new Error("已有登录正在进行，请先完成或取消");
       const existing = profileId ? this.get(profileId) : undefined;
       if (!existing && this.vault.profiles.length >= 10) throw new Error("已达到 10 个账号注册上限");
@@ -256,7 +256,7 @@ export class ChatGPT {
   }
   private async credential(id: string): Promise<string> {
     return this.serial(async () => {
-      if (!this.available) throw new Error("ChatGPT 凭证暂不可用，请检查钥匙串并重启应用");
+      if (!this.available) throw new Error("ChatGPT 凭证暂不可用，请检查凭证文件和数据目录权限后重启应用");
       if (this.stopped || this.signingOut.has(id)) throw new Error("此 ChatGPT 连接正在退出");
       let p = this.get(id);
       if (!p.tokens) throw new Error("请在设置中重新登录 ChatGPT");
@@ -275,7 +275,7 @@ export class ChatGPT {
             // A successful refresh consumes the old token even if validation or storage then fails.
             const invalidated = { ...this.vault, profiles: this.vault.profiles.map(item => item.id === id ? { ...item, tokens: null } : item) };
             try { await this.persist(invalidated); }
-            catch { this.vault = invalidated; this.available = false; this.message = "无法更新钥匙串，已停止使用此凭证。请检查钥匙串后重启并重新登录。"; this.services.changed(); }
+            catch { this.vault = invalidated; this.available = false; this.message = "无法更新 ChatGPT 凭证文件，已停止使用此凭证。请检查数据目录权限和磁盘空间后重启并重新登录。"; this.services.changed(); }
             this.catalogs.delete(id);
           }
           throw error;

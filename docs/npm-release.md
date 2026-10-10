@@ -44,7 +44,7 @@ SDK 版本独立于应用版本，当前源码 SDK 为 0.2.1，应用为 0.3.0�
    | Environment name | `npm` |
    | Allowed actions | 允许直接 `npm publish` |
 
-工作流采用 OIDC，使用 Node 24、npm 11.19.0、Bun 1.4.2。只有 publish job 申请 `id-token: write`，不配置 `NPM_TOKEN` / `NODE_AUTH_TOKEN`。仅目标仓库的 SDK 标签可以进入发布 job；手动验收不需要 npm 认证。公开包、公开仓库经 OIDC 发布时 npm 自动生成 provenance。依据：[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)。
+工作流采用 OIDC，使用 Node 24、npm 11.19.0、Bun 1.4.3。只有 publish job 申请 `id-token: write`，不配置 `NPM_TOKEN` / `NODE_AUTH_TOKEN`。仅目标仓库的 SDK 标签可以进入发布 job；手动验收不需要 npm 认证。公开包、公开仓库经 OIDC 发布时 npm 自动生成 provenance。依据：[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)。
 
 ## 本地验收
 

@@ -5,6 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChatGPT } from "../backend/chatgpt";
+import { ChatGPTStorage } from "../backend/chatgpt-storage";
 import { Store } from "../backend/store";
 import { Models } from "../backend/models";
 import { chatGPTLoginProfile, chatGPTStatus } from "../shared/chatgpt";
@@ -21,7 +22,7 @@ const pair = await generateKeyPair("ES256");
 const jwk = { ...await exportJWK(pair.publicKey), kid: "test-signing-key", use: "sig", alg: "ES256" };
 const signed = (clientId: string, nonce: string, overrides: Record<string, unknown> = {}, key = pair.privateKey) => new SignJWT({ sub: "person-a", email: "person@example.test", nonce, iss: issuer, aud: clientId, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, ...overrides }).setProtectedHeader({ alg: "ES256", kid: jwk.kid }).sign(key);
 const events = (items: object[]) => new Response(items.map(item => `data: ${JSON.stringify(item)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
-async function fixture() {
+async function fixture(storage?: ChatGPTStorage) {
   let saved: string | null = null;
   let opened = "";
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -43,17 +44,53 @@ async function fixture() {
     if (url === resource + "/responses") return responseHandler();
     throw new Error("Unexpected network request");
   }) as typeof fetch;
-  const services = { readSecret: async () => saved, writeSecret: async (value: string) => { if (vaultFailure) throw new Error("private keychain error"); saved = value; }, openURL: async (url: string) => { opened = url; }, redirectURI: redirect, changed: () => {}, fetcher, modelCount: (id: string) => modelCount(id) };
+  const services = { readSecret: async () => { if (storage) saved = await storage.readSecret(); return saved; }, writeSecret: async (value: string) => { if (vaultFailure) throw new Error("private storage error must-not-leak"); await storage?.writeSecret(value); saved = value; }, openURL: async (url: string) => { opened = url; }, redirectURI: redirect, changed: () => {}, fetcher, modelCount: (id: string) => modelCount(id) };
   let auth = new ChatGPT(services); await auth.open(); cleanups.push(() => auth.stop());
   return {
     get auth() { return auth; }, get opened() { return new URL(opened); }, get saved() { return JSON.parse(saved!); }, calls,
     setToken(handler: typeof tokenHandler) { tokenHandler = handler; }, setResponse(handler: typeof responseHandler) { responseHandler = handler; }, setRevoke(status: number) { revokeStatus = status; }, setVaultFailure() { vaultFailure = true; },
     setModelCount(handler: typeof modelCount) { modelCount = handler; },
-    async reopen(change?: (value: any) => void) { await auth.stop(); const value = JSON.parse(saved!); change?.(value); saved = JSON.stringify(value); auth = new ChatGPT(services); await auth.open(); },
+    async reopen(change?: (value: any) => void) { await auth.stop(); const value = JSON.parse(saved!); change?.(value); saved = JSON.stringify(value); if (storage && change) await storage.writeSecret(saved); auth = new ChatGPT(services); await auth.open(); },
     async callback(params: Record<string, string> = {}, omitClient = false) { const url = new URL(redirect); url.search = new URLSearchParams({ state: new URL(opened).searchParams.get("state")!, code: "code-only-test", ...(omitClient ? {} : { client_id: "oaiapp_test" }), ...params }).toString(); return auth.callback(new Request(url)); },
     async login() { await auth.signIn(); expect((await this.callback()).status).toBe(200); return auth.status().activeProfileId!; },
   };
 }
+
+test("file credentials survive login, account edits, serialized refresh and sign-out across restarts", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "malatang-chatgpt-file-"));
+  cleanups.push(() => rm(dir, { recursive: true, force: true }));
+  const storage = new ChatGPTStorage(dir);
+  const f = await fixture(storage);
+  const store = new Store(dir); await store.open();
+  await store.update(state => { state.models.push({ id: "old-model", name: "Old subscription", provider: "Old account", model: "gpt-account-second", baseURL: resource, apiKey: "", preset: null, options: {}, chatgptProfileId: "old-keychain-profile" }); });
+  const models = new Models(store, () => {}, () => {}, fetch, f.auth);
+  expect(models.list()[0]).toMatchObject({ id: "old-model", configured: false });
+  const hostId = f.saved.hostId;
+  const id = await f.login();
+  const added = await models.addChatGPTModel(id, "gpt-account-second");
+  expect(added).toMatchObject({ configured: true, chatgptProfileId: id });
+  expect(models.list()[0]).toMatchObject({ id: "old-model", configured: false, chatgptProfileId: "old-keychain-profile" });
+  expect(added.id).not.toBe("old-model");
+  const initial = JSON.parse((await storage.readSecret())!);
+  expect(initial.profiles[0].tokens.access).toBe("access-secret");
+  await Promise.all([f.auth.rename(id, "文件账号"), f.auth.acknowledge(id), f.auth.select(id)]);
+  await f.reopen(value => { value.profiles[0].tokens.expiresAt = 0; });
+  expect(f.auth.status()).toMatchObject({ activeProfileId: id, profiles: [{ id, label: "文件账号", welcomeSeen: true, connected: true }] });
+  await Promise.all([f.auth.catalog(id), f.auth.catalog(id)]);
+  const rotated = JSON.parse((await storage.readSecret())!);
+  expect(rotated.hostId).toBe(hostId);
+  expect(rotated.profiles[0].tokens.refresh).toBe("rotated-refresh-secret");
+  expect(f.calls.filter(call => call.url === tokenURL && String(call.init?.body).includes("grant_type=refresh_token"))).toHaveLength(1);
+  await f.reopen();
+  expect(f.saved).toEqual(rotated);
+  expect(JSON.stringify(f.auth.status())).not.toContain("secret");
+  await f.auth.signOut(id);
+  await f.reopen();
+  expect(f.auth.status().profiles[0]).toMatchObject({ id, connected: false, incomplete: false });
+  expect(JSON.parse((await storage.readSecret())!).profiles[0].tokens).toBeNull();
+  await f.auth.remove([id]);
+  expect(JSON.parse((await storage.readSecret())!)).toMatchObject({ hostId, activeProfileId: null, profiles: [] });
+});
 
 test("dynamic registration uses persisted host ID, PKCE, issued client and verified identity; API never returns tokens", async () => {
   const f = await fixture(); await f.auth.signIn(); const query = f.opened.searchParams;
@@ -230,7 +267,7 @@ test("cancel during token exchange cannot activate the account; persistence fail
   await f.auth.signIn(); const callback = f.callback(); await barrier; const cancellation = f.auth.cancel(f.auth.status().attempt!.id);
   expect((await callback).status).toBe(400); await cancellation; expect(f.auth.status().activeProfileId).toBeNull(); expect(f.saved.profiles[0].tokens).toBeNull();
   await f.auth.signIn(f.auth.status().profiles[0]!.id); f.setVaultFailure(); f.setToken(async body => Response.json({ access_token: "must-not-leak", refresh_token: "must-not-leak", id_token: await signed(body.get("client_id")!, f.opened.searchParams.get("nonce")!), token_type: "Bearer", expires_in: 3600, scope }));
-  expect((await f.callback()).status).toBe(400); expect(f.auth.status().attempt!.message).toContain("钥匙串"); expect(JSON.stringify(f.auth.status())).not.toContain("must-not-leak");
+  expect((await f.callback()).status).toBe(400); expect(f.auth.status().attempt!.message).toContain("数据目录权限"); expect(JSON.stringify(f.auth.status())).not.toContain("must-not-leak");
 });
 
 test("expired callback and wrong loopback path are rejected before token exchange", async () => {
@@ -245,8 +282,8 @@ test("expired callback and wrong loopback path are rejected before token exchang
 
 test("a refresh that cannot be persisted stops using consumed credentials", async () => {
   const f = await fixture(); const id = await f.login(); await f.reopen(v => { v.profiles[0].tokens.expiresAt = 0; }); f.setVaultFailure();
-  await expect(f.auth.catalog(id)).rejects.toThrow("钥匙串"); expect(f.auth.status()).toMatchObject({ available: false }); expect(f.auth.connected(id)).toBe(false);
-  const count = f.calls.length; await expect(f.auth.catalog(id)).rejects.toThrow("钥匙串"); expect(f.calls).toHaveLength(count);
+  await expect(f.auth.catalog(id)).rejects.toThrow("数据目录权限"); expect(f.auth.status()).toMatchObject({ available: false }); expect(f.auth.connected(id)).toBe(false);
+  const count = f.calls.length; await expect(f.auth.catalog(id)).rejects.toThrow("数据目录权限"); expect(f.calls).toHaveLength(count);
 });
 
 test("cancelling a running subscription stream aborts the upstream request and retains partial output", async () => {
@@ -311,7 +348,7 @@ test("removing selected failed registration falls back to a connected profile an
   expect(new Set(labels).size).toBe(3); expect(labels).toEqual(["ChatGPT 账号 1", "ChatGPT 账号 3", "ChatGPT 账号 2"]);
 });
 
-test("deleting all failed records clears selection and retry; Keychain failure never partially applies edits", async () => {
+test("deleting all failed records clears selection and retry; storage failure never partially applies edits", async () => {
   const f = await fixture(); f.setToken(async () => Response.json({ error: "invalid_grant" }, { status: 400 }));
   await f.auth.signIn(); await f.callback(); const id = f.auth.status().profiles[0]!.id;
   await f.auth.select(id); await f.auth.remove([id, id]);
@@ -319,8 +356,8 @@ test("deleting all failed records clears selection and retry; Keychain failure n
   await f.auth.signIn(); await f.callback(); const next = f.auth.status().profiles[0]!.id;
   const before = f.auth.status(); const saved = f.saved;
   f.setVaultFailure();
-  await expect(f.auth.rename(next, "changed")).rejects.toThrow("钥匙串");
-  await expect(f.auth.remove([next])).rejects.toThrow("钥匙串");
+  await expect(f.auth.rename(next, "changed")).rejects.toThrow("数据目录权限");
+  await expect(f.auth.remove([next])).rejects.toThrow("数据目录权限");
   expect(f.auth.status()).toEqual(before); expect(f.saved).toEqual(saved);
 });
 

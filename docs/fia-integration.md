@@ -6,11 +6,11 @@
 
 通过不压缩的 Git subtree 导入 `potato47/fia` 的完整祖先历史，来源提交为 `0a319af8619578f3a3c99a34d389886499166d9d`，前一应用提交为 `c766a05db213f673a2e74bb7373aeee8fb3ffde9`。框架位于 `framework/fia/`，没有嵌套 Git 或 submodule。原仓库保留历史，不双向同步；新的框架改动与应用一起提交。
 
-框架保持通用窗口、通信、原生能力、构建和 CLI；麻辣烫保留业务、模型与插件平台。应用通过 `@semicoder/fia/*` 消费 workspace 包，框架不得反向导入业务。应用源码路径、标识、数据目录和 Keychain 身份保持原状。
+框架保持通用窗口、通信、原生能力、构建和 CLI；麻辣烫保留业务、模型与插件平台。应用通过 `@semicoder/fia/*` 消费 workspace 包，框架不得反向导入业务。共仓迁入时应用源码路径、标识、数据目录和 Keychain 身份保持原状；随后应用凭证改为数据目录内的文件，不再访问或迁移旧 Keychain 登录，见根 README 的未发布凭证说明。
 
 ## 开发与构建
 
-在宿主根执行 `bun install --frozen-lockfile --ignore-scripts` 后运行 `bun run dev`。Bun 固定 1.4.2，源码构建需要 Apple Silicon macOS 和 Swift 6 工具链。TypeScript/原生修改自动构建和重启开发实例；依赖清单、锁文件、维护工具变化则提示手工重启。前端 HMR 和业务后端重载沿用既有机制。框架自动重启清除未保存页面状态、撤销浏览器会话，持久数据不移动。
+在宿主根执行 `bun install --frozen-lockfile --ignore-scripts` 后运行 `bun run dev`。Bun 固定 1.4.3，源码构建需要 Apple Silicon macOS 和 Swift 6 工具链。TypeScript/原生修改自动构建和重启开发实例；依赖清单、锁文件、维护工具变化则提示手工重启。前端 HMR 和业务后端重载沿用既有机制。框架自动重启清除未保存页面状态、撤销浏览器会话，持久数据不移动。
 
 `framework:prepare` 校验并准备产物；`framework:check` 检查框架；`framework:pack` 验证实际归档；`framework:verify` 在仓库外独立安装、构建并消费归档。框架工具及排除监听规则见[维护说明](../framework/fia/docs/co-development.md)。互斥锁防止构建交叠，失败不标记成功产物；缓存须同时满足输入与输出哈希。异常中断后只有确认 owner.json 中进程已停止，才可清理报告旁的锁目录。
 

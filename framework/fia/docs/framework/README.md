@@ -64,7 +64,7 @@ WebView 默认关闭页面视口横向、纵向的边缘拉伸回弹，保留正
 
 ## 构建与代码更新
 
-固定运行时包含 Host、通用 CLI 客户端和 Bun 1.4.2；代码版本包含 `backend/index.js`、`web/index.html` 和依赖资源。业务数据使用 `context.app.dataDirectory`，不能写入代码目录。
+固定运行时包含 Host、通用 CLI 客户端和 Bun 1.4.3；代码版本包含 `backend/index.js`、`web/index.html` 和依赖资源。业务数据使用 `context.app.dataDirectory`，不能写入代码目录。
 
 需要按路径读取的业务资源可在 `backend.assets` 声明项目相对路径；`context.app.codeDirectory` 在开发时指向项目根目录，生产时指向包含这些资源的代码目录，保持相同相对路径。例如配置 `assets: ["assets/model.wasm"]` 后，使用 `Bun.file(context.app.codeDirectory + "/assets/model.wasm")`。普通模块依赖由 Bun bundler 打包。
 
@@ -221,6 +221,6 @@ socket.addEventListener("open", () => socket.send("hello"));
 
 ## 框架与首个应用共同开发（未发布）
 
-FIA 活跃源码现位于麻辣烫仓库的 `framework/fia/`，保留独立 API、模板、测试与打包边界；麻辣烫稳定后再拆回独立仓库。公开 npm 0.18.0 不包含本次联调工具。普通消费已发布 npm 包的应用仍不需要 Swift；维护共仓源码需要 Bun 1.4.2 和 Swift 6 工具链。框架维护流程保存在源码仓库的 `docs/co-development.md`。
+FIA 活跃源码现位于麻辣烫仓库的 `framework/fia/`，保留独立 API、模板、测试与打包边界；麻辣烫稳定后再拆回独立仓库。公开 npm 0.18.0 不包含本次联调工具或 Bun 1.4.3 运行时。普通消费已发布 npm 包的应用仍不需要 Swift；维护共仓源码需要 Bun 1.4.3 和 Swift 6 工具链。框架维护流程保存在源码仓库的 `docs/co-development.md`。
 
 开发 CLI 新增可重复的 `fia dev --watch-ignore <相对目录>`，按目录边界排除指定子树，不影响相似前缀的其他目录。该参数仅供外层工具已经负责构建/重启的目录；默认生成应用无需设置。嵌套的 node_modules、.git、.fia、.build、dist 也不会触发后端重载。

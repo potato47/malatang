@@ -24,7 +24,7 @@
 
 当前开发分支把 FIA 完整源码及历史放在 `framework/fia/`，与麻辣烫共用根 workspace 和锁文件。麻辣烫是 FIA 的第一个正式应用；待产品稳定后再独立拆出框架。本次重构尚未发布，版本字符串仍为应用 0.4.0 / FIA 0.18.0，不能据此视为已发布产物相同。
 
-源码开发需要 Apple Silicon macOS、Bun 1.4.2 和 Swift 6 工具链（可通过 Xcode / Command Line Tools 提供）。在本仓库根目录执行：
+源码开发需要 Apple Silicon macOS、Bun 1.4.3 和 Swift 6 工具链（可通过 Xcode / Command Line Tools 提供）。在本仓库根目录执行：
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
@@ -59,7 +59,7 @@ bun run agent --preview open --browser --url
 
 **升级要求：** 0.3.0 使用 FIA 0.17.0 的新原生运行时；从 0.2.0 或更早版本升级须下载完整 DMG，不能仅安装代码更新。账号、模型配置、KV 和运行历史保留。
 
-使用当前 workspace FIA 构建包时，`bun run dev` 显示 `Malatang Dev` /「麻辣烫 · 开发版」，Dock 带黄色 `DEV` 标记，菜单栏也显示 `DEV`；macOS Bundle ID 为 `com.semicoder.malatang.dev`。现有 `.fia/dev/data/com.semicoder.malatang` 数据与按路径区分的 Keychain 登录项继续使用，无需搬迁。
+使用当前 workspace FIA 构建包时，`bun run dev` 显示 `Malatang Dev` /「麻辣烫 · 开发版」，Dock 带黄色 `DEV` 标记，菜单栏也显示 `DEV`；macOS Bundle ID 为 `com.semicoder.malatang.dev`。现有 `.fia/dev/data/com.semicoder.malatang` 数据继续使用；本地开发源码已改用凭证文件，不迁移旧 Keychain 登录，需重新登录并添加订阅模型。
 
 `bun run run` 构建并启动 `.fia/preview/Malatang Preview.app`，显示「麻辣烫 · 预览版」、蓝色 `PREV` 标记，使用独立的 `.fia/preview/data/com.semicoder.malatang` 数据。直接打开该预览包也保持隔离，数据跨重启保留；首次使用需单独配置模型。`bun run agent --preview` 控制预览版，例如 `bun run agent --preview quit`。开发版与预览版都禁用正式更新源，可与官网版同时运行。显式安装的本地 CLI/skill 分别为 `malatang-dev`、`malatang-preview`，正式入口仍为 `malatang`。
 
@@ -93,7 +93,9 @@ GitHub 构建、正式签名公证发布与应用自动更新配置见 [发布�
 - 按插件 ID 划分的持久化 KV；原子文件替换和串行写入。
 - 页面与 FIA CLI 共用安装接口，接收 npm 包、Git HTTPS 来源及本地 `.tgz`；随手记本地包路径已经实测。
 
-可信本地扩展与宿主同进程执行，不构成安全沙箱。凭证不通过业务 API 返回前端。ChatGPT OAuth 凭证在 macOS Keychain 中保存，开发 / 生产按数据目录分开；其他模型 API Key 沿用权限受限的本机配置文件。
+可信本地扩展与宿主同进程执行，不构成安全沙箱。凭证不通过业务 API 返回前端。本地开发源码将 ChatGPT 账号注册、当前账号及 OAuth token 明文保存在 FIA `app.dataDirectory/chatgpt-auth.json`，其他模型 API Key 和应用设置继续保存在同目录的 `platform.json`。凭证目录权限为 0700，文件为 0600；开发 / 预览 / 正式按数据目录隔离。文件完整写入并同步后原子替换，保存成功才更新内存；不要分享包含凭证的数据目录或备份。
+
+**凭证存储变更（未发布）：** 本地源码不再访问系统钥匙串，不导入、删除或回退使用旧凭证。首次切换需重新完成 ChatGPT 浏览器授权；旧订阅模型保留为未连接，需删除旧模型后从新账号目录重新添加。普通 API Key、插件、KV、外观和历史保留。凭证文件不存在时初始化；文件为空、损坏或无法读写时禁用 ChatGPT 登录并显示文件检查提示，不覆盖原文件。公开 v0.4.0 仍使用 Keychain。
 
 当前已实现 ChatGPT 官方订阅 OAuth；其他服务商订阅登录、云身份认证、工具注册 / 调用、agent loop、调研应用、插件自动升级和签名分发尚未实现。npm/Git 下载路径已实现但尚未用远端真实插件验收；要求预构建、自包含产物，安装不执行生命周期脚本。
 
@@ -120,11 +122,11 @@ GitHub 构建、正式签名公证发布与应用自动更新配置见 [发布�
 - 登录错误会标明回调处理、授权码交换、账号验证或凭证保存阶段。点击「重试此账号登录」复用失败注册；重启后保留当前账号，没有当前账号时默认选中最近创建的登录记录，直接点击 Continue 即可重试，也可手动切换其他账号。默认选择登录目标不会激活未经验证的身份，只有「添加账号」或首次登录才创建新注册。
 - 多个注册独立保存，即便邮箱相同也不合并。已有模型固定绑定原账号，不因设置中的账号切换而改变。仅登录身份但未授予订阅使用权限时，不允许推理。
 - 到期前串行刷新并保存旋转 refresh token；临时网络失败不清除凭证。退出尝试远程撤销并清除本机 token，保留注册。未确认远程撤销时会给出 ChatGPT 设置入口。不要复制其他应用的登录文件，也不要把回调 URL 或 token 发到对话中。
-- 展开「管理账号」可重命名、单个移除，或批量「清理未完成登录」。清理只选择从未通过身份验证的记录，确认后原子写入 Keychain；已退出的有效账号不会被批量选中。已连接账号需先退出，绑定模型需先从模型列表移除，登录进行中不能编辑。重命名同步模型列表中的账号显示名称，不改变模型 ID / 计费绑定；移除仅删除本地注册，再次登录需添加账号，不注销 ChatGPT 账号或撤销远程应用授权。
+- 展开「管理账号」可重命名、单个移除，或批量「清理未完成登录」。清理只选择从未通过身份验证的记录，确认后原子保存凭证文件；已退出的有效账号不会被批量选中。已连接账号需先退出，绑定模型需先从模型列表移除，登录进行中不能编辑。重命名同步模型列表中的账号显示名称，不改变模型 ID / 计费绑定；移除仅删除本地注册，再次登录需添加账号，不注销 ChatGPT 账号或撤销远程应用授权。
 - 回调复用 FIA 的实际 loopback 端口 `/api/oauth/openai/callback`，不启动第二个服务。登录等待 10 分钟，可取消，切页不中断。刷新模型目录不产生生成请求。
 - 订阅使用公开 `/v1/responses`，请求为 `store: false`、`stream: true`，只在 `response.completed` 后成功；不会自动切换 API Key 计费。账户可用模型来自 `/v1/models` 的可见条目，不复制 Pi 的 API Key 目录。
 
-真实账号授权与 GPT 调用需本机能连接 `auth.openai.com` 和 `api.openai.com`。`unsupported_country_region_territory` 表示 OpenAI 拒绝当前请求来源地区，不能仅据此判断订阅无效。FIA 后端启动时读取显式代理环境变量，否则跟随 macOS 手动 HTTP / HTTPS 系统代理；变更后重启应用。暂不转换系统 PAC / SOCKS 配置，详见 FIA 框架文档。不要在应用中关闭 TLS 校验或重复创建注册来处理网络错误。2026-10-03 已确认真实订阅授权与账号目录，生产翻译插件使用 GPT-6-Astra 完成一次真实调用。其他模型、真实 token 刷新 / 撤销未逐项验收。首次读取钥匙串可能需要系统确认；FIA 已在等待原生请求时暂停启动计时。
+真实账号授权与 GPT 调用需本机能连接 `auth.openai.com` 和 `api.openai.com`。`unsupported_country_region_territory` 表示 OpenAI 拒绝当前请求来源地区，不能仅据此判断订阅无效。FIA 后端启动时读取显式代理环境变量，否则跟随 macOS 手动 HTTP / HTTPS 系统代理；变更后重启应用。暂不转换系统 PAC / SOCKS 配置，详见 FIA 框架文档。不要在应用中关闭 TLS 校验或重复创建注册来处理网络错误。2026-10-03 已确认真实订阅授权与账号目录，生产翻译插件使用 GPT-6-Astra 完成一次真实调用。其他模型、真实 token 刷新 / 撤销未逐项验收。本地文件存储无需钥匙串授权；OpenAI 官方浏览器登录与订阅授权仍需用户完成。
 
 ## 插件开发
 
@@ -167,7 +169,7 @@ bun run build
 
 页面生命周期回归：在运行中的 FIA 开发浏览器会话，打开同源 `/tests/keep-alive.html`，应显示全部 PASS。该测试使用真实 React / DOM 验证延迟挂载、草稿、滚动、隐藏焦点、卸载清理、样式启停和同版本资源替换，无额外测试服务器；生产构建不包含此页面。
 
-登录与账号管理 UI 回归：同一开发实例打开 `/tests/chatgpt-login.html`，以隔离的 API fixtures 检查单个 / 多个注册恢复、失败账号重试、手动选择、等待 / 取消、显式添加账号、首次登录、重命名及保存失败、单个 / 批量移除的确认和保护。加 `?preview` 可交互查看测试账号，不发起真实授权或写入 Keychain；生产构建不包含此页面。
+登录与账号管理 UI 回归：同一开发实例打开 `/tests/chatgpt-login.html`，以隔离的 API fixtures 检查单个 / 多个注册恢复、失败账号重试、手动选择、等待 / 取消、显式添加账号、首次登录、重命名及保存失败、单个 / 批量移除的确认和保护。加 `?preview` 可交互查看测试账号，不发起真实授权或写入真实凭证文件；生产构建不包含此页面。
 
 翻译模型 UI 回归：同一开发实例打开 `/tests/translate-models.html`，检查空列表与快捷键禁用、旧模型偏好回退、旧演示历史来源、真实模型 ID 的 SDK 调用以及账号断开 / 最后一个模型删除。此页面使用离线 fixtures，不代表真实模型联网验收。
 

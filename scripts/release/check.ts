@@ -2,7 +2,7 @@ import { appendFile } from "node:fs/promises";
 import { config, pkg, assert, validateConfig } from "./config";
 
 validateConfig();
-assert(Bun.version === "1.4.2", "Use Bun 1.4.2");
+assert(Bun.version === "1.4.3", "Use Bun 1.4.3");
 if (process.env.GITHUB_ACTIONS) {
   assert(process.env.GITHUB_REPOSITORY === config.repository, "Publishing is only enabled in the configured repository");
   if (process.env.GITHUB_EVENT_NAME === "push") assert(process.env.GITHUB_REF === `refs/tags/v${pkg.version}`, "Tag and application version differ");

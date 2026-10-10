@@ -41,7 +41,7 @@ export function validateTrigger(version: string, env: Record<string, string | un
 }
 
 if (import.meta.main) {
-  assert(Bun.version === "1.4.2", "Use Bun 1.4.2");
+  assert(Bun.version === "1.4.3", "Use Bun 1.4.3");
   const release = validatePackage(await Bun.file(new URL("../../packages/sdk/package.json", import.meta.url)).json());
   if (process.argv.includes("--release")) validateTrigger(release.version, process.env);
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `version=${release.version}\nfilename=${release.filename}\n`);

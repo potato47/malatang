@@ -41,7 +41,7 @@ Object.assign(app, {
     };
     if (method === "chatgpt.catalog") return [{ id: "fixture-model", name: "Fixture model" }];
     if (failWrite && ["chatgpt.rename", "chatgpt.remove"].includes(method))
-      throw new Error("无法保存 ChatGPT 账号信息，请检查系统钥匙串后重试。");
+      throw new Error("无法保存 ChatGPT 账号信息，请检查数据目录权限和磁盘空间后重试。");
     if (method === "chatgpt.signIn")
       status = {
         ...status,
@@ -246,7 +246,7 @@ async function run() {
     "Failed rename must retain the draft",
   );
   assert(
-    document.querySelector('[role="alert"]')?.textContent?.includes("钥匙串"),
+    document.querySelector('[role="alert"]')?.textContent?.includes("数据目录权限"),
     "Persistence errors must be visible",
   );
   failWrite = false;

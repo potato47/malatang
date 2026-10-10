@@ -35,7 +35,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           # Must match BUNDLED_BUN_VERSION; check-npm-release.ts enforces this.
-          bun-version: "1.4.2"
+          bun-version: "1.4.3"
       - name: Check release versions and tag
         id: release
         run: bun tools/check-npm-release.ts
